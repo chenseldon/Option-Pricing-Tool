@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Option Pricing Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #0c1420;
+      color: #d4e0ef;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #0f2040 0%, #0b3060 100%);
+      border-bottom: 1px solid #1c3a60;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .header-logo { font-size: 22px; }
+    .header-title { font-size: 17px; font-weight: 700; color: #5bc8f5; letter-spacing: 0.3px; }
+    .header-tags { display: flex; gap: 8px; margin-left: 8px; }
+    .tag {
+      font-size: 10px; padding: 2px 8px; border-radius: 10px;
+      border: 1px solid #1c3a60; color: #7baac8; background: #0d1f36;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+
+    /* ── Layout ── */
+    .body-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 270px;
+      min-width: 270px;
+      background: #0f1d2e;
+      border-right: 1px solid #1c3a60;
+      padding: 18px 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: #4a7aa0;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      margin-bottom: 2px;
+    }
+
+    .type-toggle {
+      display: flex;
+      border: 1px solid #1c3a60;
+      border-radius: 7px;
+      overflow: hidden;
+    }
+    .type-btn {
+      flex: 1;
+      padding: 9px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s, color 0.18s;
+      color: #5a7a9a;
+      background: transparent;
+      border: none;
+    }
+    .type-btn.active-call { background: #0d3060; color: #5bc8f5; }
+    .type-btn.active-put  { background: #2d0d2a; color: #f59bde; }
+
+    .field-group { display: flex; flex-direction: column; gap: 3px; }
+    .field-group label { font-size: 11px; color: #6a8aaa; }
+    .field-group input[type=number] {
+      width: 100%;
+      padding: 7px 10px;
+      background: #0a1525;
+      border: 1px solid #1c3a60;
+      border-radius: 6px;
+      color: #d4e0ef;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+      -moz-appearance: textfield;
+    }
+    .field-group input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .field-group input[type=number]:focus { border-color: #5bc8f5; }
+
+    .divider { border: none; border-top: 1px solid #1c3a60; margin: 2px 0; }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: filter 0.15s, transform 0.1s;
+    }
+    .btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn-primary { background: linear-gradient(135deg, #0d4080, #1565c0); color: #e8f4ff; }
+    .btn-green   { background: linear-gradient(135deg, #1b4a2a, #2d7a4f); color: #b7f5ce; }
+
+    .iv-result {
+      display: none;
+      padding: 9px 12px;
+      background: #0a2018;
+      border: 1px solid #2a6040;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #74c69d;
+    }
+    .iv-result.error { background: #200a0a; border-color: #602a2a; color: #f08080; }
+
+    /* ── Main panel ── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Result cards row ── */
+    .cards-row {
+      display: flex;
+      gap: 12px;
+      padding: 14px 18px 0;
+      flex-shrink: 0;
+    }
+    .card {
+      flex: 1;
+      background: #0f1d2e;
+      border: 1px solid #1c3a60;
+      border-radius: 9px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .card-label { font-size: 10px; color: #4a7aa0; text-transform: uppercase; letter-spacing: 0.8px; }
+    .card-value { font-size: 22px; font-weight: 700; }
+    .card-sub   { font-size: 10px; color: #3a5a78; }
+    .v-blue   { color: #5bc8f5; }
+    .v-yellow { color: #ffd54f; }
+    .v-green  { color: #81c784; }
+
+    /* ── Content area (greeks + charts) ── */
+    .content-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      padding: 12px 18px 14px;
+      gap: 14px;
+    }
+
+    /* ── Greeks panel ── */
+    .greeks-panel {
+      width: 320px;
+      min-width: 320px;
+      background: #0f1d2e;
+      border: 1px solid #1c3a60;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #4a7aa0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #1c3a60;
+    }
+    .greeks-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .greeks-table th {
+      background: #091525;
+      color: #4a7aa0;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 7px 10px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .greeks-table td { padding: 8px 10px; border-bottom: 1px solid #122030; }
+    .greeks-table tr:last-child td { border-bottom: none; }
+    .g-name  { font-weight: 700; color: #d4e0ef; }
+    .g-value { font-weight: 700; font-family: 'Consolas', monospace; font-size: 13px; }
+    .g-sens  { color: #3a6080; font-size: 10px; }
+    .g-desc  { color: #2e5070; font-size: 10px; }
+    .pos { color: #5bc8f5; }
+    .neg { color: #f08080; }
+
+    /* ── Charts panel ── */
+    .charts-panel {
+      flex: 1;
+      background: #0f1d2e;
+      border: 1px solid #1c3a60;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid #1c3a60;
+      background: #091525;
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 9px 22px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #4a7aa0;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+      letter-spacing: 0.3px;
+    }
+    .tab.active { color: #5bc8f5; border-bottom-color: #5bc8f5; }
+
+    .chart-wrap {
+      flex: 1;
+      overflow: hidden;
+      padding: 10px;
+    }
+    .chart-wrap.hidden { display: none; }
+
+    #price-chart { width: 100%; height: 100%; }
+
+    .greeks-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 8px;
+      height: 100%;
+    }
+    .gc { border-radius: 6px; overflow: hidden; background: #091525; }
+    .gc > div { width: 100%; height: 100%; }
+
+    /* ── Placeholder ── */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #2a4a68;
+      gap: 8px;
+    }
+    .placeholder-icon { font-size: 42px; }
+    .placeholder-title { font-size: 15px; font-weight: 600; color: #2e5070; }
+    .placeholder-sub   { font-size: 12px; color: #1e3a50; }
+
+    /* ── Error bar ── */
+    .error-bar {
+      display: none;
+      margin: 10px 18px 0;
+      padding: 9px 14px;
+      background: #200a0a;
+      border: 1px solid #6a2020;
+      border-radius: 7px;
+      color: #f08080;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    /* ── Hidden utility ── */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-logo">📈</span>
+    <span class="header-title">Option Pricing Tool</span>
+    <div class="header-tags">
+      <span class="tag">Black-Scholes-Merton</span>
+      <span class="tag">Monte Carlo</span>
+      <span class="tag">Greeks</span>
+      <span class="tag">ECharts</span>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="body-layout">
+
+    <!-- ── Sidebar: Inputs ── -->
+    <div class="sidebar">
+
+      <div>
+        <div class="section-label">Option Type</div>
+        <div class="type-toggle">
+          <button class="type-btn active-call" id="btn-c" onclick="setFlag('c')">▲ Call</button>
+          <button class="type-btn"             id="btn-p" onclick="setFlag('p')">▼ Put</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label>Underlying Price (S)</label>
+        <input type="number" id="S" value="5500" step="10" />
+      </div>
+      <div class="field-group">
+        <label>Strike Price (K)</label>
+        <input type="number" id="K" value="5500" step="10" />
+      </div>
+      <div class="field-group">
+        <label>Time to Expiry — T (years, e.g. 0.25)</label>
+        <input type="number" id="T" value="0.25" step="0.01" />
+      </div>
+      <div class="field-group">
+        <label>Risk-Free Rate — r (e.g. 0.02 = 2%)</label>
+        <input type="number" id="r" value="0.02" step="0.001" />
+      </div>
+      <div class="field-group">
+        <label>Volatility — σ (e.g. 0.20 = 20%)</label>
+        <input type="number" id="sigma" value="0.20" step="0.01" />
+      </div>
+      <div class="field-group">
+        <label>Dividend Yield — q (e.g. 0.01 = 1%)</label>
+        <input type="number" id="q" value="0.01" step="0.001" />
+      </div>
+
+      <button class="btn btn-primary" onclick="calculate()">⚡ Calculate</button>
+
+      <hr class="divider" />
+
+      <div>
+        <div class="section-label">Implied Volatility Solver</div>
+        <div class="field-group" style="margin-top: 6px;">
+          <label>Market Price</label>
+          <input type="number" id="market_price" placeholder="Enter observed price" step="0.1" />
+        </div>
+        <button class="btn btn-green" style="margin-top: 8px;" onclick="solveIV()">🔍 Solve IV</button>
+        <div class="iv-result" id="iv-result"></div>
+      </div>
+
+    </div><!-- /sidebar -->
+
+    <!-- ── Main Panel ── -->
+    <div class="main">
+
+      <div class="error-bar" id="error-bar"></div>
+
+      <!-- Placeholder -->
+      <div id="placeholder" class="content-area" style="padding:0;">
+        <div class="placeholder">
+          <div class="placeholder-icon">📊</div>
+          <div class="placeholder-title">Enter Parameters &amp; Click Calculate</div>
+          <div class="placeholder-sub">Default: CSI 500 Index Option — ATM Call — T=3M — σ=20%</div>
+        </div>
+      </div>
+
+      <!-- Results (hidden until first calculation) -->
+      <div id="results-area" class="hidden" style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+
+        <!-- Price cards -->
+        <div class="cards-row">
+          <div class="card">
+            <div class="card-label">BSM Theoretical Price</div>
+            <div class="card-value v-blue" id="c-bsm">—</div>
+            <div class="card-sub">Black-Scholes-Merton</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Monte Carlo Price</div>
+            <div class="card-value v-yellow" id="c-mc">—</div>
+            <div class="card-sub" id="c-mc-err">100,000 paths</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Moneyness</div>
+            <div class="card-value v-green" id="c-mono">—</div>
+            <div class="card-sub" id="c-mono-lbl">S / K</div>
+          </div>
+        </div>
+
+        <!-- Content: Greeks + Charts -->
+        <div class="content-area">
+
+          <!-- Greeks Table -->
+          <div class="greeks-panel">
+            <div class="panel-title">Greeks Summary</div>
+            <table class="greeks-table">
+              <thead>
+                <tr>
+                  <th>Greek</th>
+                  <th>Value</th>
+                  <th>Formula</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody id="greeks-body"></tbody>
+            </table>
+          </div>
+
+          <!-- Charts -->
+          <div class="charts-panel">
+            <div class="tab-bar">
+              <div class="tab active" id="tab-price"  onclick="switchTab('price')">Price Curve</div>
+              <div class="tab"        id="tab-greeks" onclick="switchTab('greeks')">Greeks Curves</div>
+            </div>
+
+            <!-- Price Chart -->
+            <div class="chart-wrap" id="wrap-price">
+              <div id="price-chart"></div>
+            </div>
+
+            <!-- Greeks Charts (5 mini charts) -->
+            <div class="chart-wrap hidden" id="wrap-greeks">
+              <div class="greeks-grid">
+                <div class="gc"><div id="gc-Delta"></div></div>
+                <div class="gc"><div id="gc-Gamma"></div></div>
+                <div class="gc"><div id="gc-Vega"></div></div>
+                <div class="gc"><div id="gc-Theta"></div></div>
+                <div class="gc"><div id="gc-Rho"></div></div>
+                <!-- 6th cell: label -->
+                <div class="gc" style="display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px; padding:14px; background:#06101a;">
+                  <div style="font-size:11px; color:#2e5070; font-weight:700; text-transform:uppercase; letter-spacing:1px;">Greeks vs S</div>
+                  <div style="font-size:10px; color:#1e3a50; text-align:center; line-height:1.6;">
+                    Delta — direction<br/>
+                    Gamma — convexity<br/>
+                    Vega — vol risk<br/>
+                    Theta — time decay<br/>
+                    Rho — rate risk
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /content-area -->
+      </div><!-- /results-area -->
+
+    </div><!-- /main -->
+  </div><!-- /body-layout -->
+
+  <script>
+    // ── State ──────────────────────────────────────────────
+    let currentFlag = 'c';
+    let priceChart  = null;
+    const gCharts   = {};         // Greek mini-charts keyed by name
+    const GREEK_COLORS = {
+      Delta: '#5bc8f5',
+      Gamma: '#ffa726',
+      Vega:  '#66bb6a',
+      Theta: '#f06060',
+      Rho:   '#ce93d8',
+    };
+    const GREEK_META = {
+      Delta: { formula: '∂V/∂S',    desc: 'Directional exposure / hedge ratio' },
+      Gamma: { formula: '∂²V/∂S²',  desc: 'Rate of Delta change (convexity)' },
+      Vega:  { formula: '∂V/∂σ',    desc: 'P&L per 1% volatility move' },
+      Theta: { formula: '∂V/∂t',    desc: 'Daily time decay (option buyer cost)' },
+      Rho:   { formula: '∂V/∂r',    desc: 'P&L per 1% interest rate move' },
+    };
+
+    // ── Option type toggle ──────────────────────────────────
+    function setFlag(f) {
+      currentFlag = f;
+      document.getElementById('btn-c').className =
+        'type-btn' + (f === 'c' ? ' active-call' : '');
+      document.getElementById('btn-p').className =
+        'type-btn' + (f === 'p' ? ' active-put' : '');
+    }
+
+    // ── Error / loading helpers ─────────────────────────────
+    function showError(msg) {
+      const el = document.getElementById('error-bar');
+      el.textContent = '⚠ ' + msg;
+      el.style.display = 'block';
+    }
+    function hideError() {
+      document.getElementById('error-bar').style.display = 'none';
+    }
+
+    // ── Collect & validate form inputs ─────────────────────
+    function getParams() {
+      const ids = ['S', 'K', 'T', 'r', 'sigma', 'q'];
+      const p = { flag: currentFlag };
+      for (const id of ids) {
+        const v = parseFloat(document.getElementById(id).value);
+        if (isNaN(v)) throw new Error(`Invalid value for "${id}"`);
+        p[id] = v;
+      }
+      return p;
+    }
+
+    // ── Main calculation ────────────────────────────────────
+    async function calculate() {
+      hideError();
+      let params;
+      try { params = getParams(); }
+      catch (e) { showError(e.message); return; }
+
+      try {
+        const resp = await fetch('/api/calculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { showError(data.error || 'Calculation failed'); return; }
+        renderResults(data, params);
+      } catch (e) {
+        showError('Network error — is the Flask server running? (' + e.message + ')');
+      }
+    }
+
+    // ── IV solver ───────────────────────────────────────────
+    async function solveIV() {
+      hideError();
+      const mp = parseFloat(document.getElementById('market_price').value);
+      if (isNaN(mp) || mp <= 0) { showError('Market price must be > 0'); return; }
+
+      let params;
+      try { params = getParams(); }
+      catch (e) { showError(e.message); return; }
+
+      const payload = { ...params, market_price: mp };
+      const el = document.getElementById('iv-result');
+      try {
+        const resp = await fetch('/api/iv', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        el.style.display = 'block';
+        if (!resp.ok) {
+          el.className = 'iv-result error';
+          el.textContent = data.error;
+        } else {
+          el.className = 'iv-result';
+          el.textContent = `Implied Volatility = ${(data.iv * 100).toFixed(4)}%`;
+        }
+      } catch (e) {
+        el.style.display = 'block';
+        el.className = 'iv-result error';
+        el.textContent = 'Network error: ' + e.message;
+      }
+    }
+
+    // ── Render all results ──────────────────────────────────
+    function renderResults(data, params) {
+      // Show results section
+      document.getElementById('placeholder').classList.add('hidden');
+      const ra = document.getElementById('results-area');
+      ra.classList.remove('hidden');
+      ra.style.display = 'flex';
+
+      // Price cards
+      document.getElementById('c-bsm').textContent = data.bsm_price.toFixed(4);
+      document.getElementById('c-mc').textContent  = data.mc_price.toFixed(4);
+      document.getElementById('c-mc-err').textContent =
+        `vs BSM Δ = ${Math.abs(data.bsm_price - data.mc_price).toFixed(4)}`;
+
+      const ratio = (params.S / params.K).toFixed(4);
+      let moneyTag = 'ATM';
+      if (params.S > params.K * 1.005) moneyTag = currentFlag === 'c' ? 'ITM ▲' : 'OTM ▼';
+      if (params.S < params.K * 0.995) moneyTag = currentFlag === 'c' ? 'OTM ▼' : 'ITM ▲';
+      document.getElementById('c-mono').textContent     = ratio;
+      document.getElementById('c-mono-lbl').textContent = moneyTag;
+
+      // Greeks table
+      const tbody = document.getElementById('greeks-body');
+      tbody.innerHTML = '';
+      for (const [name, val] of Object.entries(data.greeks)) {
+        const meta  = GREEK_META[name];
+        const color = GREEK_COLORS[name];
+        const cls   = val >= 0 ? 'pos' : 'neg';
+        tbody.innerHTML += `
+          <tr>
+            <td class="g-name" style="color:${color}">${name}</td>
+            <td class="g-value ${cls}">${val.toFixed(6)}</td>
+            <td class="g-sens">${meta.formula}</td>
+            <td class="g-desc">${meta.desc}</td>
+          </tr>`;
+      }
+
+      // Charts
+      renderPriceChart(data, params);
+      renderGreeksCharts(data, params);
+    }
+
+    // ── ECharts shared theme helper ─────────────────────────
+    function axisStyle(name = '', nameGap = 30) {
+      return {
+        name,
+        nameLocation: 'center',
+        nameGap,
+        nameTextStyle: { color: '#4a7aa0', fontSize: 11 },
+        axisLabel: { color: '#4a7aa0', fontSize: 10 },
+        axisLine:  { lineStyle: { color: '#1c3a60' } },
+        splitLine: { lineStyle: { color: '#111d2c' } },
+      };
+    }
+
+    // ── Price Chart ─────────────────────────────────────────
+    function renderPriceChart(data, params) {
+      const dom = document.getElementById('price-chart');
+      if (!priceChart) priceChart = echarts.init(dom, null, { renderer: 'canvas' });
+
+      const Sv = data.chart.S_values;
+      const Pv = data.chart.prices;
+      const Iv = data.chart.intrinsic;
+      const typeLabel = currentFlag === 'c' ? 'Call' : 'Put';
+
+      priceChart.setOption({
+        backgroundColor: 'transparent',
+        animation: true,
+        animationDuration: 500,
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: '#0d1f36',
+          borderColor: '#1c3a60',
+          textStyle: { color: '#d4e0ef', fontSize: 11 },
+          formatter(ps) {
+            let s = `<b>S = ${parseFloat(ps[0].axisValue).toFixed(1)}</b><br/>`;
+            ps.forEach(p => { s += `${p.marker} ${p.seriesName}: <b>${p.value}</b><br/>`; });
+            return s;
+          },
+        },
+        legend: {
+          data: ['BSM Price', 'Intrinsic Value'],
+          textStyle: { color: '#6a9abf', fontSize: 11 },
+          top: 8,
+        },
+        grid: { left: 65, right: 30, top: 50, bottom: 48 },
+        xAxis: {
+          type: 'value',
+          ...axisStyle('Underlying Price (S)', 32),
+          min: Math.min(...Sv),
+          max: Math.max(...Sv),
+        },
+        yAxis: {
+          type: 'value',
+          ...axisStyle('Option Price', 48),
+        },
+        series: [
+          {
+            name: 'BSM Price',
+            type: 'line',
+            data: Sv.map((s, i) => [s, Pv[i]]),
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { color: '#5bc8f5', width: 2.5 },
+            areaStyle: {
+              color: {
+                type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(91,200,245,0.18)' },
+                  { offset: 1, color: 'rgba(91,200,245,0.02)' },
+                ],
+              },
+            },
+          },
+          {
+            name: 'Intrinsic Value',
+            type: 'line',
+            data: Sv.map((s, i) => [s, Iv[i]]),
+            smooth: false,
+            symbol: 'none',
+            lineStyle: { color: '#ffd54f', width: 1.8, type: 'dashed' },
+          },
+          {
+            name: 'Strike',
+            type: 'line',
+            data: [],
+            markLine: {
+              data: [{ xAxis: params.K }],
+              lineStyle: { color: '#546e7a', type: 'dotted', width: 1.5 },
+              label: {
+                formatter: `K = ${params.K}`,
+                color: '#546e7a',
+                fontSize: 10,
+              },
+              symbol: ['none', 'none'],
+            },
+          },
+        ],
+      });
+    }
+
+    // ── Greeks Charts ───────────────────────────────────────
+    function renderGreeksCharts(data, params) {
+      const Sv = data.chart.S_values;
+
+      for (const [name, vals] of Object.entries(data.chart.greek_curves)) {
+        const dom = document.getElementById('gc-' + name);
+        if (!dom) continue;
+        if (!gCharts[name]) {
+          gCharts[name] = echarts.init(dom, null, { renderer: 'canvas' });
+        }
+        const color = GREEK_COLORS[name];
+        const meta  = GREEK_META[name];
+
+        gCharts[name].setOption({
+          backgroundColor: 'transparent',
+          animation: true,
+          animationDuration: 400,
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#0d1f36',
+            borderColor: '#1c3a60',
+            textStyle: { color: '#d4e0ef', fontSize: 10 },
+            formatter: ps =>
+              `S = ${parseFloat(ps[0].data[0]).toFixed(0)}<br/>` +
+              `<b style="color:${color}">${name}</b>: <b>${ps[0].data[1]}</b>`,
+          },
+          title: {
+            text: `${name}   ${meta.formula}`,
+            textStyle: { color, fontSize: 11, fontWeight: 700 },
+            top: 5, left: 8,
+          },
+          grid: { left: 46, right: 8, top: 34, bottom: 24 },
+          xAxis: {
+            type: 'value',
+            min: Math.min(...Sv),
+            max: Math.max(...Sv),
+            axisLabel: { color: '#3a5a78', fontSize: 9,
+                         formatter: v => Math.round(v).toString() },
+            axisLine: { lineStyle: { color: '#1c3a60' } },
+            splitLine: { show: false },
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: { color: '#3a5a78', fontSize: 9 },
+            axisLine: { lineStyle: { color: '#1c3a60' } },
+            splitLine: { lineStyle: { color: '#111d2c' } },
+          },
+          series: [{
+            type: 'line',
+            data: Sv.map((s, i) => [s, vals[i]]),
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { color, width: 2 },
+            markLine: {
+              data: [
+                { xAxis: params.K, name: 'Strike' },
+                { yAxis: 0,        name: 'Zero'   },
+              ],
+              lineStyle: { color: '#2a4a68', type: 'dotted', width: 1 },
+              label: { show: false },
+              symbol: ['none', 'none'],
+            },
+          }],
+        });
+      }
+    }
+
+    // ── Tab switching ───────────────────────────────────────
+    function switchTab(tab) {
+      document.getElementById('tab-price').classList.toggle('active',  tab === 'price');
+      document.getElementById('tab-greeks').classList.toggle('active', tab === 'greeks');
+      document.getElementById('wrap-price').classList.toggle('hidden',  tab !== 'price');
+      document.getElementById('wrap-greeks').classList.toggle('hidden', tab !== 'greeks');
+
+      // Trigger ECharts resize after DOM re-display
+      requestAnimationFrame(() => {
+        if (tab === 'price'  && priceChart) priceChart.resize();
+        if (tab === 'greeks') Object.values(gCharts).forEach(c => c.resize());
+      });
+    }
+
+    // ── Window resize ───────────────────────────────────────
+    window.addEventListener('resize', () => {
+      if (priceChart) priceChart.resize();
+      Object.values(gCharts).forEach(c => c.resize());
+    });
+
+    // ── Enter key shortcut ──────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter') calculate();
+    });
+  </script>
+</body>
+</html>
