@@ -1,805 +1,818 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Option Pricing Tool</title>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      background: #0c1420;
-      color: #d4e0ef;
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* ── Header ── */
-    .header {
-      background: linear-gradient(135deg, #0f2040 0%, #0b3060 100%);
-      border-bottom: 1px solid #1c3a60;
-      padding: 12px 28px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-shrink: 0;
-    }
-    .header-logo { font-size: 22px; }
-    .header-title { font-size: 17px; font-weight: 700; color: #5bc8f5; letter-spacing: 0.3px; }
-    .header-tags { display: flex; gap: 8px; margin-left: 8px; }
-    .tag {
-      font-size: 10px; padding: 2px 8px; border-radius: 10px;
-      border: 1px solid #1c3a60; color: #7baac8; background: #0d1f36;
-      text-transform: uppercase; letter-spacing: 0.5px;
-    }
-
-    /* ── Layout ── */
-    .body-layout {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    /* ── Sidebar ── */
-    .sidebar {
-      width: 270px;
-      min-width: 270px;
-      background: #0f1d2e;
-      border-right: 1px solid #1c3a60;
-      padding: 18px 16px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .section-label {
-      font-size: 10px;
-      font-weight: 700;
-      color: #4a7aa0;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      margin-bottom: 2px;
-    }
-
-    .type-toggle {
-      display: flex;
-      border: 1px solid #1c3a60;
-      border-radius: 7px;
-      overflow: hidden;
-    }
-    .type-btn {
-      flex: 1;
-      padding: 9px 0;
-      text-align: center;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.18s, color 0.18s;
-      color: #5a7a9a;
-      background: transparent;
-      border: none;
-    }
-    .type-btn.active-call { background: #0d3060; color: #5bc8f5; }
-    .type-btn.active-put  { background: #2d0d2a; color: #f59bde; }
-
-    .field-group { display: flex; flex-direction: column; gap: 3px; }
-    .field-group label { font-size: 11px; color: #6a8aaa; }
-    .field-group input[type=number] {
-      width: 100%;
-      padding: 7px 10px;
-      background: #0a1525;
-      border: 1px solid #1c3a60;
-      border-radius: 6px;
-      color: #d4e0ef;
-      font-size: 13px;
-      outline: none;
-      transition: border-color 0.15s;
-      -moz-appearance: textfield;
-    }
-    .field-group input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-    .field-group input[type=number]:focus { border-color: #5bc8f5; }
-
-    .divider { border: none; border-top: 1px solid #1c3a60; margin: 2px 0; }
-
-    .btn {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      border-radius: 7px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      letter-spacing: 0.3px;
-      transition: filter 0.15s, transform 0.1s;
-    }
-    .btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
-    .btn:active { transform: translateY(0); }
-    .btn-primary { background: linear-gradient(135deg, #0d4080, #1565c0); color: #e8f4ff; }
-    .btn-green   { background: linear-gradient(135deg, #1b4a2a, #2d7a4f); color: #b7f5ce; }
-
-    .iv-result {
-      display: none;
-      padding: 9px 12px;
-      background: #0a2018;
-      border: 1px solid #2a6040;
-      border-radius: 6px;
-      font-size: 12px;
-      color: #74c69d;
-    }
-    .iv-result.error { background: #200a0a; border-color: #602a2a; color: #f08080; }
-
-    /* ── Main panel ── */
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* ── Result cards row ── */
-    .cards-row {
-      display: flex;
-      gap: 12px;
-      padding: 14px 18px 0;
-      flex-shrink: 0;
-    }
-    .card {
-      flex: 1;
-      background: #0f1d2e;
-      border: 1px solid #1c3a60;
-      border-radius: 9px;
-      padding: 12px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-    }
-    .card-label { font-size: 10px; color: #4a7aa0; text-transform: uppercase; letter-spacing: 0.8px; }
-    .card-value { font-size: 22px; font-weight: 700; }
-    .card-sub   { font-size: 10px; color: #3a5a78; }
-    .v-blue   { color: #5bc8f5; }
-    .v-yellow { color: #ffd54f; }
-    .v-green  { color: #81c784; }
-
-    /* ── Content area (greeks + charts) ── */
-    .content-area {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-      padding: 12px 18px 14px;
-      gap: 14px;
-    }
-
-    /* ── Greeks panel ── */
-    .greeks-panel {
-      width: 320px;
-      min-width: 320px;
-      background: #0f1d2e;
-      border: 1px solid #1c3a60;
-      border-radius: 9px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .panel-title {
-      font-size: 10px;
-      font-weight: 700;
-      color: #4a7aa0;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      padding: 10px 14px;
-      border-bottom: 1px solid #1c3a60;
-    }
-    .greeks-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-    .greeks-table th {
-      background: #091525;
-      color: #4a7aa0;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      padding: 7px 10px;
-      text-align: left;
-      font-weight: 600;
-    }
-    .greeks-table td { padding: 8px 10px; border-bottom: 1px solid #122030; }
-    .greeks-table tr:last-child td { border-bottom: none; }
-    .g-name  { font-weight: 700; color: #d4e0ef; }
-    .g-value { font-weight: 700; font-family: 'Consolas', monospace; font-size: 13px; }
-    .g-sens  { color: #3a6080; font-size: 10px; }
-    .g-desc  { color: #2e5070; font-size: 10px; }
-    .pos { color: #5bc8f5; }
-    .neg { color: #f08080; }
-
-    /* ── Charts panel ── */
-    .charts-panel {
-      flex: 1;
-      background: #0f1d2e;
-      border: 1px solid #1c3a60;
-      border-radius: 9px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .tab-bar {
-      display: flex;
-      border-bottom: 1px solid #1c3a60;
-      background: #091525;
-      flex-shrink: 0;
-    }
-    .tab {
-      padding: 9px 22px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #4a7aa0;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: color 0.15s, border-color 0.15s;
-      letter-spacing: 0.3px;
-    }
-    .tab.active { color: #5bc8f5; border-bottom-color: #5bc8f5; }
-
-    .chart-wrap {
-      flex: 1;
-      overflow: hidden;
-      padding: 10px;
-    }
-    .chart-wrap.hidden { display: none; }
-
-    #price-chart { width: 100%; height: 100%; }
-
-    .greeks-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 8px;
-      height: 100%;
-    }
-    .gc { border-radius: 6px; overflow: hidden; background: #091525; }
-    .gc > div { width: 100%; height: 100%; }
-
-    /* ── Placeholder ── */
-    .placeholder {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: #2a4a68;
-      gap: 8px;
-    }
-    .placeholder-icon { font-size: 42px; }
-    .placeholder-title { font-size: 15px; font-weight: 600; color: #2e5070; }
-    .placeholder-sub   { font-size: 12px; color: #1e3a50; }
-
-    /* ── Error bar ── */
-    .error-bar {
-      display: none;
-      margin: 10px 18px 0;
-      padding: 9px 14px;
-      background: #200a0a;
-      border: 1px solid #6a2020;
-      border-radius: 7px;
-      color: #f08080;
-      font-size: 12px;
-      flex-shrink: 0;
-    }
-
-    /* ── Hidden utility ── */
-    .hidden { display: none !important; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Option Pricing Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+:root{--bg:#0c1420;--bg2:#0f1927;--bg3:#0d1626;--bgi:#09111e;--bd:#1c3a60;--tx:#d4e0ef;--tx2:#6b8db0;--blue:#0d6efd;--blu2:#4e9eff;--green:#20bf6b;--yellow:#f7b731;--red:#ff6b6b;--purple:#a55eea;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,#0f2040,#0b3060);border-bottom:1px solid var(--bd);padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.header-title{font-size:15px;font-weight:700;color:#5bc8f5}
+.tag{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--bd);color:var(--tx2);background:var(--bg3);text-transform:uppercase;letter-spacing:.5px}
+.body-layout{display:flex;flex:1;overflow:hidden}
+.sidebar{width:276px;min-width:276px;background:var(--bg3);border-right:1px solid var(--bd);padding:12px 13px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.sidebar::-webkit-scrollbar{width:4px}.sidebar::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.sec-label{font-size:10px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;border-bottom:1px solid var(--bd);padding-bottom:3px}
+.type-toggle{display:flex;gap:5px}
+.type-btn{flex:1;padding:6px;border:1px solid var(--bd);background:var(--bgi);color:var(--tx2);border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;transition:all .2s}
+.type-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.fg{display:flex;flex-direction:column;gap:2px;margin-bottom:5px}
+.fg label{font-size:10.5px;color:var(--tx2)}
+.inp-row{display:flex;gap:3px;align-items:center}
+.inp-row input{flex:1;min-width:0}
+input[type=number],input[type=text]{width:100%;padding:5px 7px;background:var(--bgi);border:1px solid var(--bd);border-radius:3px;color:var(--tx);font-size:12px;outline:none;transition:border .2s}
+input:focus{border-color:var(--blue)}
+.utog{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;flex-shrink:0}
+.utog button{padding:4px 6px;background:var(--bgi);border:none;color:var(--tx2);font-size:10px;cursor:pointer;transition:all .15s}
+.utog button.on{background:var(--blue);color:#fff}
+.preset-grid{display:flex;flex-direction:column;gap:3px}
+.pset{padding:5px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:3px;color:var(--tx2);font-size:10.5px;cursor:pointer;text-align:left;transition:all .15s}
+.pset:hover{border-color:var(--blue);color:var(--tx)}
+.btn{padding:7px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11.5px;font-weight:600;transition:all .2s;width:100%;margin-bottom:3px}
+.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:#0b5ed7}
+.btn-s{background:var(--bg2);border:1px solid var(--bd);color:var(--tx2);padding:6px 12px}.btn-s:hover{border-color:var(--blue);color:var(--tx)}
+.btn-ok{background:#0e3a1f;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;transition:all .2s}.btn-ok:hover{background:var(--green);color:#fff}
+.btn-exp{background:#0e2a0e;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;margin-top:2px;transition:all .2s}.btn-exp:hover{background:var(--green);color:#fff}
+.btn-del{padding:5px 10px;background:#2a0e0e;border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s}.btn-del:hover{background:var(--red);color:#fff}
+.port-add{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:9px;margin-top:3px;display:none;flex-direction:column;gap:5px}
+.port-add.open{display:flex}
+.iv-res{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:7px;margin-top:5px;font-size:11.5px;color:var(--green);display:none}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.err-toast{position:fixed;top:14px;right:20px;background:#2a0a0a;border:1px solid var(--red);border-radius:5px;padding:9px 14px;color:var(--red);font-size:11.5px;z-index:999;max-width:340px;display:none}
+.err-toast.show{display:block}
+.main-tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--bg3);flex-shrink:0;overflow-x:auto}
+.main-tabs::-webkit-scrollbar{height:0}
+.mtab{padding:9px 16px;background:transparent;border:none;color:var(--tx2);font-size:11.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.mtab:hover{color:var(--tx)}.mtab.on{color:var(--blu2);border-bottom-color:var(--blu2)}
+.tab-panel{flex:1;overflow-y:auto;padding:14px 18px;display:none}.tab-panel.on{display:block}
+.tab-panel::-webkit-scrollbar{width:4px}.tab-panel::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+.cards-row{display:flex;gap:10px;margin-bottom:12px}
+.card{flex:1;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:12px 14px}
+.card-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.card-val{font-size:22px;font-weight:700;color:var(--blu2)}
+.card-sub{font-size:10.5px;color:var(--tx2);margin-top:2px}
+.content-row{display:flex;gap:12px;height:calc(100vh - 214px);min-height:320px}
+.greeks-panel{width:330px;min-width:280px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:12px;overflow-y:auto}
+.charts-panel{flex:1;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:12px;display:flex;flex-direction:column;min-width:0}
+.panel-title{font-size:11px;font-weight:700;color:var(--blu2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+.gtable{width:100%;border-collapse:collapse;font-size:11px}
+.gtable th{padding:5px 7px;text-align:left;color:var(--tx2);font-weight:600;border-bottom:1px solid var(--bd);font-size:10px;text-transform:uppercase}
+.gtable td{padding:5px 7px;border-bottom:1px solid #0d1826}.gtable tr:last-child td{border-bottom:none}
+.g-name{font-weight:700}.g-val{font-weight:700;font-size:13px}.g-fml{color:var(--tx2);font-family:monospace;font-size:10px}.g-desc{color:var(--tx2);font-size:10px}
+.inner-tabs{display:flex;border-bottom:1px solid var(--bd);margin-bottom:10px;flex-shrink:0}
+.itab{padding:6px 12px;background:transparent;border:none;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.itab.on{color:var(--blu2);border-bottom-color:var(--blu2)}
+.gc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tab-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tab-hdr h2{font-size:14px;font-weight:700;color:var(--blu2)}
+.empty-state{text-align:center;padding:50px 20px;color:var(--tx2);font-size:12.5px}
+.tscroll{overflow-x:auto;border-radius:5px;margin-bottom:10px}
+.dtable{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
+.dtable th{padding:6px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;text-align:right;border-bottom:1px solid var(--bd)}
+.dtable th:nth-child(-n+3){text-align:left}
+.dtable td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:right}
+.dtable td:nth-child(-n+3){text-align:left}
+.dtable tr:hover td{background:#0f1e2e}
+.xbtn{background:none;border:none;color:var(--tx2);cursor:pointer;font-size:12px;padding:2px 5px}.xbtn:hover{color:var(--red)}
+.tot-row td{font-weight:700;color:var(--blu2);background:#08162a;border-top:1px solid var(--blue)}
+.totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.total-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:9px 12px}
+.total-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.total-val{font-size:15px;font-weight:700;color:var(--blu2)}
+.pos{color:var(--green)!important}.neg{color:var(--red)!important}
+.hint{font-size:11px;color:var(--tx2);margin-bottom:8px;line-height:1.5}
+.smile-layout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.smile-input-area{min-width:260px;max-width:320px}
+.smile-btns{display:flex;gap:6px;margin-top:7px}
+.mc-ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mc-ctrl label{font-size:11.5px;color:var(--tx2)}
+.mc-ctrl select{padding:4px 7px;background:var(--bgi);border:1px solid var(--bd);border-radius:3px;color:var(--tx);font-size:11.5px}
+.mc-stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.stat-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:9px 12px;min-width:110px}
+.stat-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.stat-val{font-size:14px;font-weight:700;color:var(--yellow)}
+.sens-section{margin-bottom:20px}
+.stbl{border-collapse:collapse;font-size:11px;min-width:360px}
+.stbl th{padding:6px 12px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border:1px solid var(--bd)}
+.stbl td{padding:6px 12px;border:1px solid #0c1520;text-align:center;font-weight:600}
+.stbl .rlbl{background:var(--bg3);color:var(--tx2);font-size:10px;text-align:left}
+.s-base{outline:2px solid var(--blue)!important}
+.about-card{max-width:700px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:26px 30px}
+.about-card h2{font-size:17px;font-weight:700;color:var(--blu2);margin-bottom:10px}
+.about-card>p{font-size:12.5px;color:var(--tx2);line-height:1.7;margin-bottom:18px}
+.a-sec{margin-bottom:16px}
+.a-sec h3{font-size:11.5px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;border-left:3px solid var(--blue);padding-left:9px}
+.a-sec ul{padding-left:18px;color:var(--tx2);font-size:11.5px;line-height:1.85}
+.a-sec p{font-size:11.5px;color:var(--tx2);line-height:1.7}
+.badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.badge{padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--blu2)}
+.code-blk{display:block;background:#04090f;border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
+</style>
 </head>
 <body>
+<div id="err-toast" class="err-toast"></div>
+<header class="header">
+  <span style="font-size:18px">&#128202;</span>
+  <span class="header-title">Option Pricing &amp; Risk Analytics Tool</span>
+  <span class="tag">BSM</span><span class="tag">Monte Carlo</span><span class="tag">Greeks</span><span class="tag">OTC Derivatives</span>
+</header>
+<div class="body-layout">
+<aside class="sidebar">
+  <!-- Option Type -->
+  <div>
+    <div class="sec-label">Option Type</div>
+    <div class="type-toggle">
+      <button class="type-btn on" id="btn-call" onclick="setFlag('c')">Call</button>
+      <button class="type-btn" id="btn-put" onclick="setFlag('p')">Put</button>
+    </div>
+  </div>
+  <!-- Parameters -->
+  <div>
+    <div class="sec-label">Parameters</div>
+    <div class="fg"><label>Spot Price (S)</label>
+      <div class="inp-row"><input type="number" id="S" value="5000" step="10"/></div>
+    </div>
+    <div class="fg"><label>Strike Price (K)</label>
+      <div class="inp-row"><input type="number" id="K" value="5000" step="10"/></div>
+    </div>
+    <div class="fg"><label>Time to Expiry (T)</label>
+      <div class="inp-row">
+        <input type="number" id="T" value="90" step="1"/>
+        <div class="utog">
+          <button id="t-days" class="on" onclick="setUnit('t','days')">Days</button>
+          <button id="t-yr" onclick="setUnit('t','yr')">Yr</button>
+        </div>
+      </div>
+    </div>
+    <div class="fg"><label>Risk-Free Rate (r)</label>
+      <div class="inp-row">
+        <input type="number" id="r" value="2.5" step="0.1"/>
+        <div class="utog">
+          <button id="r-pct" class="on" onclick="setUnit('r','pct')">%</button>
+          <button id="r-dec" onclick="setUnit('r','dec')">Dec</button>
+        </div>
+      </div>
+    </div>
+    <div class="fg"><label>Volatility (&sigma;)</label>
+      <div class="inp-row">
+        <input type="number" id="sig" value="20" step="0.5"/>
+        <div class="utog">
+          <button id="s-pct" class="on" onclick="setUnit('s','pct')">%</button>
+          <button id="s-dec" onclick="setUnit('s','dec')">Dec</button>
+        </div>
+      </div>
+    </div>
+    <div class="fg"><label>Dividend Yield (q)</label>
+      <div class="inp-row">
+        <input type="number" id="q" value="0" step="0.1"/>
+        <div class="utog">
+          <button id="q-pct" class="on" onclick="setUnit('q','pct')">%</button>
+          <button id="q-dec" onclick="setUnit('q','dec')">Dec</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Presets -->
+  <div>
+    <div class="sec-label">Presets</div>
+    <div class="preset-grid">
+      <button class="pset" onclick="loadPreset(0)">&#9654; ATM 3M Call (CSI 500)</button>
+      <button class="pset" onclick="loadPreset(1)">&#9654; OTM 6M Put (CSI 300)</button>
+      <button class="pset" onclick="loadPreset(2)">&#9654; Short High-Vol Call (GEM)</button>
+    </div>
+  </div>
+  <!-- Action -->
+  <div>
+    <div class="sec-label">Actions</div>
+    <button class="btn btn-p" onclick="calculate()">&#9654; Calculate</button>
+    <!-- Portfolio Add -->
+    <button class="btn btn-s" onclick="togglePortAdd()">+ Add to Portfolio</button>
+    <div class="port-add" id="port-add-panel">
+      <div class="fg" style="margin-bottom:0">
+        <label>Quantity (+ Long / - Short)</label>
+        <input type="number" id="pa-qty" value="1" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label>Entry Price (Option Premium)</label>
+        <input type="number" id="pa-entry" value="0" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label>Label (Optional)</label>
+        <input type="text" id="pa-label" placeholder="e.g. CSI500-Call-Mar"/>
+      </div>
+      <button class="btn-ok" onclick="addPosition()">&#10003; Confirm Add</button>
+    </div>
+    <!-- Export -->
+    <button class="btn-exp" onclick="exportExcel()">&#8659; Export Excel Report</button>
+  </div>
+  <!-- IV Solver -->
+  <div>
+    <div class="sec-label">IV Solver</div>
+    <div class="fg"><label>Market Option Price</label>
+      <input type="number" id="iv-mkt" placeholder="e.g. 180" step="1"/>
+    </div>
+    <button class="btn btn-s" onclick="solveIV()">Solve Implied Volatility</button>
+    <div class="iv-res" id="iv-res"></div>
+  </div>
+</aside>
+<div class="main">
+  <div class="main-tabs">
+    <button class="mtab on" onclick="switchMain('pricing')">&#128200; Pricing</button>
+    <button class="mtab" onclick="switchMain('portfolio')">&#128202; Portfolio</button>
+    <button class="mtab" onclick="switchMain('smile')">&#128516; Vol Smile</button>
+    <button class="mtab" onclick="switchMain('mc')">&#127922; MC Distribution</button>
+    <button class="mtab" onclick="switchMain('sens')">&#128737; Sensitivity</button>
+    <button class="mtab" onclick="switchMain('about')">&#128203; About</button>
+  </div>
 
-  <!-- Header -->
-  <div class="header">
-    <span class="header-logo">📈</span>
-    <span class="header-title">Option Pricing Tool</span>
-    <div class="header-tags">
-      <span class="tag">Black-Scholes-Merton</span>
-      <span class="tag">Monte Carlo</span>
-      <span class="tag">Greeks</span>
-      <span class="tag">ECharts</span>
+  <!-- PRICING TAB -->
+  <div class="tab-panel on" id="panel-pricing">
+    <div class="cards-row">
+      <div class="card">
+        <div class="card-label">BSM Price</div>
+        <div class="card-val" id="res-bsm">—</div>
+        <div class="card-sub" id="res-bsm-sub">Black-Scholes-Merton</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Monte Carlo Price</div>
+        <div class="card-val" id="res-mc">—</div>
+        <div class="card-sub" id="res-mc-sub">100,000 paths</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Intrinsic Value</div>
+        <div class="card-val" id="res-iv">—</div>
+        <div class="card-sub" id="res-iv-sub">Time Value: —</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Moneyness</div>
+        <div class="card-val" id="res-money">—</div>
+        <div class="card-sub" id="res-money-sub">S/K ratio</div>
+      </div>
+    </div>
+    <div class="content-row">
+      <div class="greeks-panel">
+        <div class="panel-title">Greeks &amp; Risk Metrics</div>
+        <table class="gtable" id="greeks-table">
+          <thead><tr><th>Greek</th><th>Value</th><th>Formula</th><th>Description</th></tr></thead>
+          <tbody id="greeks-tbody">
+            <tr><td colspan="4" style="text-align:center;color:var(--tx2);padding:20px;font-size:11px">Click Calculate to view Greeks</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="charts-panel">
+        <div class="inner-tabs">
+          <button class="itab on" onclick="switchInner('price-curve')">Price Curve</button>
+          <button class="itab" onclick="switchInner('greeks-curves')">Greeks Curves</button>
+        </div>
+        <div id="inner-price-curve" style="flex:1">
+          <div id="chart-price" style="width:100%;height:100%"></div>
+        </div>
+        <div id="inner-greeks-curves" style="flex:1;display:none">
+          <div class="gc-grid" style="height:100%">
+            <div id="gc-delta" style="height:200px"></div>
+            <div id="gc-gamma" style="height:200px"></div>
+            <div id="gc-vega" style="height:200px"></div>
+            <div id="gc-theta" style="height:200px"></div>
+            <div id="gc-rho" style="height:200px"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Body -->
-  <div class="body-layout">
+  <!-- PORTFOLIO TAB -->
+  <div class="tab-panel" id="panel-portfolio">
+    <div class="tab-hdr">
+      <h2>Portfolio Exposure Monitor</h2>
+    </div>
+    <p class="hint">Add individual option positions using the sidebar. The table below aggregates exposure across the entire portfolio and monitors combined Greeks.</p>
+    <div id="port-table-wrap">
+      <div class="empty-state" id="port-empty">No positions added yet.<br>Use "Add to Portfolio" in the sidebar to start.</div>
+      <div id="port-table-container" style="display:none">
+        <div class="tscroll">
+          <table class="dtable">
+            <thead><tr>
+              <th>ID</th><th>Label</th><th>Type</th>
+              <th>S</th><th>K</th><th>T(d)</th><th>Vol%</th><th>r%</th>
+              <th>Qty</th><th>Entry</th><th>MTM</th><th>P&amp;L</th>
+              <th>Delta</th><th>Gamma</th><th>Vega</th><th>Theta</th><th>Rho</th>
+              <th>Margin</th><th>Action</th>
+            </tr></thead>
+            <tbody id="port-tbody"></tbody>
+          </table>
+        </div>
+        <div class="totals-grid" id="port-totals"></div>
+      </div>
+    </div>
+  </div>
 
-    <!-- ── Sidebar: Inputs ── -->
-    <div class="sidebar">
-
-      <div>
-        <div class="section-label">Option Type</div>
-        <div class="type-toggle">
-          <button class="type-btn active-call" id="btn-c" onclick="setFlag('c')">▲ Call</button>
-          <button class="type-btn"             id="btn-p" onclick="setFlag('p')">▼ Put</button>
+  <!-- VOL SMILE TAB -->
+  <div class="tab-panel" id="panel-smile">
+    <div class="tab-hdr"><h2>Volatility Smile / Skew</h2></div>
+    <p class="hint">Enter market option prices for different strike prices to compute implied volatilities and visualize the volatility smile curve.</p>
+    <div class="smile-layout">
+      <div class="smile-input-area">
+        <div class="sec-label" style="margin-bottom:8px">Strike &amp; Market Price Pairs</div>
+        <div id="smile-rows"></div>
+        <div class="smile-btns">
+          <button class="btn btn-s" style="width:auto;padding:5px 12px" onclick="addSmileRow()">+ Add Row</button>
+          <button class="btn btn-p" style="width:auto;padding:5px 12px" onclick="calcVolSmile()">Compute</button>
         </div>
       </div>
+      <div style="flex:1;min-width:300px;min-height:340px">
+        <div id="chart-smile" style="width:100%;height:360px"></div>
+      </div>
+    </div>
+  </div>
 
-      <div class="field-group">
-        <label>Underlying Price (S)</label>
-        <input type="number" id="S" value="5500" step="10" />
-      </div>
-      <div class="field-group">
-        <label>Strike Price (K)</label>
-        <input type="number" id="K" value="5500" step="10" />
-      </div>
-      <div class="field-group">
-        <label>Time to Expiry — T (years, e.g. 0.25)</label>
-        <input type="number" id="T" value="0.25" step="0.01" />
-      </div>
-      <div class="field-group">
-        <label>Risk-Free Rate — r (e.g. 0.02 = 2%)</label>
-        <input type="number" id="r" value="0.02" step="0.001" />
-      </div>
-      <div class="field-group">
-        <label>Volatility — σ (e.g. 0.20 = 20%)</label>
-        <input type="number" id="sigma" value="0.20" step="0.01" />
-      </div>
-      <div class="field-group">
-        <label>Dividend Yield — q (e.g. 0.01 = 1%)</label>
-        <input type="number" id="q" value="0.01" step="0.001" />
-      </div>
+  <!-- MC DISTRIBUTION TAB -->
+  <div class="tab-panel" id="panel-mc">
+    <div class="tab-hdr"><h2>Monte Carlo P&amp;L Distribution</h2></div>
+    <p class="hint">Simulate option payoff paths and visualize the terminal P&amp;L distribution. Uses the current sidebar parameters.</p>
+    <div class="mc-ctrl">
+      <label>Paths:</label>
+      <select id="mc-paths">
+        <option value="10000">10,000</option>
+        <option value="50000" selected>50,000</option>
+        <option value="100000">100,000</option>
+        <option value="200000">200,000</option>
+      </select>
+      <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcMCDist()">Run Simulation</button>
+    </div>
+    <div class="mc-stats" id="mc-stats"></div>
+    <div id="chart-mc" style="width:100%;height:380px"></div>
+  </div>
 
-      <button class="btn btn-primary" onclick="calculate()">⚡ Calculate</button>
+  <!-- SENSITIVITY TAB -->
+  <div class="tab-panel" id="panel-sens">
+    <div class="tab-hdr"><h2>Sensitivity Analysis / Stress Test</h2></div>
+    <p class="hint">Stress test the option price and delta across ±20% volatility and ±60 day time shifts. The highlighted cell is the current parameter.</p>
+    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSensitivity()">Run Stress Test</button>
+    </div>
+    <div class="sens-section">
+      <div class="panel-title">Option Price Sensitivity</div>
+      <div class="tscroll"><div id="sens-price-table"></div></div>
+    </div>
+    <div class="sens-section">
+      <div class="panel-title">Delta Sensitivity</div>
+      <div class="tscroll"><div id="sens-delta-table"></div></div>
+    </div>
+  </div>
 
-      <hr class="divider" />
-
-      <div>
-        <div class="section-label">Implied Volatility Solver</div>
-        <div class="field-group" style="margin-top: 6px;">
-          <label>Market Price</label>
-          <input type="number" id="market_price" placeholder="Enter observed price" step="0.1" />
+  <!-- ABOUT TAB -->
+  <div class="tab-panel" id="panel-about">
+    <div class="about-card">
+      <h2>&#128202; Option Pricing &amp; Risk Analytics Tool</h2>
+      <p>A professional-grade option pricing and risk management tool designed for OTC derivatives roles. Features real-time BSM and Monte Carlo pricing, full Greek calculations, portfolio exposure monitoring, volatility smile analysis, and stress testing — all visualized in an interactive web interface.</p>
+      <div class="a-sec"><h3>Core Features</h3>
+        <ul>
+          <li>Black-Scholes-Merton pricing with full Greek calculations (Δ, Γ, ν, Θ, ρ)</li>
+          <li>Monte Carlo simulation (up to 200k paths) with P&amp;L distribution histogram</li>
+          <li>Implied volatility solver via Newton-Raphson / Brent method</li>
+          <li>Portfolio exposure aggregation — monitor combined portfolio Greeks</li>
+          <li>MTM valuation &amp; margin estimation per position</li>
+          <li>Volatility smile / skew visualization from market prices</li>
+          <li>Sensitivity stress test matrix (±20% vol, ±60 days)</li>
+          <li>One-click Excel report export (multi-sheet)</li>
+        </ul>
+      </div>
+      <div class="a-sec"><h3>Technology Stack</h3>
+        <div class="badges">
+          <span class="badge">Python 3.10+</span>
+          <span class="badge">Flask</span>
+          <span class="badge">py_vollib</span>
+          <span class="badge">NumPy</span>
+          <span class="badge">Pandas</span>
+          <span class="badge">openpyxl</span>
+          <span class="badge">ECharts 5</span>
         </div>
-        <button class="btn btn-green" style="margin-top: 8px;" onclick="solveIV()">🔍 Solve IV</button>
-        <div class="iv-result" id="iv-result"></div>
       </div>
-
-    </div><!-- /sidebar -->
-
-    <!-- ── Main Panel ── -->
-    <div class="main">
-
-      <div class="error-bar" id="error-bar"></div>
-
-      <!-- Placeholder -->
-      <div id="placeholder" class="content-area" style="padding:0;">
-        <div class="placeholder">
-          <div class="placeholder-icon">📊</div>
-          <div class="placeholder-title">Enter Parameters &amp; Click Calculate</div>
-          <div class="placeholder-sub">Default: CSI 500 Index Option — ATM Call — T=3M — σ=20%</div>
-        </div>
+      <div class="a-sec"><h3>Target Roles</h3>
+        <p>OTC Derivatives Trading Assistant &bull; Structured Products &bull; Financial Engineering &bull; Quantitative Research</p>
       </div>
+      <div class="a-sec"><h3>Quick Start</h3>
+        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl
+python app.py
+# Open http://localhost:5000 in browser</code>
+      </div>
+    </div>
+  </div>
 
-      <!-- Results (hidden until first calculation) -->
-      <div id="results-area" class="hidden" style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+</div><!-- .main -->
+</div><!-- .body-layout -->
 
-        <!-- Price cards -->
-        <div class="cards-row">
-          <div class="card">
-            <div class="card-label">BSM Theoretical Price</div>
-            <div class="card-value v-blue" id="c-bsm">—</div>
-            <div class="card-sub">Black-Scholes-Merton</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Monte Carlo Price</div>
-            <div class="card-value v-yellow" id="c-mc">—</div>
-            <div class="card-sub" id="c-mc-err">100,000 paths</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Moneyness</div>
-            <div class="card-value v-green" id="c-mono">—</div>
-            <div class="card-sub" id="c-mono-lbl">S / K</div>
-          </div>
-        </div>
+<script>
+// ========== STATE ==========
+let currentFlag='c', tUnit='days', rUnit='pct', sUnit='pct', qUnit='pct';
+let positions=[], posIdCounter=1, lastResult=null, lastParams=null;
+let chartPrice=null, chartSmile=null, chartMC=null;
+let gcCharts={delta:null,gamma:null,vega:null,theta:null,rho:null};
+let smileRowCount=0;
 
-        <!-- Content: Greeks + Charts -->
-        <div class="content-area">
+// ========== UTILS ==========
+function $(id){return document.getElementById(id)}
+function fmt(v,d=2){return v==null?'—':Number(v).toFixed(d)}
+function fmtC(v,d=2){
+  const s=fmt(v,d);
+  return `<span class="${v>=0?'pos':'neg'}">${s}</span>`;
+}
+function showErr(msg){
+  const t=$('err-toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),4000);
+}
+function getParams(){
+  const S=+$('S').value, K=+$('K').value;
+  let T=+$('T').value, r=+$('r').value, sig=+$('sig').value, q=+$('q').value;
+  if(tUnit==='days') T=T/365;
+  if(rUnit==='pct') r=r/100;
+  if(sUnit==='pct') sig=sig/100;
+  if(qUnit==='pct') q=q/100;
+  return {S,K,T,r,sigma:sig,q,flag:currentFlag};
+}
+function getRawInputs(){
+  return {
+    S:+$('S').value, K:+$('K').value,
+    T:$('T').value, tUnit,
+    r:$('r').value, rUnit,
+    sig:$('sig').value, sUnit,
+    q:$('q').value, qUnit,
+    flag:currentFlag
+  };
+}
 
-          <!-- Greeks Table -->
-          <div class="greeks-panel">
-            <div class="panel-title">Greeks Summary</div>
-            <table class="greeks-table">
-              <thead>
-                <tr>
-                  <th>Greek</th>
-                  <th>Value</th>
-                  <th>Formula</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody id="greeks-body"></tbody>
-            </table>
-          </div>
+// ========== TYPE ==========
+function setFlag(f){
+  currentFlag=f;
+  $('btn-call').classList.toggle('on',f==='c');
+  $('btn-put').classList.toggle('on',f==='p');
+}
 
-          <!-- Charts -->
-          <div class="charts-panel">
-            <div class="tab-bar">
-              <div class="tab active" id="tab-price"  onclick="switchTab('price')">Price Curve</div>
-              <div class="tab"        id="tab-greeks" onclick="switchTab('greeks')">Greeks Curves</div>
-            </div>
+// ========== UNITS ==========
+function setUnit(param,val){
+  if(param==='t'){tUnit=val;$('t-days').classList.toggle('on',val==='days');$('t-yr').classList.toggle('on',val==='yr');}
+  if(param==='r'){rUnit=val;$('r-pct').classList.toggle('on',val==='pct');$('r-dec').classList.toggle('on',val==='dec');}
+  if(param==='s'){sUnit=val;$('s-pct').classList.toggle('on',val==='pct');$('s-dec').classList.toggle('on',val==='dec');}
+  if(param==='q'){qUnit=val;$('q-pct').classList.toggle('on',val==='pct');$('q-dec').classList.toggle('on',val==='dec');}
+}
 
-            <!-- Price Chart -->
-            <div class="chart-wrap" id="wrap-price">
-              <div id="price-chart"></div>
-            </div>
+// ========== PRESETS ==========
+const PRESETS=[
+  {flag:'c',S:5000,K:5000,T:90,tUnit:'days',r:2.5,rUnit:'pct',sig:22,sUnit:'pct',q:0,qUnit:'pct',label:'ATM 3M Call (CSI 500)'},
+  {flag:'p',S:3800,K:3500,T:180,tUnit:'days',r:2.5,rUnit:'pct',sig:20,sUnit:'pct',q:1,qUnit:'pct',label:'OTM 6M Put (CSI 300)'},
+  {flag:'c',S:2500,K:2600,T:30,tUnit:'days',r:2.5,rUnit:'pct',sig:35,sUnit:'pct',q:0,qUnit:'pct',label:'High-Vol OTM Call (GEM)'},
+];
+function loadPreset(i){
+  const ps=PRESETS[i];
+  setFlag(ps.flag);
+  $('S').value=ps.S; $('K').value=ps.K; $('T').value=ps.T; setUnit('t',ps.tUnit);
+  $('r').value=ps.r; setUnit('r',ps.rUnit);
+  $('sig').value=ps.sig; setUnit('s',ps.sUnit);
+  $('q').value=ps.q; setUnit('q',ps.qUnit);
+  calculate();
+}
 
-            <!-- Greeks Charts (5 mini charts) -->
-            <div class="chart-wrap hidden" id="wrap-greeks">
-              <div class="greeks-grid">
-                <div class="gc"><div id="gc-Delta"></div></div>
-                <div class="gc"><div id="gc-Gamma"></div></div>
-                <div class="gc"><div id="gc-Vega"></div></div>
-                <div class="gc"><div id="gc-Theta"></div></div>
-                <div class="gc"><div id="gc-Rho"></div></div>
-                <!-- 6th cell: label -->
-                <div class="gc" style="display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px; padding:14px; background:#06101a;">
-                  <div style="font-size:11px; color:#2e5070; font-weight:700; text-transform:uppercase; letter-spacing:1px;">Greeks vs S</div>
-                  <div style="font-size:10px; color:#1e3a50; text-align:center; line-height:1.6;">
-                    Delta — direction<br/>
-                    Gamma — convexity<br/>
-                    Vega — vol risk<br/>
-                    Theta — time decay<br/>
-                    Rho — rate risk
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+// ========== TABS ==========
+const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',smile:'panel-smile',mc:'panel-mc',sens:'panel-sens',about:'panel-about'};
+function switchMain(key){
+  document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
+  $(PANELS[key]).classList.add('on');
+  requestAnimationFrame(()=>{
+    if(chartPrice) chartPrice.resize();
+    if(chartSmile) chartSmile.resize();
+    if(chartMC) chartMC.resize();
+    Object.values(gcCharts).forEach(c=>c&&c.resize());
+  });
+}
+function switchInner(key){
+  document.querySelectorAll('.itab').forEach((b,i)=>b.classList.toggle('on',['price-curve','greeks-curves'][i]===key));
+  $('inner-price-curve').style.display=key==='price-curve'?'flex':'none';
+  $('inner-greeks-curves').style.display=key==='greeks-curves'?'flex':'none';
+  requestAnimationFrame(()=>{
+    if(chartPrice) chartPrice.resize();
+    Object.values(gcCharts).forEach(c=>c&&c.resize());
+  });
+}
 
-        </div><!-- /content-area -->
-      </div><!-- /results-area -->
+// ========== CALCULATE ==========
+async function calculate(){
+  const params=getParams();
+  if(params.T<=0){showErr('Time to expiry must be greater than 0.');return;}
+  if(params.sigma<=0||params.sigma>5){showErr('Volatility must be between 0% and 500%.');return;}
+  if(params.S<=0||params.K<=0){showErr('Spot and Strike prices must be positive.');return;}
+  try{
+    const res=await fetch('/api/calculate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
+    const d=await res.json();
+    if(d.error){showErr(d.error);return;}
+    lastResult=d; lastParams=params;
+    renderPricing(d,params);
+  }catch(e){showErr('Connection error: '+e.message);}
+}
 
-    </div><!-- /main -->
-  </div><!-- /body-layout -->
+function renderPricing(d,p){
+  $('res-bsm').textContent=fmt(d.bsm_price,2);
+  $('res-bsm-sub').textContent=`BSM | ${p.flag==='c'?'Call':'Put'}`;
+  $('res-mc').textContent=fmt(d.mc_price,2);
+  $('res-mc-sub').textContent='100,000 GBM paths';
+  const intrinsic=p.flag==='c'?Math.max(0,p.S-p.K):Math.max(0,p.K-p.S);
+  $('res-iv').textContent=fmt(intrinsic,2);
+  $('res-iv-sub').textContent='Time Value: '+fmt(d.bsm_price-intrinsic,2);
+  const mon=(p.S/p.K-1)*100;
+  const monLabel=Math.abs(mon)<1?'ATM':mon>0?'ITM':'OTM';
+  $('res-money').textContent=monLabel;
+  $('res-money-sub').textContent=`S/K = ${fmt(p.S/p.K,4)} (${mon>=0?'+':''}${fmt(mon,1)}%)`;
 
-  <script>
-    // ── State ──────────────────────────────────────────────
-    let currentFlag = 'c';
-    let priceChart  = null;
-    const gCharts   = {};         // Greek mini-charts keyed by name
-    const GREEK_COLORS = {
-      Delta: '#5bc8f5',
-      Gamma: '#ffa726',
-      Vega:  '#66bb6a',
-      Theta: '#f06060',
-      Rho:   '#ce93d8',
-    };
-    const GREEK_META = {
-      Delta: { formula: '∂V/∂S',    desc: 'Directional exposure / hedge ratio' },
-      Gamma: { formula: '∂²V/∂S²',  desc: 'Rate of Delta change (convexity)' },
-      Vega:  { formula: '∂V/∂σ',    desc: 'P&L per 1% volatility move' },
-      Theta: { formula: '∂V/∂t',    desc: 'Daily time decay (option buyer cost)' },
-      Rho:   { formula: '∂V/∂r',    desc: 'P&L per 1% interest rate move' },
-    };
+  const g=d.greeks;
+  const rows=[
+    ['Δ Delta',g.delta,'∂V/∂S','Spot price sensitivity'],
+    ['Γ Gamma',g.gamma,'∂²V/∂S²','Delta change rate'],
+    ['ν Vega',g.vega,'∂V/∂σ','Volatility sensitivity (per 1%)'],
+    ['Θ Theta',g.theta,'∂V/∂t','Time decay (per day)'],
+    ['ρ Rho',g.rho,'∂V/∂r','Interest rate sensitivity'],
+  ];
+  $('greeks-tbody').innerHTML=rows.map(([n,v,f,desc])=>
+    `<tr><td class="g-name">${n}</td><td class="g-val ${v>=0?'pos':'neg'}">${fmt(v,4)}</td><td class="g-fml">${f}</td><td class="g-desc">${desc}</td></tr>`
+  ).join('');
+  renderPriceChart(d,p);
+  renderGreeksCharts(d,p);
+}
 
-    // ── Option type toggle ──────────────────────────────────
-    function setFlag(f) {
-      currentFlag = f;
-      document.getElementById('btn-c').className =
-        'type-btn' + (f === 'c' ? ' active-call' : '');
-      document.getElementById('btn-p').className =
-        'type-btn' + (f === 'p' ? ' active-put' : '');
-    }
+function renderPriceChart(d,p){
+  if(!chartPrice) chartPrice=echarts.init($('chart-price'));
+  const xs=d.price_curve.spots, ys=d.price_curve.prices;
+  const kLine=[[p.K,0],[p.K,Math.max(...ys)*1.1]];
+  chartPrice.setOption({
+    backgroundColor:'transparent',
+    grid:{left:50,right:20,top:30,bottom:40},
+    tooltip:{trigger:'axis',formatter:arr=>`Spot: ${arr[0].axisValue}<br/>Price: ${fmt(arr[0].data,2)}`},
+    xAxis:{type:'value',name:'Spot Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+    yAxis:{type:'value',name:'Option Price',nameLocation:'middle',nameGap:40,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+    series:[
+      {type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color:'#4e9eff',width:2},showSymbol:false,areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(78,158,255,0.25)'},{offset:1,color:'rgba(78,158,255,0.02)'}]}}},
+      {type:'line',data:kLine,lineStyle:{color:'#f7b731',type:'dashed',width:1.5},showSymbol:false,tooltip:{show:false}},
+    ]
+  });
+}
 
-    // ── Error / loading helpers ─────────────────────────────
-    function showError(msg) {
-      const el = document.getElementById('error-bar');
-      el.textContent = '⚠ ' + msg;
-      el.style.display = 'block';
-    }
-    function hideError() {
-      document.getElementById('error-bar').style.display = 'none';
-    }
-
-    // ── Collect & validate form inputs ─────────────────────
-    function getParams() {
-      const ids = ['S', 'K', 'T', 'r', 'sigma', 'q'];
-      const p = { flag: currentFlag };
-      for (const id of ids) {
-        const v = parseFloat(document.getElementById(id).value);
-        if (isNaN(v)) throw new Error(`Invalid value for "${id}"`);
-        p[id] = v;
-      }
-      return p;
-    }
-
-    // ── Main calculation ────────────────────────────────────
-    async function calculate() {
-      hideError();
-      let params;
-      try { params = getParams(); }
-      catch (e) { showError(e.message); return; }
-
-      try {
-        const resp = await fetch('/api/calculate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        });
-        const data = await resp.json();
-        if (!resp.ok) { showError(data.error || 'Calculation failed'); return; }
-        renderResults(data, params);
-      } catch (e) {
-        showError('Network error — is the Flask server running? (' + e.message + ')');
-      }
-    }
-
-    // ── IV solver ───────────────────────────────────────────
-    async function solveIV() {
-      hideError();
-      const mp = parseFloat(document.getElementById('market_price').value);
-      if (isNaN(mp) || mp <= 0) { showError('Market price must be > 0'); return; }
-
-      let params;
-      try { params = getParams(); }
-      catch (e) { showError(e.message); return; }
-
-      const payload = { ...params, market_price: mp };
-      const el = document.getElementById('iv-result');
-      try {
-        const resp = await fetch('/api/iv', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        el.style.display = 'block';
-        if (!resp.ok) {
-          el.className = 'iv-result error';
-          el.textContent = data.error;
-        } else {
-          el.className = 'iv-result';
-          el.textContent = `Implied Volatility = ${(data.iv * 100).toFixed(4)}%`;
-        }
-      } catch (e) {
-        el.style.display = 'block';
-        el.className = 'iv-result error';
-        el.textContent = 'Network error: ' + e.message;
-      }
-    }
-
-    // ── Render all results ──────────────────────────────────
-    function renderResults(data, params) {
-      // Show results section
-      document.getElementById('placeholder').classList.add('hidden');
-      const ra = document.getElementById('results-area');
-      ra.classList.remove('hidden');
-      ra.style.display = 'flex';
-
-      // Price cards
-      document.getElementById('c-bsm').textContent = data.bsm_price.toFixed(4);
-      document.getElementById('c-mc').textContent  = data.mc_price.toFixed(4);
-      document.getElementById('c-mc-err').textContent =
-        `vs BSM Δ = ${Math.abs(data.bsm_price - data.mc_price).toFixed(4)}`;
-
-      const ratio = (params.S / params.K).toFixed(4);
-      let moneyTag = 'ATM';
-      if (params.S > params.K * 1.005) moneyTag = currentFlag === 'c' ? 'ITM ▲' : 'OTM ▼';
-      if (params.S < params.K * 0.995) moneyTag = currentFlag === 'c' ? 'OTM ▼' : 'ITM ▲';
-      document.getElementById('c-mono').textContent     = ratio;
-      document.getElementById('c-mono-lbl').textContent = moneyTag;
-
-      // Greeks table
-      const tbody = document.getElementById('greeks-body');
-      tbody.innerHTML = '';
-      for (const [name, val] of Object.entries(data.greeks)) {
-        const meta  = GREEK_META[name];
-        const color = GREEK_COLORS[name];
-        const cls   = val >= 0 ? 'pos' : 'neg';
-        tbody.innerHTML += `
-          <tr>
-            <td class="g-name" style="color:${color}">${name}</td>
-            <td class="g-value ${cls}">${val.toFixed(6)}</td>
-            <td class="g-sens">${meta.formula}</td>
-            <td class="g-desc">${meta.desc}</td>
-          </tr>`;
-      }
-
-      // Charts
-      renderPriceChart(data, params);
-      renderGreeksCharts(data, params);
-    }
-
-    // ── ECharts shared theme helper ─────────────────────────
-    function axisStyle(name = '', nameGap = 30) {
-      return {
-        name,
-        nameLocation: 'center',
-        nameGap,
-        nameTextStyle: { color: '#4a7aa0', fontSize: 11 },
-        axisLabel: { color: '#4a7aa0', fontSize: 10 },
-        axisLine:  { lineStyle: { color: '#1c3a60' } },
-        splitLine: { lineStyle: { color: '#111d2c' } },
-      };
-    }
-
-    // ── Price Chart ─────────────────────────────────────────
-    function renderPriceChart(data, params) {
-      const dom = document.getElementById('price-chart');
-      if (!priceChart) priceChart = echarts.init(dom, null, { renderer: 'canvas' });
-
-      const Sv = data.chart.S_values;
-      const Pv = data.chart.prices;
-      const Iv = data.chart.intrinsic;
-      const typeLabel = currentFlag === 'c' ? 'Call' : 'Put';
-
-      priceChart.setOption({
-        backgroundColor: 'transparent',
-        animation: true,
-        animationDuration: 500,
-        tooltip: {
-          trigger: 'axis',
-          backgroundColor: '#0d1f36',
-          borderColor: '#1c3a60',
-          textStyle: { color: '#d4e0ef', fontSize: 11 },
-          formatter(ps) {
-            let s = `<b>S = ${parseFloat(ps[0].axisValue).toFixed(1)}</b><br/>`;
-            ps.forEach(p => { s += `${p.marker} ${p.seriesName}: <b>${p.value}</b><br/>`; });
-            return s;
-          },
-        },
-        legend: {
-          data: ['BSM Price', 'Intrinsic Value'],
-          textStyle: { color: '#6a9abf', fontSize: 11 },
-          top: 8,
-        },
-        grid: { left: 65, right: 30, top: 50, bottom: 48 },
-        xAxis: {
-          type: 'value',
-          ...axisStyle('Underlying Price (S)', 32),
-          min: Math.min(...Sv),
-          max: Math.max(...Sv),
-        },
-        yAxis: {
-          type: 'value',
-          ...axisStyle('Option Price', 48),
-        },
-        series: [
-          {
-            name: 'BSM Price',
-            type: 'line',
-            data: Sv.map((s, i) => [s, Pv[i]]),
-            smooth: true,
-            symbol: 'none',
-            lineStyle: { color: '#5bc8f5', width: 2.5 },
-            areaStyle: {
-              color: {
-                type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(91,200,245,0.18)' },
-                  { offset: 1, color: 'rgba(91,200,245,0.02)' },
-                ],
-              },
-            },
-          },
-          {
-            name: 'Intrinsic Value',
-            type: 'line',
-            data: Sv.map((s, i) => [s, Iv[i]]),
-            smooth: false,
-            symbol: 'none',
-            lineStyle: { color: '#ffd54f', width: 1.8, type: 'dashed' },
-          },
-          {
-            name: 'Strike',
-            type: 'line',
-            data: [],
-            markLine: {
-              data: [{ xAxis: params.K }],
-              lineStyle: { color: '#546e7a', type: 'dotted', width: 1.5 },
-              label: {
-                formatter: `K = ${params.K}`,
-                color: '#546e7a',
-                fontSize: 10,
-              },
-              symbol: ['none', 'none'],
-            },
-          },
-        ],
-      });
-    }
-
-    // ── Greeks Charts ───────────────────────────────────────
-    function renderGreeksCharts(data, params) {
-      const Sv = data.chart.S_values;
-
-      for (const [name, vals] of Object.entries(data.chart.greek_curves)) {
-        const dom = document.getElementById('gc-' + name);
-        if (!dom) continue;
-        if (!gCharts[name]) {
-          gCharts[name] = echarts.init(dom, null, { renderer: 'canvas' });
-        }
-        const color = GREEK_COLORS[name];
-        const meta  = GREEK_META[name];
-
-        gCharts[name].setOption({
-          backgroundColor: 'transparent',
-          animation: true,
-          animationDuration: 400,
-          tooltip: {
-            trigger: 'axis',
-            backgroundColor: '#0d1f36',
-            borderColor: '#1c3a60',
-            textStyle: { color: '#d4e0ef', fontSize: 10 },
-            formatter: ps =>
-              `S = ${parseFloat(ps[0].data[0]).toFixed(0)}<br/>` +
-              `<b style="color:${color}">${name}</b>: <b>${ps[0].data[1]}</b>`,
-          },
-          title: {
-            text: `${name}   ${meta.formula}`,
-            textStyle: { color, fontSize: 11, fontWeight: 700 },
-            top: 5, left: 8,
-          },
-          grid: { left: 46, right: 8, top: 34, bottom: 24 },
-          xAxis: {
-            type: 'value',
-            min: Math.min(...Sv),
-            max: Math.max(...Sv),
-            axisLabel: { color: '#3a5a78', fontSize: 9,
-                         formatter: v => Math.round(v).toString() },
-            axisLine: { lineStyle: { color: '#1c3a60' } },
-            splitLine: { show: false },
-          },
-          yAxis: {
-            type: 'value',
-            axisLabel: { color: '#3a5a78', fontSize: 9 },
-            axisLine: { lineStyle: { color: '#1c3a60' } },
-            splitLine: { lineStyle: { color: '#111d2c' } },
-          },
-          series: [{
-            type: 'line',
-            data: Sv.map((s, i) => [s, vals[i]]),
-            smooth: true,
-            symbol: 'none',
-            lineStyle: { color, width: 2 },
-            markLine: {
-              data: [
-                { xAxis: params.K, name: 'Strike' },
-                { yAxis: 0,        name: 'Zero'   },
-              ],
-              lineStyle: { color: '#2a4a68', type: 'dotted', width: 1 },
-              label: { show: false },
-              symbol: ['none', 'none'],
-            },
-          }],
-        });
-      }
-    }
-
-    // ── Tab switching ───────────────────────────────────────
-    function switchTab(tab) {
-      document.getElementById('tab-price').classList.toggle('active',  tab === 'price');
-      document.getElementById('tab-greeks').classList.toggle('active', tab === 'greeks');
-      document.getElementById('wrap-price').classList.toggle('hidden',  tab !== 'price');
-      document.getElementById('wrap-greeks').classList.toggle('hidden', tab !== 'greeks');
-
-      // Trigger ECharts resize after DOM re-display
-      requestAnimationFrame(() => {
-        if (tab === 'price'  && priceChart) priceChart.resize();
-        if (tab === 'greeks') Object.values(gCharts).forEach(c => c.resize());
-      });
-    }
-
-    // ── Window resize ───────────────────────────────────────
-    window.addEventListener('resize', () => {
-      if (priceChart) priceChart.resize();
-      Object.values(gCharts).forEach(c => c.resize());
+function renderGreeksCharts(d,p){
+  const xs=d.price_curve.spots;
+  const greekDefs=[
+    {key:'delta',label:'Delta',color:'#4e9eff'},
+    {key:'gamma',label:'Gamma',color:'#20bf6b'},
+    {key:'vega',label:'Vega',color:'#f7b731'},
+    {key:'theta',label:'Theta',color:'#ff6b6b'},
+    {key:'rho',label:'Rho',color:'#a55eea'},
+  ];
+  greekDefs.forEach(({key,label,color})=>{
+    const el=$('gc-'+key);
+    if(!gcCharts[key]) gcCharts[key]=echarts.init(el);
+    const ys=d.greeks_curve[key]||[];
+    gcCharts[key].setOption({
+      backgroundColor:'transparent',
+      title:{text:label,textStyle:{color:'#d4e0ef',fontSize:11},left:8,top:4},
+      grid:{left:40,right:10,top:28,bottom:30},
+      tooltip:{trigger:'axis',formatter:a=>`Spot: ${a[0].axisValue}<br/>${label}: ${fmt(a[0].data,4)}`},
+      xAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+      yAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+      series:[{type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color,width:1.5},showSymbol:false}]
     });
+  });
+}
+</script>
 
-    // ── Enter key shortcut ──────────────────────────────────
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Enter') calculate();
+<script>
+// ========== PORTFOLIO ==========
+function togglePortAdd(){
+  const el=$('port-add-panel');
+  el.classList.toggle('open');
+}
+function addPosition(){
+  if(!lastResult){showErr('Please calculate option price first.');return;}
+  const qty=+$('pa-qty').value||1;
+  const entry=+$('pa-entry').value||lastResult.bsm_price;
+  const lbl=$('pa-label').value||('Pos-'+posIdCounter);
+  const raw=getRawInputs();
+  positions.push({id:posIdCounter++, label:lbl, qty, entry,
+    flag:lastParams.flag, S:lastParams.S, K:lastParams.K,
+    T:lastParams.T, r:lastParams.r, sigma:lastParams.sigma, q:lastParams.q,
+    T_raw:raw.T, tUnit:raw.tUnit});
+  $('pa-label').value='';
+  $('port-add-panel').classList.remove('open');
+  refreshPortfolio();
+}
+function removePosition(id){
+  positions=positions.filter(p=>p.id!==id);
+  refreshPortfolio();
+}
+async function refreshPortfolio(){
+  if(positions.length===0){
+    $('port-empty').style.display='block';
+    $('port-table-container').style.display='none';
+    return;
+  }
+  try{
+    const res=await fetch('/api/portfolio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({positions})});
+    const d=await res.json();
+    if(d.error){showErr(d.error);return;}
+    renderPortfolio(d);
+  }catch(e){showErr('Portfolio error: '+e.message);}
+}
+function renderPortfolio(d){
+  $('port-empty').style.display='none';
+  $('port-table-container').style.display='block';
+  const pos=d.positions;
+  $('port-tbody').innerHTML=pos.map(r=>`<tr>
+    <td>${r.id}</td>
+    <td>${r.label}</td>
+    <td>${r.flag==='c'?'Call':'Put'}</td>
+    <td>${fmt(r.S,0)}</td><td>${fmt(r.K,0)}</td><td>${r.T_days}</td>
+    <td>${fmt(r.sigma*100,1)}%</td><td>${fmt(r.r*100,1)}%</td>
+    <td>${r.qty}</td><td>${fmt(r.entry,2)}</td>
+    <td>${fmt(r.mtm,2)}</td>
+    <td>${fmtC(r.pnl,2)}</td>
+    <td>${fmtC(r.delta_net,4)}</td>
+    <td>${fmt(r.gamma_net,4)}</td>
+    <td>${fmt(r.vega_net,4)}</td>
+    <td>${fmtC(r.theta_net,4)}</td>
+    <td>${fmtC(r.rho_net,4)}</td>
+    <td>${fmt(r.margin,0)}</td>
+    <td><button class="xbtn" onclick="removePosition(${r.id})">&#10005;</button></td>
+  </tr>`).join('');
+  const t=d.totals;
+  $('port-totals').innerHTML=`
+    <div class="total-card"><div class="total-label">Total MTM Value</div><div class="total-val">${fmt(t.total_mtm,2)}</div></div>
+    <div class="total-card"><div class="total-label">Total P&L</div><div class="total-val ${t.total_pnl>=0?'pos':'neg'}">${fmt(t.total_pnl,2)}</div></div>
+    <div class="total-card"><div class="total-label">Net Delta</div><div class="total-val ${t.net_delta>=0?'pos':'neg'}">${fmt(t.net_delta,4)}</div></div>
+    <div class="total-card"><div class="total-label">Net Gamma</div><div class="total-val">${fmt(t.net_gamma,4)}</div></div>
+    <div class="total-card"><div class="total-label">Net Vega</div><div class="total-val">${fmt(t.net_vega,4)}</div></div>
+    <div class="total-card"><div class="total-label">Net Theta</div><div class="total-val ${t.net_theta>=0?'pos':'neg'}">${fmt(t.net_theta,4)}</div></div>
+    <div class="total-card"><div class="total-label">Net Rho</div><div class="total-val">${fmt(t.net_rho,4)}</div></div>
+    <div class="total-card"><div class="total-label">Total Margin</div><div class="total-val">${fmt(t.total_margin,0)}</div></div>`;
+}
+
+// ========== IV SOLVER ==========
+async function solveIV(){
+  const mkt=+$('iv-mkt').value;
+  if(!mkt){showErr('Enter market option price for IV solving.');return;}
+  const params=getParams();
+  try{
+    const res=await fetch('/api/iv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...params,market_price:mkt})});
+    const d=await res.json();
+    const el=$('iv-res');
+    if(d.error){el.style.display='block';el.style.color='var(--red)';el.textContent='Error: '+d.error;return;}
+    el.style.display='block';
+    el.style.color='var(--green)';
+    el.innerHTML=`Implied Volatility: <b>${fmt(d.implied_volatility*100,2)}%</b>`;
+  }catch(e){showErr('IV error: '+e.message);}
+}
+
+// ========== EXPORT ==========
+async function exportExcel(){
+  if(!lastResult){showErr('Please calculate first.');return;}
+  try{
+    const params=getParams();
+    const body={params, result:lastResult, positions};
+    const res=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){const d=await res.json();showErr(d.error||'Export failed');return;}
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='option_report.xlsx'; a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){showErr('Export error: '+e.message);}
+}
+
+// ========== VOL SMILE ==========
+function initSmileRows(){
+  const base=lastParams?lastParams.K:5000;
+  const rows=[-10,-5,0,5,10].map(d=>({K:base+base*d/100,mp:''}));
+  $('smile-rows').innerHTML='';
+  rows.forEach(r=>{smileRowCount++;addSmileRow(r.K,r.mp);});
+}
+function addSmileRow(K='',mp=''){
+  smileRowCount++;
+  const id=smileRowCount;
+  const div=document.createElement('div');
+  div.id='srow-'+id;
+  div.style.cssText='display:flex;gap:4px;margin-bottom:4px;align-items:center';
+  div.innerHTML=`<input type="number" placeholder="Strike K" value="${K}" style="flex:1;font-size:11px;padding:4px 6px"/>
+  <input type="number" placeholder="Market Price" value="${mp}" style="flex:1;font-size:11px;padding:4px 6px"/>
+  <button class="xbtn" onclick="this.parentElement.remove()">&#10005;</button>`;
+  $('smile-rows').appendChild(div);
+}
+async function calcVolSmile(){
+  const params=getParams();
+  const rows=[...$('smile-rows').children];
+  const pairs=rows.map(r=>{
+    const inps=r.querySelectorAll('input');
+    return {K:+inps[0].value, market_price:+inps[1].value};
+  }).filter(r=>r.K>0&&r.market_price>0);
+  if(pairs.length<2){showErr('Need at least 2 valid strike/price pairs.');return;}
+  try{
+    const res=await fetch('/api/vol_smile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...params,pairs})});
+    const d=await res.json();
+    if(d.error){showErr(d.error);return;}
+    renderVolSmile(d);
+  }catch(e){showErr('Vol smile error: '+e.message);}
+}
+function renderVolSmile(d){
+  if(!chartSmile) chartSmile=echarts.init($('chart-smile'));
+  const valid=d.results.filter(r=>!r.error&&r.iv!=null);
+  chartSmile.setOption({
+    backgroundColor:'transparent',
+    title:{text:'Volatility Smile',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
+    grid:{left:55,right:20,top:40,bottom:40},
+    tooltip:{trigger:'axis',formatter:a=>`Strike: ${a[0].axisValue}<br/>IV: ${fmt(a[0].data,2)}%`},
+    xAxis:{type:'value',name:'Strike Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+    yAxis:{type:'value',name:'Implied Vol (%)',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+    series:[{type:'line',data:valid.map(r=>[r.K,r.iv]),smooth:true,lineStyle:{color:'#f7b731',width:2.5},symbol:'circle',symbolSize:7,itemStyle:{color:'#f7b731'},label:{show:true,formatter:p=>`${fmt(p.data[1],1)}%`,color:'#f7b731',fontSize:10,position:'top'}}]
+  });
+}
+
+// ========== MC DISTRIBUTION ==========
+async function calcMCDist(){
+  const params=getParams();
+  const n_paths=+$('mc-paths').value;
+  try{
+    const res=await fetch('/api/mc_distribution',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...params,n_paths})});
+    const d=await res.json();
+    if(d.error){showErr(d.error);return;}
+    renderMCDist(d);
+  }catch(e){showErr('MC error: '+e.message);}
+}
+function renderMCDist(d){
+  const st=d.stats;
+  $('mc-stats').innerHTML=`
+    <div class="stat-card"><div class="stat-label">MC Price</div><div class="stat-val">${fmt(st.mean,2)}</div></div>
+    <div class="stat-card"><div class="stat-label">Median</div><div class="stat-val">${fmt(st.median,2)}</div></div>
+    <div class="stat-card"><div class="stat-label">95% CI Lower</div><div class="stat-val">${fmt(st.ci95_lower,2)}</div></div>
+    <div class="stat-card"><div class="stat-label">95% CI Upper</div><div class="stat-val">${fmt(st.ci95_upper,2)}</div></div>
+    <div class="stat-card"><div class="stat-label">Std Dev</div><div class="stat-val">${fmt(st.std,2)}</div></div>
+    <div class="stat-card"><div class="stat-label">Paths</div><div class="stat-val">${(st.n_paths/1000).toFixed(0)}k</div></div>`;
+  if(!chartMC) chartMC=echarts.init($('chart-mc'));
+  const bins=d.bins, counts=d.counts;
+  chartMC.setOption({
+    backgroundColor:'transparent',
+    title:{text:'Monte Carlo Payoff Distribution',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
+    grid:{left:55,right:30,top:45,bottom:40},
+    tooltip:{trigger:'axis',formatter:a=>`Payoff: ${fmt(a[0].axisValue,2)}<br/>Count: ${a[0].data}`},
+    xAxis:{type:'value',name:'Payoff',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{show:false}},
+    yAxis:{type:'value',name:'Frequency',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
+    markLine:{data:[{xAxis:st.mean,name:'Mean'},{xAxis:st.ci95_lower,name:'CI Lower'},{xAxis:st.ci95_upper,name:'CI Upper'}]},
+    series:[
+      {type:'bar',data:bins.map((b,i)=>[b,counts[i]]),barWidth:'99%',itemStyle:{color:'rgba(78,158,255,0.7)',borderColor:'rgba(78,158,255,0.3)',borderWidth:0.5}},
+      {type:'line',markLine:{silent:true,symbol:'none',data:[
+        {xAxis:st.mean,lineStyle:{color:'#f7b731',type:'dashed'},label:{formatter:'Mean',color:'#f7b731',fontSize:10}},
+        {xAxis:st.ci95_lower,lineStyle:{color:'#ff6b6b',type:'dotted'},label:{formatter:'5%',color:'#ff6b6b',fontSize:10}},
+        {xAxis:st.ci95_upper,lineStyle:{color:'#20bf6b',type:'dotted'},label:{formatter:'95%',color:'#20bf6b',fontSize:10}},
+      ]},data:[]}
+    ]
+  });
+}
+
+// ========== SENSITIVITY ==========
+async function calcSensitivity(){
+  const params=getParams();
+  try{
+    const res=await fetch('/api/sensitivity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
+    const d=await res.json();
+    if(d.error){showErr(d.error);return;}
+    buildSensTable('sens-price-table',d.price_matrix,d.sigma_labels,d.t_labels,'Option Price');
+    buildSensTable('sens-delta-table',d.delta_matrix,d.sigma_labels,d.t_labels,'Delta');
+  }catch(e){showErr('Sensitivity error: '+e.message);}
+}
+function buildSensTable(elId,matrix,sigLabels,tLabels,title){
+  const el=$(elId);
+  let html=`<table class="stbl"><thead><tr><th class="rlbl">${title} \ Time Offset</th>`;
+  tLabels.forEach(t=>html+=`<th>${t}</th>`);
+  html+='</tr></thead><tbody>';
+  matrix.forEach((row,i)=>{
+    html+=`<tr><td class="rlbl stbl">σ ${sigLabels[i]}</td>`;
+    row.forEach((val,j)=>{
+      const isBase=(i===2&&j===2);
+      html+=`<td class="${isBase?'s-base':''}" style="${getSensColor(val,matrix)}">${fmt(val,3)}</td>`;
     });
-  </script>
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
+function getSensColor(val,matrix){
+  const all=matrix.flat();
+  const mn=Math.min(...all), mx=Math.max(...all);
+  const ratio=(val-mn)/(mx-mn||1);
+  const r=Math.round(30+ratio*80), b=Math.round(120-ratio*80);
+  return `background:rgba(${r},50,${b},0.45);color:#d4e0ef`;
+}
+
+// ========== INIT ==========
+window.addEventListener('load',()=>{
+  initSmileRows();
+});
+</script>
 </body>
 </html>
