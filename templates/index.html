@@ -492,10 +492,16 @@ function switchInner(key){
   document.querySelectorAll('.itab').forEach((b,i)=>b.classList.toggle('on',['price-curve','greeks-curves'][i]===key));
   $('inner-price-curve').style.display=key==='price-curve'?'flex':'none';
   $('inner-greeks-curves').style.display=key==='greeks-curves'?'flex':'none';
-  requestAnimationFrame(()=>{
-    if(chartPrice) chartPrice.resize();
-    Object.values(gcCharts).forEach(c=>c&&c.resize());
-  });
+  // Use setTimeout so the DOM layout is computed before ECharts renders/resizes
+  setTimeout(()=>{
+    if(key==='price-curve'){
+      if(chartPrice) chartPrice.resize();
+    } else {
+      // Lazy-init: if we have data but charts not yet drawn (were hidden at init time), draw now
+      if(lastResult && lastParams) _doRenderGreeksCharts(lastResult, lastParams);
+      else Object.values(gcCharts).forEach(c=>c&&c.resize());
+    }
+  }, 60);
 }
 
 // ========== CALCULATE ==========
@@ -510,6 +516,7 @@ async function calculate(){
     if(d.error){showErr(d.error);return;}
     lastResult=d; lastParams=params;
     renderPricing(d,params);
+    fetchSmilePresets(params);  // auto-refresh Vol Smile presets
   }catch(e){showErr('Connection error: '+e.message);}
 }
 
@@ -559,6 +566,15 @@ function renderPriceChart(d,p){
 }
 
 function renderGreeksCharts(d,p){
+  // Store data for lazy render (charts may be in hidden container)
+  window._greeksData = {d, p};
+  // Only render now if container is visible
+  if($('inner-greeks-curves').style.display !== 'none'){
+    _doRenderGreeksCharts(d, p);
+  }
+}
+
+function _doRenderGreeksCharts(d,p){
   const xs=d.price_curve.spots;
   const greekDefs=[
     {key:'delta',label:'Delta',color:'#4e9eff'},
@@ -569,7 +585,9 @@ function renderGreeksCharts(d,p){
   ];
   greekDefs.forEach(({key,label,color})=>{
     const el=$('gc-'+key);
-    if(!gcCharts[key]) gcCharts[key]=echarts.init(el);
+    // Dispose and re-init to ensure correct sizing when previously hidden
+    if(gcCharts[key]){ gcCharts[key].dispose(); gcCharts[key]=null; }
+    gcCharts[key]=echarts.init(el);
     const ys=d.greeks_curve[key]||[];
     gcCharts[key].setOption({
       backgroundColor:'transparent',
@@ -687,11 +705,26 @@ async function exportExcel(){
 }
 
 // ========== VOL SMILE ==========
+async function fetchSmilePresets(params){
+  // Compute BSM prices for 7 strikes: -20%,-10%,-5%,ATM,+5%,+10%,+20%
+  const offsets=[-0.20,-0.10,-0.05,0,+0.05,+0.10,+0.20];
+  const pairs=offsets.map(o=>({K:Math.round(params.K*(1+o))}));
+  try{
+    const res=await fetch('/api/smile_presets',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...params, strikes:pairs.map(p=>p.K)})});
+    const d=await res.json();
+    if(d.error||!d.presets) return;
+    $('smile-rows').innerHTML='';
+    smileRowCount=0;
+    d.presets.forEach(r=>addSmileRow(r.K, r.price));
+  }catch(e){}
+}
 function initSmileRows(){
+  // Default 5 rows with empty prices (will be populated after first calculate)
   const base=lastParams?lastParams.K:5000;
-  const rows=[-10,-5,0,5,10].map(d=>({K:base+base*d/100,mp:''}));
-  $('smile-rows').innerHTML='';
-  rows.forEach(r=>{smileRowCount++;addSmileRow(r.K,r.mp);});
+  const offsets=[-0.20,-0.10,-0.05,0,+0.05,+0.10,+0.20];
+  $('smile-rows').innerHTML=''; smileRowCount=0;
+  offsets.forEach(o=>addSmileRow(Math.round(base*(1+o)),''));
 }
 function addSmileRow(K='',mp=''){
   smileRowCount++;

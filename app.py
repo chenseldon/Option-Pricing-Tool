@@ -231,8 +231,32 @@ def portfolio():
 
 
 # ─────────────────────────────────────────────────────────
-# API: Volatility Smile
+# API: Vol Smile Preset Prices
 # ─────────────────────────────────────────────────────────
+
+@app.route("/api/smile_presets", methods=["POST"])
+def smile_presets():
+    """Return BSM prices for a list of strikes — used to pre-populate the Vol Smile input table."""
+    try:
+        data   = request.get_json(force=True)
+        flag   = str(data.get("flag", "c")).lower()
+        S      = float(data["S"])
+        T      = float(data["T"])
+        r      = float(data["r"])
+        sigma  = float(data["sigma"])
+        q      = float(data.get("q", 0.0))
+        strikes = data.get("strikes", [])
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    presets = []
+    for K_i in strikes:
+        try:
+            price = round(float(bs_price(flag, S, float(K_i), T, r, sigma, q)), 2)
+            presets.append({"K": float(K_i), "price": price})
+        except Exception:
+            presets.append({"K": float(K_i), "price": 0})
+    return jsonify({"presets": presets})
 
 @app.route("/api/vol_smile", methods=["POST"])
 def vol_smile():
