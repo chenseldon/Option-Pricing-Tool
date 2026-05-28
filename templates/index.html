@@ -559,7 +559,7 @@ input:focus{border-color:var(--blue)}
             <option value="100000">100,000</option>
             <option value="200000">200,000</option>
           </select>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcMCDist()">Run Simulation</button>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcMCDist()" data-i18n="btn_run_simulation">Run Simulation</button>
         </div>
         <div class="mc-stats" id="mc-stats"></div>
         <div id="chart-mc" style="width:100%;height:340px"></div>
@@ -575,14 +575,14 @@ input:focus{border-color:var(--blue)}
       <div class="analysis-body">
         <p class="hint" id="sens-hint2">Stress test option price and delta across ±20% volatility and ±60 day time shifts.</p>
         <div style="margin-bottom:10px">
-          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSensitivity()">Run Stress Test</button>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSensitivity()" data-i18n="btn_run_stress">Run Stress Test</button>
         </div>
         <div class="sens-section">
-          <div class="panel-title">Option Price Sensitivity</div>
+          <div class="panel-title" data-i18n="lbl_price_sens">Option Price Sensitivity</div>
           <div class="tscroll"><div id="sens-price-table"></div></div>
         </div>
         <div class="sens-section">
-          <div class="panel-title">Delta Sensitivity</div>
+          <div class="panel-title" data-i18n="lbl_delta_sens">Delta Sensitivity</div>
           <div class="tscroll"><div id="sens-delta-table"></div></div>
         </div>
       </div>
@@ -593,6 +593,7 @@ input:focus{border-color:var(--blue)}
   <div class="tab-panel" id="panel-portfolio">
     <div class="tab-hdr">
       <h2 id="port-h2">Portfolio Exposure Monitor</h2>
+      <button class="btn btn-s" style="margin-left:auto;padding:5px 14px;font-size:11px" onclick="exportPortfolioCSV()" id="btn-port-export" data-i18n="btn_port_export">↓ Export Portfolio CSV</button>
     </div>
     <p class="hint" id="port-hint">Add individual option positions using the sidebar. The table below aggregates exposure across the entire portfolio and monitors combined Greeks.</p>
     <div id="port-table-wrap">
@@ -601,11 +602,11 @@ input:focus{border-color:var(--blue)}
         <div class="tscroll">
           <table class="dtable" id="port-all-table">
             <thead><tr>
-              <th>ID</th><th id="th-ptype">Type</th><th id="th-label">Label</th>
-              <th id="th-underlying">Underlying</th><th id="th-level">Strike/Level</th><th>T(d)</th><th>Vol%</th>
-              <th id="th-qty">Qty</th><th id="th-entry">Entry</th><th>MTM</th><th>P&amp;L</th>
+              <th>ID</th><th id="th-ptype" data-i18n="th_ptype">Type</th><th id="th-label" data-i18n="th_label">Label</th>
+              <th id="th-underlying" data-i18n="th_underlying">Underlying</th><th id="th-level" data-i18n="th_level">Strike/Level</th><th>T(d)</th><th>Vol%</th>
+              <th id="th-qty" data-i18n="th_qty">Qty</th><th id="th-entry" data-i18n="th_entry">Entry</th><th>MTM</th><th>P&amp;L</th>
               <th>Δ Delta</th><th>Γ Gamma</th><th>ν Vega</th><th>Θ Theta</th><th>ρ Rho</th>
-              <th id="th-keyrisk">Key Risk</th><th id="th-action">Action</th>
+              <th id="th-keyrisk" data-i18n="th_keyrisk">Key Risk</th><th id="th-action" data-i18n="th_action">Action</th>
             </tr></thead>
             <tbody id="port-all-tbody"></tbody>
             <tfoot><tr id="port-all-totals-row" style="font-weight:700;background:var(--bgi)">
@@ -627,7 +628,7 @@ input:focus{border-color:var(--blue)}
             <span id="port-stress-title">📉 Portfolio Stress Test</span><span>▼</span>
           </div>
           <div class="analysis-body">
-            <p class="hint" id="port-stress-hint">Portfolio P&amp;L under spot × volatility stress scenarios (delta+gamma approximation for structured products).</p>
+            <p class="hint" id="port-stress-hint">Portfolio P&amp;L under spot × volatility stress scenarios (delta+gamma+vega approximation; CN-FDM Greeks used for Snowball/SharkFin where available).</p>
             <div id="port-stress-wrap"></div>
           </div>
         </div>
@@ -668,7 +669,7 @@ input:focus{border-color:var(--blue)}
         <p>OTC Derivatives Trading Assistant &bull; Structured Products &bull; Financial Engineering &bull; Quantitative Research</p>
       </div>
       <div class="a-sec"><h3>Quick Start</h3>
-        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl
+        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl scipy
 python app.py
 # Open http://localhost:5000 in browser</code>
       </div>
@@ -703,7 +704,7 @@ python app.py
         <p>场外衍生品交易助理 &bull; 结构化产品 &bull; 金融工程 &bull; 量化研究</p>
       </div>
       <div class="a-sec"><h3>快速启动</h3>
-        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl
+        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl scipy
 python app.py
 # 浏览器打开 http://localhost:5000</code>
       </div>
@@ -723,9 +724,9 @@ python app.py
       </p>
       <div class="struct-results">
         <div class="quote-row">
-          <div class="quote-card quote-bid"><div class="quote-label">Bid</div><div class="quote-val" id="sb-bid">—</div><div style="font-size:10px;color:var(--red);margin-top:3px">Sell side</div></div>
-          <div class="quote-card quote-mid"><div class="quote-label">Mid (Fair Value)</div><div class="quote-val" id="sb-mid">—</div><div style="font-size:10px;color:var(--blu2);margin-top:3px">MC Price (×S₀)</div></div>
-          <div class="quote-card quote-ask"><div class="quote-label">Ask</div><div class="quote-val" id="sb-ask">—</div><div style="font-size:10px;color:var(--green);margin-top:3px">Buy side</div></div>
+          <div class="quote-card quote-bid"><div class="quote-label">Bid</div><div class="quote-val" id="sb-bid">—</div><div style="font-size:10px;color:var(--red);margin-top:3px" data-i18n="sb_sell_side">Sell side</div></div>
+          <div class="quote-card quote-mid"><div class="quote-label">Mid (Fair Value)</div><div class="quote-val" id="sb-mid">—</div><div style="font-size:10px;color:var(--blu2);margin-top:3px" data-i18n="sb_mc_price_lbl">MC Price (×S₀)</div></div>
+          <div class="quote-card quote-ask"><div class="quote-label">Ask</div><div class="quote-val" id="sb-ask">—</div><div style="font-size:10px;color:var(--green);margin-top:3px" data-i18n="sb_buy_side">Buy side</div></div>
         </div>
         <div class="metric-grid" id="sb-metrics">
           <div class="metric-card"><div class="metric-label" id="lbl-sb-kop">KO Probability</div><div class="metric-val" id="sb-kop">—</div></div>
@@ -743,7 +744,7 @@ python app.py
         </div>
         <div class="analysis-body">
           <p class="hint" id="lbl-sb-cnfdm-hint">Re-price the Snowball using Crank-Nicolson finite difference method (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('snowball')" id="btn-sb-cnfdm">▶ Run CN-FDM</button>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('snowball')" id="btn-sb-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM</button>
           <div id="sb-cnfdm-results" style="display:none">
             <div class="metric-grid" style="margin-top:8px">
               <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sb-cnfdm-price">—</div></div>
@@ -759,11 +760,11 @@ python app.py
       <!-- Snowball Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span>🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
+          <span data-i18n="sb_sens_hdr">🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint">Shows Snowball mid-price under ±20% spot and vol scenarios. Click Price Product first.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('snowball')">Run Stress Test</button>
+          <p class="hint" data-i18n="sb_sens_hint">Shows Snowball mid-price under ±20% spot and vol scenarios. Click Price Product first.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('snowball')" data-i18n="btn_run_struct_stress">Run Stress Test</button>
           <div id="sb-sens-table"></div>
         </div>
       </div>
@@ -793,7 +794,7 @@ python app.py
         </div>
         <div class="analysis-body">
           <p class="hint" id="lbl-sf-cnfdm-hint">Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. Provides independent PDE-based validation and full Greeks for the barrier option.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('sharkfin')" id="btn-sf-cnfdm">▶ Run CN-FDM</button>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('sharkfin')" id="btn-sf-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM</button>
           <div id="sf-cnfdm-results" style="display:none">
             <div class="metric-grid" style="margin-top:8px">
               <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sf-cnfdm-price">—</div></div>
@@ -809,11 +810,11 @@ python app.py
       <!-- Shark Fin Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span>🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
+          <span data-i18n="sf_sens_hdr">🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint">Shows Shark Fin price under ±20% spot and vol scenarios.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('sharkfin')">Run Stress Test</button>
+          <p class="hint" data-i18n="sf_sens_hint">Shows Shark Fin price under ±20% spot and vol scenarios.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('sharkfin')" data-i18n="btn_run_struct_stress">Run Stress Test</button>
           <div id="sf-sens-table"></div>
         </div>
       </div>
@@ -841,11 +842,11 @@ python app.py
       <!-- Forward Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span>🛡 Sensitivity Analysis (Spot &amp; Rate)</span><span>▼</span>
+          <span data-i18n="fw_sens_hdr">🛡 Sensitivity Analysis (Spot &amp; Rate)</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint">Shows OTC Forward price under ±20% spot and rate scenarios.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('forward')">Run Stress Test</button>
+          <p class="hint" data-i18n="fw_sens_hint">Shows OTC Forward price under ±20% spot and rate scenarios.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('forward')" data-i18n="btn_run_struct_stress">Run Stress Test</button>
           <div id="fw-sens-table"></div>
         </div>
       </div>
@@ -870,19 +871,19 @@ python app.py
         <div class="panel-title" style="margin-top:8px" id="lbl-ir-cf">Cash Flow Schedule</div>
         <div class="cf-scroll">
           <table class="cf-table" id="ir-cf-table">
-            <thead><tr><th>Period</th><th>Date (yr)</th><th>DF</th><th>Fixed Pmt</th><th>Float Pmt</th><th>Net Pmt</th><th>PV(Fixed)</th><th>PV(Float)</th></tr></thead>
-            <tbody id="ir-cf-tbody"><tr><td colspan="8" style="padding:16px;color:var(--tx2)">Click "Price Product" to see cash flows</td></tr></tbody>
+            <thead><tr><th data-i18n="cf_period">Period</th><th data-i18n="cf_date">Date (yr)</th><th data-i18n="cf_df">DF</th><th data-i18n="cf_fixed_pmt">Fixed Pmt</th><th data-i18n="cf_float_pmt">Float Pmt</th><th data-i18n="cf_net_pmt">Net Pmt</th><th data-i18n="cf_pv_fixed">PV(Fixed)</th><th data-i18n="cf_pv_float">PV(Float)</th></tr></thead>
+            <tbody id="ir-cf-tbody"><tr><td colspan="8" id="ir-cf-empty" style="padding:16px;color:var(--tx2)">Click "Price Product" to see cash flows</td></tr></tbody>
           </table>
         </div>
       </div>
       <!-- IRS Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span>🛡 DV01 / Rate Sensitivity</span><span>▼</span>
+          <span data-i18n="ir_sens_hdr">🛡 DV01 / Rate Sensitivity</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint">Shows IRS NPV under ±50/100/200bps parallel rate shifts.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('irs')">Run Stress Test</button>
+          <p class="hint" data-i18n="ir_sens_hint">Shows IRS NPV under ±50/100/200bps parallel rate shifts.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('irs')" data-i18n="btn_run_struct_stress">Run Stress Test</button>
           <div id="ir-sens-table"></div>
         </div>
       </div>
@@ -1223,8 +1224,9 @@ async function refreshAllPortfolio(){
         entry:fmt(p.entry,2), mtm:fmt(p.mtm,2),
         pnl:pnl, pnlFmt:fmtC(pnl,2),
         delta:deltaNum, deltaFmt:p.delta,
-        gamma:null, gammaFmt:'—', vega:null, vegaFmt:'—',
-        theta:null, thetaFmt:'—', rho:null, rhoFmt:'—',
+        gamma:p.gamma, gammaFmt:p.gamma!==null?fmt(p.gamma,4):'—',
+        vega:p.vega, vegaFmt:p.vega!==null?fmt(p.vega,4):'—',
+        theta:p.theta, thetaFmt:p.theta!==null?fmtC(p.theta,4):'—',rho:null, rhoFmt:'—',
         keyRisk:p.keyRisk, removeId:p.id, removeType:'struct'
       });
     }
@@ -1304,7 +1306,9 @@ function calcPortfolioStress(rows){
         const delta=r.delta||0, gamma=r.gamma||0, vega=r.vega||0;
         pnl+=(delta*dS + 0.5*gamma*dS*dS + vega*(vs*100));
       } else {
-        pnl+=(r.delta||0)*dS;
+        // Use stored CN-FDM Greeks for structured products where available
+        const delta=r.delta||0, gamma=r.gamma||0, vega=r.vega||0;
+        pnl+=(delta*dS + 0.5*gamma*dS*dS + vega*(vs*100));
       }
     }
     return pnl;
@@ -1572,11 +1576,39 @@ const I18N = {
     port_all_empty:'No positions added yet.<br>Use "Add to Portfolio" in the sidebar to start.',
     btn_confirm_add:'✓ Confirm Add',
     port_stress_title:'📉 Portfolio Stress Test',
-    port_stress_hint:'Portfolio P&L under spot × volatility stress scenarios (delta+gamma approximation for structured products).',
+    port_stress_hint:'Portfolio P&L under spot × volatility stress scenarios (delta+gamma+vega approximation; CN-FDM Greeks used for Snowball/SharkFin where available).',
     /* Analysis block headings */
     lbl_smile_h:'📈 Volatility Smile / Skew',
     lbl_mc_h:'🎲 Monte Carlo P&L Distribution',
     lbl_sens_h:'🛡 Sensitivity Analysis / Stress Test',
+    /* Portfolio table headers */
+    th_ptype:'Type', th_label:'Label', th_underlying:'Underlying',
+    th_level:'Strike/Level', th_qty:'Qty', th_entry:'Entry',
+    th_keyrisk:'Key Risk', th_action:'Action',
+    /* IRS CF headers */
+    cf_period:'Period', cf_date:'Date (yr)', cf_df:'DF',
+    cf_fixed_pmt:'Fixed Pmt', cf_float_pmt:'Float Pmt', cf_net_pmt:'Net Pmt',
+    cf_pv_fixed:'PV(Fixed)', cf_pv_float:'PV(Float)',
+    cf_empty:'Click "Price Product" to see cash flows',
+    /* Sensitivity panels (pricing tab) */
+    lbl_price_sens:'Option Price Sensitivity', lbl_delta_sens:'Delta Sensitivity',
+    btn_run_simulation:'Run Simulation', btn_run_stress:'Run Stress Test',
+    /* Structured sensitivity */
+    sb_sens_hdr:'🛡 Sensitivity Analysis (Spot & Vol)',
+    sf_sens_hdr:'🛡 Sensitivity Analysis (Spot & Vol)',
+    fw_sens_hdr:'🛡 Sensitivity Analysis (Spot & Rate)',
+    ir_sens_hdr:'🛡 DV01 / Rate Sensitivity',
+    sb_sens_hint:'Shows Snowball mid-price under ±20% spot and vol scenarios. Click Price Product first.',
+    sf_sens_hint:'Shows Shark Fin price under ±20% spot and vol scenarios.',
+    fw_sens_hint:'Shows OTC Forward price under ±20% spot and rate scenarios.',
+    ir_sens_hint:'Shows IRS NPV under ±50/100/200bps parallel rate shifts.',
+    btn_run_struct_stress:'Run Stress Test',
+    /* Snowball quote card */
+    sb_sell_side:'Sell side', sb_buy_side:'Buy side', sb_mc_price_lbl:'MC Price (×S₀)',
+    /* CN-FDM button */
+    btn_run_cnfdm:'▶ Run CN-FDM',
+    /* Portfolio export */
+    btn_port_export:'↓ Export Portfolio CSV',
   },
   cn: {
     /* Main tabs */
@@ -1639,11 +1671,39 @@ const I18N = {
     port_all_empty:'暂无持仓。<br>使用左侧"加入持仓组合"按钮添加。',
     btn_confirm_add:'✓ 确认添加',
     port_stress_title:'📉 组合压力测试',
-    port_stress_hint:'组合损益在现货×波动率压力情景下的表现（结构化产品使用delta+gamma近似）。',
+    port_stress_hint:'组合损益在现货×波动率压力情景下的表现（使用delta+gamma+vega近似；雪球/鲨鱼鳍使用CN-FDM希腊字母）。',
     /* Analysis block headings */
     lbl_smile_h:'📈 波动率微笑 / 偏斜',
     lbl_mc_h:'🎲 蒙特卡洛损益分布',
     lbl_sens_h:'🛡 敏感性分析 / 压力测试',
+    /* Portfolio table headers */
+    th_ptype:'类型', th_label:'标签', th_underlying:'标的',
+    th_level:'行权/触发价', th_qty:'数量', th_entry:'建仓价',
+    th_keyrisk:'核心风险', th_action:'操作',
+    /* IRS CF headers */
+    cf_period:'期数', cf_date:'日期(年)', cf_df:'折现因子',
+    cf_fixed_pmt:'固定付款', cf_float_pmt:'浮动付款', cf_net_pmt:'净付款',
+    cf_pv_fixed:'固定腿现值', cf_pv_float:'浮动腿现值',
+    cf_empty:'点击"定价"按钮查看现金流计划',
+    /* Sensitivity panels (pricing tab) */
+    lbl_price_sens:'期权价格敏感性', lbl_delta_sens:'Delta敏感性',
+    btn_run_simulation:'运行模拟', btn_run_stress:'运行压力测试',
+    /* Structured sensitivity */
+    sb_sens_hdr:'🛡 敏感性分析（现货 & 波动率）',
+    sf_sens_hdr:'🛡 敏感性分析（现货 & 波动率）',
+    fw_sens_hdr:'🛡 敏感性分析（现货 & 利率）',
+    ir_sens_hdr:'🛡 DV01 / 利率敏感性',
+    sb_sens_hint:'展示雪球中间价在现货及波动率±20%情景下的变化，请先点击定价按钮。',
+    sf_sens_hint:'展示鲨鱼鳍价格在现货及波动率±20%情景下的变化。',
+    fw_sens_hint:'展示场外远期价格在现货及利率±20%情景下的变化。',
+    ir_sens_hint:'展示利率互换NPV在±50/100/200bps利率平移情景下的变化。',
+    btn_run_struct_stress:'运行压力测试',
+    /* Snowball quote card */
+    sb_sell_side:'卖方报价', sb_buy_side:'买方报价', sb_mc_price_lbl:'蒙特卡洛定价 (×S₀)',
+    /* CN-FDM button */
+    btn_run_cnfdm:'▶ 运行CN有限差分',
+    /* Portfolio export */
+    btn_port_export:'↓ 导出组合CSV',
   }
 };
 
@@ -1700,11 +1760,13 @@ function switchLang(lang) {
     'lbl-fw-mtm':'lbl_fw_mtm','lbl-fw-ntl-mtm':'lbl_fw_ntl_mtm','lbl-fw-fwd':'lbl_fw_fwd',
     'lbl-ir-pv-fixed':'lbl_ir_pv_fixed','lbl-ir-pv-float':'lbl_ir_pv_float',
     'lbl-ir-dv01':'lbl_ir_dv01','lbl-ir-cf':'lbl_ir_cf',
+    'ir-cf-empty':'cf_empty',
     /* Portfolio unified table */
     'port-all-empty':'port_all_empty',
     'btn-confirm-add':'btn_confirm_add',
     'port-stress-title':'port_stress_title',
     'port-stress-hint':'port_stress_hint',
+    'btn-port-export':'btn_port_export',
     /* Analysis block headings */
     'lbl-smile-h':'lbl_smile_h',
     'lbl-mc-h':'lbl_mc_h',
@@ -1727,6 +1789,19 @@ function switchLang(lang) {
   // Toggle About tab bilingual content
   document.querySelectorAll('.about-en').forEach(el=>el.style.display=lang==='en'?'':'none');
   document.querySelectorAll('.about-cn').forEach(el=>el.style.display=lang==='cn'?'':'none');
+  // Translate select option texts
+  const sfFlagEl = $('sf-flag');
+  if(sfFlagEl){
+    const opts = lang==='cn'
+      ? ['向上敲出看涨 (UOC)','向下敲出看跌 (DOP)','向上敲入看涨 (UIC)','向下敲入看跌 (DIC)']
+      : ['Up-and-Out Call (UOC)','Down-and-Out Put (DOP)','Up-and-In Call (UIC)','Down-and-In Put (DIC)'];
+    opts.forEach((text,i)=>{ if(sfFlagEl.options[i]) sfFlagEl.options[i].text=text; });
+  }
+  const fwDirEl = $('fw-dir');
+  if(fwDirEl){
+    const opts = lang==='cn' ? ['买入/多头','卖出/空头'] : ['Buy / Long','Sell / Short'];
+    opts.forEach((text,i)=>{ if(fwDirEl.options[i]) fwDirEl.options[i].text=text; });
+  }
   // Re-render combined portfolio for language-sensitive content (Call/Put, labels)
   if(positions.length>0||structPositions.length>0) refreshAllPortfolio();
 }
@@ -2056,9 +2131,9 @@ function normalCDF(x){
   return 0.5*(1+sign*y);
 }
 
-function addStructPosition(product){
+async function addStructPosition(product){
   let qty, entry, lbl, mtm;
-  let underlying, tenor, keyLevel, rateOrVol, delta, keyRisk;
+  let underlying, tenor, keyLevel, rateOrVol, delta, gamma=null, vega=null, theta=null, keyRisk;
   const sp = lastStructResults[product];
 
   if(product==='snowball'){
@@ -2070,8 +2145,24 @@ function addStructPosition(product){
     tenor = +$('sb-T').value;
     keyLevel = `KO:${$('sb-ko').value}% / KI:${$('sb-ki').value}%`;
     rateOrVol = `σ:${$('sb-sig').value}%`;
-    delta = '—'; // MC-dependent; not analytically computed
+    delta = '—'; gamma = null; vega = null; theta = null;
     keyRisk = sp ? `KO:${sp.ko_prob} / KI:${sp.ki_prob}` : '—';
+    // Fetch full Greeks via CN-FDM (async, with loading state)
+    try {
+      const fdmRes = await fetch('/api/cn_fdm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        product_type:'snowball', S0:underlying, T:tenor,
+        r:+$('sb-r').value/100, sigma:+$('sb-sig').value/100, q:+$('sb-q').value/100,
+        KO_pct:+$('sb-ko').value/100, KI_pct:+$('sb-ki').value/100,
+        coupon_pa:+$('sb-cpn').value/100, obs_freq:+$('sb-freq').value
+      })});
+      const fd = await fdmRes.json();
+      if(!fd.error && fd.greeks){
+        delta = fmt(fd.greeks.delta * qty, 4);
+        gamma = fd.greeks.gamma * qty;
+        vega  = fd.greeks.vega  * qty;
+        theta = fd.greeks.theta * qty;
+      }
+    } catch(e){ /* fallback: leave as '—' */ }
   } else if(product==='sharkfin'){
     qty = +$('sf-pa-qty').value||1;
     entry = +$('sf-pa-entry').value||(sp ? sp.mid : 0);
@@ -2081,15 +2172,24 @@ function addStructPosition(product){
     tenor = +$('sf-T').value;
     keyLevel = `K:${$('sf-K').value} / H:${$('sf-H').value}`;
     rateOrVol = `σ:${$('sf-sig').value}%`;
-    // Approx delta: vanilla delta × (barrier_price / vanilla_price)
-    if(sp && sp.vanilla_price > 0){
-      const S=+$('sf-S').value, K=+$('sf-K').value, T=+$('sf-T').value;
-      const r=+$('sf-r').value/100, sig=+$('sf-sig').value/100, q=+$('sf-q').value/100;
-      const d1 = (Math.log(S/K)+(r-q+sig*sig/2)*T)/(sig*Math.sqrt(T));
-      const vDelta = $('sf-flag').value==='c' ? Math.exp(-q*T)*normalCDF(d1) : -Math.exp(-q*T)*normalCDF(-d1);
-      delta = fmt(vDelta*(sp.mid/sp.vanilla_price)*qty, 4);
-    } else { delta = '—'; }
+    delta = '—'; gamma = null; vega = null; theta = null;
     keyRisk = sp ? `Discount:${fmt(sp.barrier_discount,2)}` : '—';
+    // Fetch full Greeks via CN-FDM
+    try {
+      const S0=+$('sf-S').value, H=+$('sf-H').value;
+      const fdmRes = await fetch('/api/cn_fdm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        product_type:'shark_fin', S0, T:tenor,
+        r:+$('sf-r').value/100, sigma:+$('sf-sig').value/100, q:+$('sf-q').value/100,
+        KO_pct: H/S0, K_strike:+$('sf-K').value
+      })});
+      const fd = await fdmRes.json();
+      if(!fd.error && fd.greeks){
+        delta = fmt(fd.greeks.delta * qty, 4);
+        gamma = fd.greeks.gamma * qty;
+        vega  = fd.greeks.vega  * qty;
+        theta = fd.greeks.theta * qty;
+      }
+    } catch(e){ /* fallback */ }
   } else if(product==='forward'){
     qty = +$('fw-pa-qty').value||1;
     entry = +$('fw-pa-entry').value||(sp ? sp.forward_price : 0);
@@ -2102,6 +2202,7 @@ function addStructPosition(product){
     // Forward delta = ±e^(-qT)
     const fwSign = $('fw-dir').value==='sell' ? -1 : 1;
     delta = fmt(Math.exp(-+$('fw-q').value/100 * +$('fw-T').value) * fwSign * qty, 4);
+    gamma = 0; vega = 0; theta = 0;
     keyRisk = sp ? `CoC:${fmt(sp.cost_of_carry,2)}` : '—';
   } else if(product==='irs'){
     const dir = $('ir-pa-dir').value;
@@ -2113,12 +2214,12 @@ function addStructPosition(product){
     tenor = +$('ir-T').value;
     keyLevel = `Fix:${$('ir-fixed').value}% / Flt:${$('ir-float').value}%`;
     rateOrVol = `Freq:${$('ir-freq').value}×/yr`;
-    delta = '—'; // interest rate product, no equity delta
+    delta = '—'; gamma = null; vega = null; theta = null;
     keyRisk = sp ? `DV01:${fmt(sp.dv01,0)}` : '—';
   }
 
   structPositions.push({id:structPosId++, product, label:lbl, qty, entry, mtm,
-    underlying, tenor, keyLevel, rateOrVol, delta, keyRisk});
+    underlying, tenor, keyLevel, rateOrVol, delta, gamma, vega, theta, keyRisk});
   const prefixMap = {snowball:'sb',sharkfin:'sf',forward:'fw',irs:'ir'};
   const p = $(prefixMap[product]+'-port-add-panel');
   if(p) p.classList.remove('open');
@@ -2188,6 +2289,69 @@ function exportStructCSV(product){
     }
   }
   downloadCSV(`${product}_${ts}.csv`, csv);
+}
+
+// ========== PORTFOLIO CSV EXPORT ==========
+function exportPortfolioCSV(){
+  if(positions.length===0 && structPositions.length===0){
+    showErr('No positions in portfolio.'); return;
+  }
+  const ts = new Date().toISOString().slice(0,10);
+  const cn = currentLang==='cn';
+  const hdr = cn
+    ? 'ID,类型,标签,标的价格,行权/障碍,剩余天数,波动率/利率,数量,建仓价,盯市价,损益,Delta,Gamma,Vega,Theta,Rho,关键风险\r\n'
+    : 'ID,Type,Label,Underlying,Strike/Level,T(days),Vol/Rate,Qty,Entry,MTM,P&L,Delta,Gamma,Vega,Theta,Rho,Key Risk\r\n';
+
+  let csv = (cn ? '组合持仓报告,' : 'Portfolio Exposure Report,') + ts + '\r\n\r\n' + hdr;
+
+  // Helper to clean a field for CSV (avoid commas breaking columns)
+  const c = v => (v==null||v===undefined) ? '—' : String(v).replace(/,/g,'|');
+
+  let netDelta=0,netGamma=0,netVega=0,netTheta=0,netRho=0,totalPnl=0,totalMtm=0;
+  let nD=0,nG=0,nV=0,nTh=0,nR=0;
+
+  // Gather all rows from the rendered portfolio table (already computed by refreshAllPortfolio)
+  const tbody = $('port-all-tbody');
+  if(!tbody){ showErr('Please open Portfolio tab first.'); return; }
+  const trs = tbody.querySelectorAll('tr');
+  trs.forEach(tr=>{
+    const tds = tr.querySelectorAll('td');
+    if(tds.length < 16) return;
+    const id    = tds[0].textContent.trim();
+    const type  = tds[1].textContent.trim();
+    const label = tds[2].textContent.trim();
+    const und   = tds[3].textContent.trim();
+    const level = tds[4].textContent.trim();
+    const tdays = tds[5].textContent.trim();
+    const vol   = tds[6].textContent.trim();
+    const qty   = tds[7].textContent.trim();
+    const entry = tds[8].textContent.trim();
+    const mtm   = tds[9].textContent.trim();
+    const pnl   = tds[10].textContent.trim();
+    const delta = tds[11].textContent.trim();
+    const gamma = tds[12].textContent.trim();
+    const vega  = tds[13].textContent.trim();
+    const theta = tds[14].textContent.trim();
+    const rho   = tds[15].textContent.trim();
+    const risk  = tds[16] ? tds[16].textContent.trim() : '—';
+    csv += `${c(id)},${c(type)},${c(label)},${c(und)},${c(level)},${c(tdays)},${c(vol)},${c(qty)},${c(entry)},${c(mtm)},${c(pnl)},${c(delta)},${c(gamma)},${c(vega)},${c(theta)},${c(rho)},${c(risk)}\r\n`;
+    // Tally for totals
+    const numPnl=parseFloat(pnl); if(!isNaN(numPnl)) totalPnl+=numPnl;
+    const numMtm=parseFloat(mtm); if(!isNaN(numMtm)) totalMtm+=numMtm;
+    const dv=parseFloat(delta); if(!isNaN(dv)){netDelta+=dv;nD++;}
+    const gv=parseFloat(gamma); if(!isNaN(gv)){netGamma+=gv;nG++;}
+    const vv=parseFloat(vega);  if(!isNaN(vv)){netVega+=vv;nV++;}
+    const thv=parseFloat(theta);if(!isNaN(thv)){netTheta+=thv;nTh++;}
+    const rv=parseFloat(rho);   if(!isNaN(rv)){netRho+=rv;nR++;}
+  });
+
+  // Totals row
+  csv += '\r\n';
+  csv += (cn ? '合计,' : 'TOTAL,');
+  csv += `,,,,,,,,${fmt(totalMtm,2)},${fmt(totalPnl,2)},`;
+  csv += `${nD>0?fmt(netDelta,4):'—'},${nG>0?fmt(netGamma,4):'—'},${nV>0?fmt(netVega,4):'—'},${nTh>0?fmt(netTheta,4):'—'},${nR>0?fmt(netRho,4):'—'},\r\n`;
+
+  downloadCSV(`portfolio_${ts}.csv`, csv);
 }
 </script>
 </body>

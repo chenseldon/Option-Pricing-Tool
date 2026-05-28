@@ -48,8 +48,8 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 - **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
 - **MTM valuation** and per-position P&L (mark-to-market vs entry)
 - **Margin estimation** (notional × fixed% + |Δ| × variable%)
-- Structured product positions: separate table with product-specific risk metrics (KO/KI prob, barrier discount, forward delta, DV01)
-- **Export CSV**: one-click report download for all positions
+- Structured product positions: full Greeks via CN-FDM (Δ/Γ/ν/Θ) for snowball and shark fin, analytical delta for forwards
+- **Portfolio CSV export**: one-click unified report of all positions (vanilla + structured) + totals row
 
 ### 🔬 Analytics Panels (inline in Pricing tab)
 - **Volatility Smile / Skew**: input market prices at different strikes → compute IV → plot smile curve
@@ -91,9 +91,10 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 | `/api/vol_smile` | POST | Implied vol from market prices (smile curve) |
 | `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
 | `/api/snowball` | POST | Snowball autocallable MC pricing |
-| `/api/shark_fin` | POST | Shark fin barrier option pricing |
+| `/api/shark_fin` | POST | Shark fin barrier option pricing (UOC/DOP/UIC/DIC) |
 | `/api/forward` | POST | OTC equity forward pricing |
 | `/api/irs` | POST | Interest rate swap NPV + cash flows |
+| `/api/cn_fdm` | POST | Crank-Nicolson FDM reprice (snowball/shark_fin) + full Greeks |
 
 ---
 

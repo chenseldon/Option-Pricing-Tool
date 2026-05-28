@@ -10,15 +10,21 @@ Endpoints:
     POST /api/portfolio         : Portfolio exposure aggregation (MTM + margin)
     POST /api/export            : Export results to Excel (.xlsx)
     POST /api/vol_smile         : Volatility smile from market prices
+    POST /api/smile_presets     : Auto-fill smile table from BSM prices
     POST /api/mc_distribution   : Monte Carlo payoff distribution histogram
     POST /api/sensitivity       : Sensitivity / stress test matrix
+    POST /api/snowball          : Snowball autocallable MC pricing
+    POST /api/shark_fin         : Shark fin barrier option (UOC/DOP/UIC/DIC) pricing
+    POST /api/forward           : OTC equity forward pricing
+    POST /api/irs               : Interest rate swap NPV + cash flow schedule
+    POST /api/cn_fdm            : CN-FDM structured product reprice (snowball/shark_fin)
 
 Usage:
     python app.py
     Then open: http://127.0.0.1:5000
 
 Dependencies:
-    pip install flask py_vollib numpy pandas matplotlib openpyxl
+    pip install flask py_vollib numpy pandas matplotlib openpyxl scipy
 
 Author: GitHub Portfolio Project
 """
@@ -691,6 +697,12 @@ def shark_fin():
     try:
         d       = request.get_json(force=True)
         flag    = str(d.get("flag", "c")).lower()
+        # Normalize frontend flag values ('uo','ui','do','di') to internal 'c'/'p' convention
+        _is_in_barrier = flag in ('ui', 'di')
+        if flag in ('uo', 'ui'):
+            flag = 'c'
+        elif flag in ('do', 'di'):
+            flag = 'p'
         S       = float(d["S"])
         K       = float(d["K"])
         T       = float(d["T"])
@@ -713,13 +725,13 @@ def shark_fin():
     eta = -1.0 if flag == 'c' else 1.0   # -1 up barrier, +1 down barrier
 
     if flag == 'c' and H <= S:
-        return jsonify({"error": "For Up-and-Out Call, barrier H must be above current spot S"}), 400
+        return jsonify({"error": "For Call barrier option, barrier H must be above current spot S"}), 400
     if flag == 'p' and H >= S:
-        return jsonify({"error": "For Down-and-Out Put, barrier H must be below current spot S"}), 400
+        return jsonify({"error": "For Put barrier option, barrier H must be below current spot S"}), 400
     if flag == 'c' and H <= K:
-        return jsonify({"error": "For Up-and-Out Call, H must be > K (otherwise always knocked out)"}), 400
+        return jsonify({"error": "For Call barrier option, H must be > K (otherwise always knocked out)"}), 400
     if flag == 'p' and H >= K:
-        return jsonify({"error": "For Down-and-Out Put, H must be < K (otherwise always knocked out)"}), 400
+        return jsonify({"error": "For Put barrier option, H must be < K (otherwise always knocked out)"}), 400
 
     try:
         sT  = sigma * np.sqrt(T)
@@ -753,7 +765,8 @@ def shark_fin():
         C = _B(y1)   # reflection term with y1
         D = _B(y2)   # reflection term with y2
 
-        barrier_price = float(A - B - C + D)
+        barrier_price_out = float(A - B - C + D)
+        barrier_price = float(A - barrier_price_out) if _is_in_barrier else barrier_price_out
 
         # Rebate present value (paid at barrier hit time)
         if rebate > 0:
