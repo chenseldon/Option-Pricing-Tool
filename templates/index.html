@@ -110,6 +110,36 @@ input:focus{border-color:var(--blue)}
 .badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 .badge{padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--blu2)}
 .code-blk{display:block;background:#04090f;border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
+/* ── Language toggle ── */
+.lang-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;margin-left:auto;flex-shrink:0}
+.lang-btn{padding:3px 10px;background:var(--bgi);border:none;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s}
+.lang-btn.on{background:var(--blue);color:#fff}
+/* ── Structured products ── */
+.struct-layout{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.struct-inputs{min-width:260px;max-width:320px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:13px}
+.struct-inputs select{width:100%;padding:5px 7px;background:var(--bgi);border:1px solid var(--bd);border-radius:3px;color:var(--tx);font-size:12px}
+.struct-results{flex:1;min-width:280px}
+.quote-row{display:flex;gap:8px;margin-bottom:12px}
+.quote-card{flex:1;border-radius:7px;padding:11px 12px;text-align:center}
+.quote-bid{background:#1a0808;border:1px solid var(--red)}
+.quote-mid{background:#08142a;border:1px solid var(--blue)}
+.quote-ask{background:#081a0f;border:1px solid var(--green)}
+.quote-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700}
+.quote-val{font-size:20px;font-weight:700}
+.quote-bid .quote-label,.quote-bid .quote-val{color:var(--red)}
+.quote-mid .quote-label,.quote-mid .quote-val{color:var(--blu2)}
+.quote-ask .quote-label,.quote-ask .quote-val{color:var(--green)}
+.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.metric-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:8px 10px}
+.metric-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.metric-val{font-size:13px;font-weight:700;color:var(--yellow)}
+.struct-hint{font-size:11px;color:var(--tx2);line-height:1.6;margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-left:3px solid var(--blue);border-radius:0 4px 4px 0}
+.cf-scroll{overflow-x:auto;max-height:260px;overflow-y:auto}
+.cf-table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
+.cf-table th{padding:5px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--bd);text-align:center;position:sticky;top:0}
+.cf-table td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:center}
+.cf-table .net-pos{color:var(--green)}.cf-table .net-neg{color:var(--red)}
+.struct-sub{display:none}.struct-sub.on{display:block}
 </style>
 </head>
 <body>
@@ -118,7 +148,10 @@ input:focus{border-color:var(--blue)}
   <span style="font-size:18px">&#128202;</span>
   <span class="header-title">Option Pricing &amp; Risk Analytics Tool</span>
   <span class="tag">BSM</span><span class="tag">Monte Carlo</span><span class="tag">Greeks</span><span class="tag">OTC Derivatives</span>
-</header>
+  <div class="lang-toggle">
+    <button class="lang-btn on" id="lang-en" onclick="switchLang('en')">EN</button>
+    <button class="lang-btn" id="lang-cn" onclick="switchLang('cn')">中文</button>
+  </div></header>
 <div class="body-layout">
 <aside class="sidebar">
   <!-- Option Type -->
@@ -220,12 +253,13 @@ input:focus{border-color:var(--blue)}
 </aside>
 <div class="main">
   <div class="main-tabs">
-    <button class="mtab on" onclick="switchMain('pricing')">&#128200; Pricing</button>
-    <button class="mtab" onclick="switchMain('portfolio')">&#128202; Portfolio</button>
-    <button class="mtab" onclick="switchMain('smile')">&#128516; Vol Smile</button>
-    <button class="mtab" onclick="switchMain('mc')">&#127922; MC Distribution</button>
-    <button class="mtab" onclick="switchMain('sens')">&#128737; Sensitivity</button>
-    <button class="mtab" onclick="switchMain('about')">&#128203; About</button>
+    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">&#128200; Pricing</button>
+    <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">&#128202; Portfolio</button>
+    <button class="mtab" onclick="switchMain('smile')" data-i18n="tab_smile">&#128516; Vol Smile</button>
+    <button class="mtab" onclick="switchMain('mc')" data-i18n="tab_mc">&#127922; MC Distribution</button>
+    <button class="mtab" onclick="switchMain('sens')" data-i18n="tab_sens">&#128737; Sensitivity</button>
+    <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">&#128176; Structured</button>
+    <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">&#128203; About</button>
   </div>
 
   <!-- PRICING TAB -->
@@ -402,6 +436,195 @@ python app.py
     </div>
   </div>
 
+  <!-- STRUCTURED PRODUCTS TAB -->
+  <div class="tab-panel" id="panel-struct">
+    <div class="tab-hdr"><h2 data-i18n="struct_h2">&#128176; Structured Products Pricing / 结构化产品报价</h2></div>
+    <p class="hint" data-i18n="struct_hint">Price common OTC structured products used in client quoting. Each product shows Bid / Mid / Ask, replicating real trading desk workflows. (场外结构化产品定价：雪球、鲨鱼鳍、远期、利率互换)</p>
+
+    <!-- Sub-tabs -->
+    <div class="inner-tabs" id="struct-tabs">
+      <button class="itab on" onclick="switchStruct('snowball')">&#9733; Snowball / 雪球</button>
+      <button class="itab" onclick="switchStruct('sharkfin')">&#9670; Shark Fin / 鲨鱼鳍</button>
+      <button class="itab" onclick="switchStruct('forward')">&#9658; OTC Forward / 场外远期</button>
+      <button class="itab" onclick="switchStruct('irs')">&#8635; IRS / 利率互换</button>
+    </div>
+
+    <!-- ── SNOWBALL ── -->
+    <div id="struct-snowball" class="struct-sub on">
+      <p class="struct-hint">
+        <b>Snowball (雪球/自动赎回)</b>: Monthly-observation autocallable. If spot ≥ KO barrier → early redemption with accrued coupon. If spot ever ≤ KI barrier → knock-in (short put exposure at maturity). No event → full coupon at maturity. Priced via Monte Carlo path simulation.
+      </p>
+      <div class="struct-layout">
+        <div class="struct-inputs">
+          <div class="sec-label" style="margin-bottom:8px">Parameters</div>
+          <div class="fg"><label>Spot S</label><input type="number" id="sb-S" value="5000" step="10"/></div>
+          <div class="fg"><label>Annual Vol σ (%)</label><input type="number" id="sb-sig" value="20" step="0.5"/></div>
+          <div class="fg"><label>Risk-Free Rate r (%)</label><input type="number" id="sb-r" value="2.5" step="0.1"/></div>
+          <div class="fg"><label>Dividend Yield q (%)</label><input type="number" id="sb-q" value="0" step="0.1"/></div>
+          <div class="fg"><label>Maturity T (years)</label><input type="number" id="sb-T" value="1" step="0.25" min="0.25"/></div>
+          <div class="fg"><label>KO Barrier (% of S₀, e.g. 105)</label><input type="number" id="sb-ko" value="105" step="1"/></div>
+          <div class="fg"><label>KI Barrier (% of S₀, e.g. 75)</label><input type="number" id="sb-ki" value="75" step="1"/></div>
+          <div class="fg"><label>Annual Coupon (%)</label><input type="number" id="sb-cpn" value="15" step="0.5"/></div>
+          <div class="fg"><label>Observation Frequency</label>
+            <select id="sb-freq">
+              <option value="12">Monthly (12/yr)</option>
+              <option value="4">Quarterly (4/yr)</option>
+              <option value="2">Semi-Annual (2/yr)</option>
+            </select>
+          </div>
+          <div class="fg"><label>Bid-Ask Spread (%)</label><input type="number" id="sb-spread" value="2" step="0.1"/></div>
+          <div class="fg"><label>MC Paths</label>
+            <select id="sb-paths">
+              <option value="10000">10,000 (Fast)</option>
+              <option value="50000" selected>50,000</option>
+              <option value="100000">100,000 (Precise)</option>
+            </select>
+          </div>
+          <button class="btn btn-p" style="margin-top:6px" onclick="calcSnowball()">&#9654; Price Snowball</button>
+        </div>
+        <div class="struct-results">
+          <div class="quote-row">
+            <div class="quote-card quote-bid"><div class="quote-label">Bid</div><div class="quote-val" id="sb-bid">—</div><div style="font-size:10px;color:var(--red);margin-top:3px">Sell side</div></div>
+            <div class="quote-card quote-mid"><div class="quote-label">Mid (Fair Value)</div><div class="quote-val" id="sb-mid">—</div><div style="font-size:10px;color:var(--blu2);margin-top:3px">MC Price (×S₀)</div></div>
+            <div class="quote-card quote-ask"><div class="quote-label">Ask</div><div class="quote-val" id="sb-ask">—</div><div style="font-size:10px;color:var(--green);margin-top:3px">Buy side</div></div>
+          </div>
+          <div class="metric-grid" id="sb-metrics">
+            <div class="metric-card"><div class="metric-label">KO Probability</div><div class="metric-val" id="sb-kop">—</div></div>
+            <div class="metric-card"><div class="metric-label">KI Probability</div><div class="metric-val" id="sb-kip">—</div></div>
+            <div class="metric-card"><div class="metric-label">MC Paths</div><div class="metric-val" id="sb-n">—</div></div>
+            <div class="metric-card"><div class="metric-label">95% CI ±</div><div class="metric-val" id="sb-ci">—</div></div>
+            <div class="metric-card"><div class="metric-label">KO Level</div><div class="metric-val" id="sb-ko-lv">—</div></div>
+            <div class="metric-card"><div class="metric-label">KI Level</div><div class="metric-val" id="sb-ki-lv">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /snowball -->
+
+    <!-- ── SHARK FIN ── -->
+    <div id="struct-sharkfin" class="struct-sub">
+      <p class="struct-hint">
+        <b>Shark Fin (鲨鱼鳍)</b>: Barrier option — Up-and-Out Call (gains capped if S reaches H) or Down-and-Out Put (protection cancelled if S drops to H). Priced analytically via the Rubinstein-Reiner closed-form formula. A cash rebate can be paid if barrier is hit.
+      </p>
+      <div class="struct-layout">
+        <div class="struct-inputs">
+          <div class="sec-label" style="margin-bottom:8px">Parameters</div>
+          <div class="fg"><label>Type</label>
+            <select id="sf-flag">
+              <option value="c">Up-and-Out Call (看涨/敲出)</option>
+              <option value="p">Down-and-Out Put (看跌/敲出)</option>
+            </select>
+          </div>
+          <div class="fg"><label>Spot S</label><input type="number" id="sf-S" value="5000" step="10"/></div>
+          <div class="fg"><label>Strike K</label><input type="number" id="sf-K" value="5000" step="10"/></div>
+          <div class="fg"><label>Barrier H</label><input type="number" id="sf-H" value="5500" step="10"/></div>
+          <div class="fg"><label>Maturity T (years)</label><input type="number" id="sf-T" value="0.25" step="0.25" min="0.01"/></div>
+          <div class="fg"><label>Risk-Free Rate r (%)</label><input type="number" id="sf-r" value="2.5" step="0.1"/></div>
+          <div class="fg"><label>Annual Vol σ (%)</label><input type="number" id="sf-sig" value="20" step="0.5"/></div>
+          <div class="fg"><label>Dividend Yield q (%)</label><input type="number" id="sf-q" value="0" step="0.1"/></div>
+          <div class="fg"><label>Cash Rebate (if hit)</label><input type="number" id="sf-rebate" value="0" step="1"/></div>
+          <div class="fg"><label>Bid-Ask Spread (%)</label><input type="number" id="sf-spread" value="2" step="0.1"/></div>
+          <button class="btn btn-p" style="margin-top:6px" onclick="calcSharkFin()">&#9654; Price Shark Fin</button>
+        </div>
+        <div class="struct-results">
+          <div class="quote-row">
+            <div class="quote-card quote-bid"><div class="quote-label">Bid</div><div class="quote-val" id="sf-bid">—</div></div>
+            <div class="quote-card quote-mid"><div class="quote-label">Mid (Fair Value)</div><div class="quote-val" id="sf-mid">—</div></div>
+            <div class="quote-card quote-ask"><div class="quote-label">Ask</div><div class="quote-val" id="sf-ask">—</div></div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">Vanilla BSM Price</div><div class="metric-val" id="sf-vanilla">—</div></div>
+            <div class="metric-card"><div class="metric-label">Barrier Discount</div><div class="metric-val" id="sf-disc">—</div></div>
+            <div class="metric-card"><div class="metric-label">Rebate PV</div><div class="metric-val" id="sf-rebate-pv">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /sharkfin -->
+
+    <!-- ── OTC FORWARD ── -->
+    <div id="struct-forward" class="struct-sub">
+      <p class="struct-hint">
+        <b>OTC Forward (场外远期)</b>: Cash-settled forward contract. Fair forward price F = S × e^((r−q)×T). Used in equity/commodity forwards, TRS structures, and as a hedge for barrier options. Quote shows the agreed forward price for delivery at T.
+      </p>
+      <div class="struct-layout">
+        <div class="struct-inputs">
+          <div class="sec-label" style="margin-bottom:8px">Parameters</div>
+          <div class="fg"><label>Spot S (Current Price)</label><input type="number" id="fw-S" value="5000" step="10"/></div>
+          <div class="fg"><label>Maturity T (years)</label><input type="number" id="fw-T" value="0.5" step="0.25" min="0.01"/></div>
+          <div class="fg"><label>Risk-Free Rate r (%)</label><input type="number" id="fw-r" value="2.5" step="0.1"/></div>
+          <div class="fg"><label>Dividend Yield q (%)</label><input type="number" id="fw-q" value="0" step="0.1"/></div>
+          <div class="fg"><label>Direction</label>
+            <select id="fw-dir">
+              <option value="long">Long (买入方)</option>
+              <option value="short">Short (卖出方)</option>
+            </select>
+          </div>
+          <div class="fg"><label>Notional (# of contracts)</label><input type="number" id="fw-notional" value="1000" step="100"/></div>
+          <div class="fg"><label>Bid-Ask Spread (pts)</label><input type="number" id="fw-spread" value="5" step="1"/></div>
+          <button class="btn btn-p" style="margin-top:6px" onclick="calcForward()">&#9654; Price Forward</button>
+        </div>
+        <div class="struct-results">
+          <div class="quote-row">
+            <div class="quote-card quote-bid"><div class="quote-label">Bid</div><div class="quote-val" id="fw-bid">—</div></div>
+            <div class="quote-card quote-mid"><div class="quote-label">Forward Price</div><div class="quote-val" id="fw-mid">—</div></div>
+            <div class="quote-card quote-ask"><div class="quote-label">Ask</div><div class="quote-val" id="fw-ask">—</div></div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">Cost of Carry</div><div class="metric-val" id="fw-coc">—</div></div>
+            <div class="metric-card"><div class="metric-label">Funding Cost</div><div class="metric-val" id="fw-fund">—</div></div>
+            <div class="metric-card"><div class="metric-label">Dividend Income</div><div class="metric-val" id="fw-div">—</div></div>
+            <div class="metric-card"><div class="metric-label">MTM per Unit</div><div class="metric-val" id="fw-mtm">—</div></div>
+            <div class="metric-card"><div class="metric-label">Notional MTM</div><div class="metric-val" id="fw-notional-mtm">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /forward -->
+
+    <!-- ── IRS ── -->
+    <div id="struct-irs" class="struct-sub">
+      <p class="struct-hint">
+        <b>Interest Rate Swap / 利率互换 (IRS)</b>: Plain vanilla pay-fixed/receive-float swap. NPV computed via flat-curve DCF. Positive NPV = floating leg worth more than fixed (beneficial for fixed payer). Shows per-period cash flow schedule and DV01 (basis point value).
+      </p>
+      <div class="struct-layout">
+        <div class="struct-inputs">
+          <div class="sec-label" style="margin-bottom:8px">Parameters</div>
+          <div class="fg"><label>Notional (CNY / USD)</label><input type="number" id="ir-notional" value="10000000" step="1000000"/></div>
+          <div class="fg"><label>Fixed Rate (%)</label><input type="number" id="ir-fixed" value="3.5" step="0.1"/></div>
+          <div class="fg"><label>Floating Rate / Par Rate (%)</label><input type="number" id="ir-float" value="2.8" step="0.1"/></div>
+          <div class="fg"><label>Maturity T (years)</label><input type="number" id="ir-T" value="2" step="0.5" min="0.25"/></div>
+          <div class="fg"><label>Payment Frequency</label>
+            <select id="ir-freq">
+              <option value="4" selected>Quarterly</option>
+              <option value="2">Semi-Annual</option>
+              <option value="1">Annual</option>
+            </select>
+          </div>
+          <div class="fg"><label>Discount Rate (%, blank = float rate)</label><input type="number" id="ir-disc" value="" step="0.1" placeholder="Same as float"/></div>
+          <div class="fg"><label>Bid-Ask Spread (CNY/USD)</label><input type="number" id="ir-spread" value="0" step="100"/></div>
+          <button class="btn btn-p" style="margin-top:6px" onclick="calcIRS()">&#9654; Price IRS</button>
+        </div>
+        <div class="struct-results">
+          <div class="quote-row">
+            <div class="quote-card quote-bid"><div class="quote-label">Bid NPV</div><div class="quote-val" id="ir-bid">—</div></div>
+            <div class="quote-card quote-mid"><div class="quote-label">Mid NPV</div><div class="quote-val" id="ir-mid">—</div></div>
+            <div class="quote-card quote-ask"><div class="quote-label">Ask NPV</div><div class="quote-val" id="ir-ask">—</div></div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">PV Fixed Leg</div><div class="metric-val" id="ir-pv-fixed">—</div></div>
+            <div class="metric-card"><div class="metric-label">PV Float Leg</div><div class="metric-val" id="ir-pv-float">—</div></div>
+            <div class="metric-card"><div class="metric-label">DV01 (BPV)</div><div class="metric-val" id="ir-dv01">—</div></div>
+          </div>
+          <div class="panel-title" style="margin-top:8px">Cash Flow Schedule</div>
+          <div class="cf-scroll">
+            <table class="cf-table" id="ir-cf-table">
+              <thead><tr><th>Period</th><th>Date (yr)</th><th>DF</th><th>Fixed Pmt</th><th>Float Pmt</th><th>Net Pmt</th><th>PV(Fixed)</th><th>PV(Float)</th></tr></thead>
+              <tbody id="ir-cf-tbody"><tr><td colspan="8" style="padding:16px;color:var(--tx2)">Click "Price IRS" to see cash flows</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /irs -->
+  </div><!-- /panel-struct -->
+
 </div><!-- .main -->
 </div><!-- .body-layout -->
 
@@ -476,7 +699,7 @@ function loadPreset(i){
 }
 
 // ========== TABS ==========
-const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',smile:'panel-smile',mc:'panel-mc',sens:'panel-sens',about:'panel-about'};
+const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',smile:'panel-smile',mc:'panel-mc',sens:'panel-sens',struct:'panel-struct',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
@@ -808,8 +1031,7 @@ function renderMCDist(d){
 }
 
 // ========== SENSITIVITY ==========
-async function calcSensitivity(){
-  const params=getParams();
+async function calcSensitivity(){  const params=getParams();
   try{
     const res=await fetch('/api/sensitivity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
     const d=await res.json();
@@ -846,6 +1068,195 @@ function getSensColor(val,matrix){
 window.addEventListener('load',()=>{
   initSmileRows();
 });
+
+// ========== I18N / LANGUAGE TOGGLE ==========
+const I18N = {
+  en: {
+    tab_pricing:'&#128200; Pricing', tab_portfolio:'&#128202; Portfolio',
+    tab_smile:'&#128516; Vol Smile', tab_mc:'&#127922; MC Distribution',
+    tab_sens:'&#128737; Sensitivity', tab_struct:'&#128176; Structured',
+    tab_about:'&#128203; About',
+    struct_h2:'&#128176; Structured Products Pricing / 结构化产品报价',
+    struct_hint:'Price common OTC structured products used in client quoting. Each product shows Bid / Mid / Ask, replicating real trading desk workflows.',
+    opt_type:'Option Type', params:'Parameters', presets:'Presets', actions:'Actions',
+    iv_solver:'IV Solver',
+    calc_btn:'&#9654; Calculate', add_port:'+ Add to Portfolio', export_btn:'&#8659; Export Excel Report',
+    port_h2:'Portfolio Exposure Monitor',
+    port_hint:'Add individual option positions using the sidebar. The table below aggregates exposure across the entire portfolio.',
+    smile_h2:'Volatility Smile / Skew',
+    smile_hint:'Enter market option prices for different strike prices to compute implied volatilities and visualize the volatility smile curve.',
+    mc_h2:'Monte Carlo P&L Distribution',
+    mc_hint:'Simulate option payoff paths and visualize the terminal P&L distribution.',
+    sens_h2:'Sensitivity Analysis / Stress Test',
+    sens_hint:'Stress test the option price and delta across ±20% volatility and ±60 day time shifts.',
+  },
+  cn: {
+    tab_pricing:'&#128200; 定价', tab_portfolio:'&#128202; 持仓组合',
+    tab_smile:'&#128516; 波动率微笑', tab_mc:'&#127922; 蒙特卡洛',
+    tab_sens:'&#128737; 敏感性分析', tab_struct:'&#128176; 结构化产品',
+    tab_about:'&#128203; 关于',
+    struct_h2:'&#128176; 结构化产品报价',
+    struct_hint:'为场外结构化产品（雪球、鲨鱼鳍、远期、利率互换）提供询报价支持，展示买卖价与中间价，模拟真实交易台报价流程。',
+    opt_type:'期权类型', params:'参数输入', presets:'预设场景', actions:'操作',
+    iv_solver:'隐含波动率求解',
+    calc_btn:'&#9654; 计算定价', add_port:'+ 加入持仓组合', export_btn:'&#8659; 导出Excel报告',
+    port_h2:'持仓组合敞口监控',
+    port_hint:'通过左侧参数添加持仓，下方表格自动汇总组合整体Delta/Gamma/Vega/Theta/Rho敞口。',
+    smile_h2:'波动率微笑 / 偏斜',
+    smile_hint:'输入不同行权价的期权市价，反推隐含波动率，绘制波动率微笑曲线。',
+    mc_h2:'蒙特卡洛损益分布',
+    mc_hint:'模拟期权到期收益路径，展示损益分布直方图，标注均值与95%置信区间。',
+    sens_h2:'敏感性分析 / 压力测试',
+    sens_hint:'对波动率(±20%)和到期时间(±60天)进行压力测试，生成期权价格与Delta的敏感性矩阵。',
+  }
+};
+let currentLang = 'en';
+function switchLang(lang) {
+  currentLang = lang;
+  $('lang-en').classList.toggle('on', lang==='en');
+  $('lang-cn').classList.toggle('on', lang==='cn');
+  const t = I18N[lang];
+  // Update all data-i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (t[key] !== undefined) el.innerHTML = t[key];
+  });
+  // Update sidebar section labels by querySelector
+  const secLabels = document.querySelectorAll('.sec-label');
+  const labelKeys = ['opt_type','params','presets','actions','iv_solver'];
+  secLabels.forEach((el,i) => { if(labelKeys[i]) el.textContent = {en:{opt_type:'Option Type',params:'Parameters',presets:'Presets',actions:'Actions',iv_solver:'IV Solver'},cn:{opt_type:'期权类型',params:'参数输入',presets:'预设场景',actions:'操作',iv_solver:'隐含波动率求解'}}[lang][labelKeys[i]]; });
+}
+
+// ========== STRUCTURED PRODUCTS: SUB-TAB SWITCH ==========
+function switchStruct(key){
+  const tabs = document.querySelectorAll('#struct-tabs .itab');
+  const panels = ['snowball','sharkfin','forward','irs'];
+  tabs.forEach((b,i) => b.classList.toggle('on', panels[i]===key));
+  panels.forEach(p => {
+    const el = $('struct-'+p);
+    if(el) el.classList.toggle('on', p===key);
+  });
+}
+
+// ========== SNOWBALL PRICING ==========
+async function calcSnowball(){
+  const S   = +$('sb-S').value,   sig = +$('sb-sig').value / 100;
+  const r   = +$('sb-r').value / 100, q = +$('sb-q').value / 100;
+  const T   = +$('sb-T').value,   ko  = +$('sb-ko').value / 100;
+  const ki  = +$('sb-ki').value / 100, cpn = +$('sb-cpn').value / 100;
+  const freq= +$('sb-freq').value, sp  = +$('sb-spread').value / 100;
+  const n   = +$('sb-paths').value;
+  if(!S||!sig||!T){showErr('Fill all Snowball parameters.'); return;}
+  try{
+    const res = await fetch('/api/snowball',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({S,sigma:sig,r,q,T,KO_pct:ko,KI_pct:ki,coupon_pa:cpn,obs_freq:freq,spread:sp,n_paths:n})});
+    const d = await res.json();
+    if(d.error){showErr(d.error); return;}
+    $('sb-mid').textContent = fmt(d.mid*100, 3)+'%';
+    $('sb-bid').textContent = fmt(d.bid*100, 3)+'%';
+    $('sb-ask').textContent = fmt(d.ask*100, 3)+'%';
+    $('sb-kop').textContent = fmt(d.ko_prob*100, 1)+'%';
+    $('sb-kip').textContent = fmt(d.ki_prob*100, 1)+'%';
+    $('sb-n').textContent   = (d.n_paths/1000).toFixed(0)+'k';
+    $('sb-ci').textContent  = '±'+fmt(d.ci95*100, 3)+'%';
+    $('sb-ko-lv').textContent = fmt(d.params.KO, 1);
+    $('sb-ki-lv').textContent = fmt(d.params.KI, 1);
+  }catch(e){showErr('Snowball error: '+e.message);}
+}
+
+// ========== SHARK FIN PRICING ==========
+async function calcSharkFin(){
+  const flag = $('sf-flag').value;
+  const S    = +$('sf-S').value,   K   = +$('sf-K').value;
+  const H    = +$('sf-H').value,   T   = +$('sf-T').value;
+  const r    = +$('sf-r').value/100, sig= +$('sf-sig').value/100;
+  const q    = +$('sf-q').value/100, reb= +$('sf-rebate').value;
+  const sp   = +$('sf-spread').value/100;
+  if(!S||!K||!H||!T||!sig){showErr('Fill all Shark Fin parameters.'); return;}
+  try{
+    const res = await fetch('/api/shark_fin',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({flag,S,K,T,r,sigma:sig,q,H,rebate:reb,spread:sp})});
+    const d = await res.json();
+    if(d.error){showErr(d.error); return;}
+    $('sf-mid').textContent     = fmt(d.mid, 4);
+    $('sf-bid').textContent     = fmt(d.bid, 4);
+    $('sf-ask').textContent     = fmt(d.ask, 4);
+    $('sf-vanilla').textContent = fmt(d.vanilla_price, 4);
+    $('sf-disc').textContent    = fmt(d.barrier_discount, 4);
+    $('sf-rebate-pv').textContent = fmt(d.rebate_pv, 4);
+  }catch(e){showErr('Shark Fin error: '+e.message);}
+}
+
+// ========== OTC FORWARD PRICING ==========
+async function calcForward(){
+  const S   = +$('fw-S').value,  T   = +$('fw-T').value;
+  const r   = +$('fw-r').value/100, q = +$('fw-q').value/100;
+  const dir = $('fw-dir').value, ntl = +$('fw-notional').value;
+  const sp  = +$('fw-spread').value;
+  if(!S||!T){showErr('Fill all Forward parameters.'); return;}
+  try{
+    const res = await fetch('/api/forward',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({S,T,r,q,direction:dir,notional:ntl,spread:sp})});
+    const d = await res.json();
+    if(d.error){showErr(d.error); return;}
+    $('fw-mid').textContent          = fmt(d.forward_price, 2);
+    $('fw-bid').textContent          = fmt(d.bid, 2);
+    $('fw-ask').textContent          = fmt(d.ask, 2);
+    $('fw-coc').textContent          = fmt(d.cost_of_carry, 2);
+    $('fw-fund').textContent         = fmt(d.funding_cost, 2);
+    $('fw-div').textContent          = fmt(d.dividend_income, 2);
+    $('fw-mtm').textContent          = fmt(d.mtm_per_unit, 2);
+    $('fw-notional-mtm').textContent = fmt(d.notional_mtm, 0);
+  }catch(e){showErr('Forward error: '+e.message);}
+}
+
+// ========== IRS PRICING ==========
+async function calcIRS(){
+  const ntl   = +$('ir-notional').value;
+  const fix   = +$('ir-fixed').value/100, flt = +$('ir-float').value/100;
+  const T     = +$('ir-T').value,   freq = +$('ir-freq').value;
+  const discV = $('ir-disc').value;
+  const disc  = discV==='' ? flt : +discV/100;
+  const sp    = +$('ir-spread').value;
+  if(!ntl||!fix||!flt||!T){showErr('Fill all IRS parameters.'); return;}
+  try{
+    const res = await fetch('/api/irs',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({notional:ntl,fixed_rate:fix,float_rate:flt,T,freq,r_disc:disc,spread:sp})});
+    const d = await res.json();
+    if(d.error){showErr(d.error); return;}
+    const fmtM = v => {
+      const abs = Math.abs(v);
+      if(abs>=1e6) return (v/1e6).toFixed(2)+'M';
+      if(abs>=1e3) return (v/1e3).toFixed(1)+'K';
+      return v.toFixed(0);
+    };
+    $('ir-mid').textContent      = fmtM(d.npv);
+    $('ir-bid').textContent      = fmtM(d.bid);
+    $('ir-ask').textContent      = fmtM(d.ask);
+    $('ir-pv-fixed').textContent = fmtM(d.pv_fixed);
+    $('ir-pv-float').textContent = fmtM(d.pv_float);
+    $('ir-dv01').textContent     = fmtM(d.dv01);
+    // Render cash flow table
+    const tbody = $('ir-cf-tbody');
+    tbody.innerHTML = d.cashflows.map(cf => {
+      const net = cf.net_pmt;
+      return `<tr>
+        <td>${cf.period}</td>
+        <td>${fmt(cf.t, 2)}</td>
+        <td>${fmt(cf.df, 4)}</td>
+        <td>${fmtM(cf.fixed_pmt)}</td>
+        <td>${fmtM(cf.float_pmt)}</td>
+        <td class="${net>=0?'net-pos':'net-neg'}">${fmtM(net)}</td>
+        <td>${fmtM(cf.pv_fixed)}</td>
+        <td>${fmtM(cf.pv_float)}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){showErr('IRS error: '+e.message);}
+}
 </script>
 </body>
 </html>

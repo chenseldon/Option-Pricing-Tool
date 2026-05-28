@@ -565,9 +565,362 @@ def export_excel():
     )
 
 
+
 # ─────────────────────────────────────────────────────────
-# Entry Point
+# API: Snowball (Autocallable) Pricing — Monte Carlo
 # ─────────────────────────────────────────────────────────
+
+@app.route("/api/snowball", methods=["POST"])
+def snowball():
+    """
+    Price a Snowball (Autocallable) note using path-based Monte Carlo.
+    Monthly observation: if S >= KO barrier → knock out, pay coupon accrued.
+    At any point if S <= KI barrier → knocked in (becomes vanilla short put).
+    If no event → pay full coupon at maturity.
+
+    Request JSON:
+        S, sigma, r, q  — standard params
+        T               — maturity in years (e.g. 1.0)
+        KO_pct          — knock-out level as pct of S0 (e.g. 1.05 = 105%)
+        KI_pct          — knock-in  level as pct of S0 (e.g. 0.75 = 75%)
+        coupon_pa       — annual coupon rate (e.g. 0.15 = 15%)
+        obs_freq        — observations per year (12 = monthly, 4 = quarterly)
+        spread          — bid-ask half-spread as fraction of mid (e.g. 0.02 = 2%)
+        n_paths         — Monte Carlo paths (default 50000)
+    """
+    try:
+        d        = request.get_json(force=True)
+        S0       = float(d["S"])
+        sigma    = float(d["sigma"])
+        r        = float(d["r"])
+        q        = float(d.get("q", 0.0))
+        T        = float(d["T"])
+        KO_pct   = float(d.get("KO_pct", 1.05))
+        KI_pct   = float(d.get("KI_pct", 0.75))
+        coupon   = float(d.get("coupon_pa", 0.15))
+        freq     = int(d.get("obs_freq", 12))
+        spread   = float(d.get("spread", 0.02))
+        n        = min(int(d.get("n_paths", 50000)), 200000)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    KO = S0 * KO_pct
+    KI = S0 * KI_pct
+    dt = 1.0 / freq
+    steps = int(round(T * freq))
+    np.random.seed(42)
+
+    # Simulate all paths at observation dates
+    Z      = np.random.standard_normal((n, steps))
+    log_r  = (r - q - 0.5 * sigma ** 2) * dt
+    log_s  = sigma * np.sqrt(dt)
+    log_ret = log_r + log_s * Z
+    # S_paths[i, t] = spot at obs t for path i
+    S_paths = S0 * np.exp(np.cumsum(log_ret, axis=1))
+
+    payoffs = np.zeros(n)
+    settled = np.zeros(n, dtype=bool)
+    ki_hit  = np.zeros(n, dtype=bool)
+
+    for t in range(steps):
+        t_yr = (t + 1) * dt
+        # Check knock-in (any path that ever goes below KI)
+        ki_hit |= S_paths[:, t] <= KI
+
+        # Check knock-out for unsettled paths
+        ko_mask = (~settled) & (S_paths[:, t] >= KO)
+        if np.any(ko_mask):
+            # Knock out: receive coupon accrued to this observation
+            payoffs[ko_mask] = np.exp(-r * t_yr) * coupon * t_yr
+            settled[ko_mask] = True
+
+    # Paths not knocked out by maturity
+    not_settled = ~settled
+    if np.any(not_settled):
+        final_S = S_paths[not_settled, -1]
+        ki_final = ki_hit[not_settled]
+
+        p = np.zeros(np.sum(not_settled))
+        # No KI hit → receive full coupon
+        p[~ki_final] = np.exp(-r * T) * coupon * T
+        # KI hit → short put payoff (loss if S < S0)
+        p[ki_final]  = np.exp(-r * T) * np.minimum(final_S[ki_final] / S0 - 1.0, 0.0)
+        payoffs[not_settled] = p
+
+    mid   = round(float(np.mean(payoffs)), 6)
+    std   = round(float(np.std(payoffs) / np.sqrt(n)), 6)
+    ci95  = round(1.96 * float(np.std(payoffs) / np.sqrt(n)), 6)
+    bid   = round(mid - abs(mid) * spread, 6)
+    ask   = round(mid + abs(mid) * spread, 6)
+    ko_prob = round(float(np.mean(settled)), 4)
+    ki_prob = round(float(np.mean(ki_hit)), 4)
+
+    return jsonify({
+        "mid": mid, "bid": bid, "ask": ask,
+        "std_err": std, "ci95": ci95,
+        "ko_prob": ko_prob, "ki_prob": ki_prob,
+        "n_paths": n,
+        "params": {"KO": KO, "KI": KI, "coupon_pa": coupon,
+                   "T": T, "freq": freq}
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# API: Shark Fin (Barrier Option) Pricing — Closed Form
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/shark_fin", methods=["POST"])
+def shark_fin():
+    """
+    Price barrier options (Up-and-Out Call / Down-and-Out Put) analytically.
+    Uses the Rubinstein-Reiner / Haug (1998) closed-form formula.
+
+    For Up-and-Out Call (UOC): η = -1, φ = 1, requires H > K
+    For Down-and-Out Put (DOP): η = +1, φ = -1, requires H < K
+
+    Correct formula: price = A - B - C + D  (with η-signed N() arguments)
+
+    Request JSON:
+        flag    — 'c' (Up-and-Out Call) or 'p' (Down-and-Out Put)
+        S, K, T, r, sigma, q — standard BSM params
+        H       — barrier level
+        rebate  — cash rebate paid if barrier is hit (default 0)
+        spread  — bid-ask half-spread fraction (default 0.02)
+    """
+    try:
+        d       = request.get_json(force=True)
+        flag    = str(d.get("flag", "c")).lower()
+        S       = float(d["S"])
+        K       = float(d["K"])
+        T       = float(d["T"])
+        r       = float(d["r"])
+        sigma   = float(d["sigma"])
+        q       = float(d.get("q", 0.0))
+        H       = float(d["H"])
+        rebate  = float(d.get("rebate", 0.0))
+        spread  = float(d.get("spread", 0.02))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    if T <= 0 or sigma <= 0:
+        return jsonify({"error": "T and sigma must be positive"}), 400
+
+    from scipy.stats import norm
+
+    # ── Haug (1998) closed-form for continuous barrier options ──────────────
+    phi = 1.0 if flag == 'c' else -1.0   # +1 call, -1 put
+    eta = -1.0 if flag == 'c' else 1.0   # -1 up barrier, +1 down barrier
+
+    if flag == 'c' and H <= S:
+        return jsonify({"error": "For Up-and-Out Call, barrier H must be above current spot S"}), 400
+    if flag == 'p' and H >= S:
+        return jsonify({"error": "For Down-and-Out Put, barrier H must be below current spot S"}), 400
+    if flag == 'c' and H <= K:
+        return jsonify({"error": "For Up-and-Out Call, H must be > K (otherwise always knocked out)"}), 400
+    if flag == 'p' and H >= K:
+        return jsonify({"error": "For Down-and-Out Put, H must be < K (otherwise always knocked out)"}), 400
+
+    try:
+        sT  = sigma * np.sqrt(T)
+        # λ = (r - q + σ²/2) / σ²  [Haug convention]
+        lam = (r - q + 0.5 * sigma**2) / sigma**2
+        # μ = (r - q - σ²/2) / σ²  = λ - 1
+        mu  = lam - 1.0
+
+        eqT = np.exp(-q * T)
+        erT = np.exp(-r * T)
+        hS  = H / S           # H/S ratio
+
+        # BSM argument definitions (Haug p.66)
+        x1 = np.log(S / K) / sT + lam * sT
+        x2 = np.log(S / H) / sT + lam * sT
+        y1 = np.log(H**2 / (S * K)) / sT + lam * sT
+        y2 = np.log(H / S) / sT + lam * sT
+
+        def _A(x):
+            """Standard BSM-style term using φ sign."""
+            return (phi * S * eqT * norm.cdf(phi * x)
+                    - phi * K * erT * norm.cdf(phi * x - phi * sT))
+
+        def _B(y):
+            """Reflection term using η sign on N() arguments."""
+            return (phi * S * eqT * hS**(2 * lam) * norm.cdf(eta * y)
+                    - phi * K * erT * hS**(2 * lam - 2) * norm.cdf(eta * y - eta * sT))
+
+        A = _A(x1)   # = vanilla option price
+        B = _A(x2)   # barrier-adjusted BSM term
+        C = _B(y1)   # reflection term with y1
+        D = _B(y2)   # reflection term with y2
+
+        barrier_price = float(A - B - C + D)
+
+        # Rebate present value (paid at barrier hit time)
+        if rebate > 0:
+            z  = np.log(H / S) / sT + lam * sT
+            r1 = hS ** (mu + lam)
+            r2 = hS ** (mu - lam)
+            rebate_pv = float(rebate * (
+                r1 * norm.cdf(eta * z) +
+                r2 * norm.cdf(eta * z - 2 * eta * lam * sT)
+            ))
+        else:
+            rebate_pv = 0.0
+
+        # Vanilla price for comparison
+        vanilla = float(A)
+
+    except Exception as e:
+        return jsonify({"error": f"Pricing error: {e}"}), 500
+
+    mid = round(max(0.0, barrier_price + rebate_pv), 6)
+    bid = round(mid * (1 - spread), 6)
+    ask = round(mid * (1 + spread), 6)
+
+    return jsonify({
+        "mid": mid, "bid": bid, "ask": ask,
+        "vanilla_price": round(vanilla, 6),
+        "barrier_discount": round(max(0.0, vanilla - barrier_price), 6),
+        "rebate_pv": round(rebate_pv, 6),
+        "params": {"H": H, "rebate": rebate, "flag": flag}
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# API: OTC Forward Pricing
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/forward", methods=["POST"])
+def otc_forward():
+    """
+    Price an OTC Forward contract.  F = S * exp((r - q) * T)
+
+    Request JSON:
+        S, T, r, q  — standard params
+        direction   — 'long' or 'short'
+        notional    — contract notional (default 1)
+        spread      — bid-ask half-spread as absolute points on F (default 0)
+    """
+    try:
+        d          = request.get_json(force=True)
+        S          = float(d["S"])
+        T          = float(d["T"])
+        r          = float(d["r"])
+        q          = float(d.get("q", 0.0))
+        direction  = str(d.get("direction", "long")).lower()
+        notional   = float(d.get("notional", 1.0))
+        spread_pts = float(d.get("spread", 0.0))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    F             = S * np.exp((r - q) * T)
+    cost_of_carry = S * (np.exp((r - q) * T) - 1.0)
+    funding_cost  = S * (np.exp(r * T) - 1.0)
+    div_income    = S * (np.exp(q * T) - 1.0)
+
+    mid = round(float(F), 6)
+    bid = round(mid - spread_pts, 6)
+    ask = round(mid + spread_pts, 6)
+
+    sign = 1 if direction == "long" else -1
+    mtm_per_unit = sign * (F - S)  # theoretical P&L vs spot
+
+    return jsonify({
+        "forward_price": mid,
+        "bid": bid, "ask": ask,
+        "cost_of_carry":   round(float(cost_of_carry), 4),
+        "funding_cost":    round(float(funding_cost), 4),
+        "dividend_income": round(float(div_income), 4),
+        "mtm_per_unit":    round(float(mtm_per_unit), 4),
+        "notional_mtm":    round(float(mtm_per_unit * notional), 4),
+        "params": {"S": S, "T": T, "r": r, "q": q,
+                   "direction": direction, "notional": notional}
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# API: Interest Rate Swap (IRS) — Simplified DCF
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/irs", methods=["POST"])
+def irs():
+    """
+    Price a plain vanilla Interest Rate Swap (IRS) using simplified flat-curve DCF.
+
+    Pay-fixed / receive-float convention (NPV from perspective of fixed payer).
+    NPV = PV(Float leg) - PV(Fixed leg)
+
+    Request JSON:
+        notional      — notional principal
+        fixed_rate    — annual fixed rate (e.g. 0.035 = 3.5%)
+        float_rate    — current floating rate / par rate (e.g. 0.025 = SHIBOR)
+        T             — maturity in years
+        freq          — payment frequency per year (1=annual, 2=semi, 4=quarterly)
+        r_disc        — discount rate (defaults to float_rate)
+        spread        — bid-ask half-spread as absolute NPV (default 0)
+    """
+    try:
+        d           = request.get_json(force=True)
+        notional    = float(d.get("notional", 1_000_000))
+        fixed_rate  = float(d["fixed_rate"])
+        float_rate  = float(d["float_rate"])
+        T           = float(d["T"])
+        freq        = int(d.get("freq", 4))
+        r_disc      = float(d.get("r_disc", float_rate))
+        spread      = float(d.get("spread", 0.0))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    dt = 1.0 / freq
+    periods = int(round(T * freq))
+    if periods < 1:
+        return jsonify({"error": "Too short: T * freq < 1"}), 400
+
+    fixed_cf  = fixed_rate * dt * notional
+    float_cf  = float_rate * dt * notional
+
+    cashflows = []
+    pv_fixed = pv_float = 0.0
+    for i in range(1, periods + 1):
+        t_i    = i * dt
+        df     = np.exp(-r_disc * t_i)
+        # Add principal repayment to last period
+        extra  = notional if i == periods else 0.0
+        fix_pmt = fixed_cf + extra
+        flt_pmt = float_cf + extra
+        pv_f   = fix_pmt * df
+        pv_fl  = flt_pmt * df
+        pv_fixed  += pv_f
+        pv_float  += pv_fl
+        cashflows.append({
+            "period":     i,
+            "t":          round(t_i, 4),
+            "df":         round(float(df), 6),
+            "fixed_pmt":  round(fix_pmt, 2),
+            "float_pmt":  round(flt_pmt, 2),
+            "pv_fixed":   round(pv_f, 2),
+            "pv_float":   round(pv_fl, 2),
+            "net_pmt":    round(flt_pmt - fix_pmt, 2),
+        })
+
+    npv  = round(float(pv_float - pv_fixed), 2)
+    bid  = round(npv - spread, 2)
+    ask  = round(npv + spread, 2)
+    dv01 = round(float(notional * dt * np.exp(-r_disc * T) * 0.0001), 2)  # approx DV01
+
+    return jsonify({
+        "npv": npv, "bid": bid, "ask": ask,
+        "pv_fixed":  round(float(pv_fixed), 2),
+        "pv_float":  round(float(pv_float), 2),
+        "dv01":      dv01,
+        "cashflows": cashflows,
+        "params": {
+            "notional": notional, "fixed_rate": fixed_rate,
+            "float_rate": float_rate, "T": T, "freq": freq
+        }
+    })
+
+
+
 
 if __name__ == "__main__":
     print("=" * 60)
