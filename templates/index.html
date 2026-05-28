@@ -258,7 +258,7 @@ input:focus{border-color:var(--blue)}
         <label id="lbl-pa-label">Label (Optional)</label>
         <input type="text" id="pa-label" placeholder="e.g. CSI500-Call-Mar"/>
       </div>
-      <button class="btn-ok" onclick="addPosition()">✓ Confirm Add</button>
+      <button class="btn-ok" id="btn-confirm-add" onclick="addPosition()">✓ Confirm Add</button>
     </div>
     <button class="btn btn-exp" id="btn-export-xl" onclick="exportVanillaCSV()">↓ Export CSV</button>
     <!-- IV Solver -->
@@ -596,38 +596,40 @@ input:focus{border-color:var(--blue)}
     </div>
     <p class="hint" id="port-hint">Add individual option positions using the sidebar. The table below aggregates exposure across the entire portfolio and monitors combined Greeks.</p>
     <div id="port-table-wrap">
-      <div class="empty-state" id="port-empty">No positions added yet.<br>Use "Add to Portfolio" in the sidebar to start.</div>
-      <div id="port-table-container" style="display:none">
+      <div class="empty-state" id="port-all-empty">No positions added yet.<br>Use "Add to Portfolio" in the sidebar to start.</div>
+      <div id="port-all-container" style="display:none">
         <div class="tscroll">
-          <table class="dtable">
+          <table class="dtable" id="port-all-table">
             <thead><tr>
-              <th>ID</th><th>Label</th><th>Type</th>
-              <th>S</th><th>K</th><th>T(d)</th><th>Vol%</th><th>r%</th>
-              <th>Qty</th><th>Entry</th><th>MTM</th><th>P&amp;L</th>
-              <th>Delta</th><th>Gamma</th><th>Vega</th><th>Theta</th><th>Rho</th>
-              <th>Margin</th><th>Action</th>
+              <th>ID</th><th id="th-ptype">Type</th><th id="th-label">Label</th>
+              <th id="th-underlying">Underlying</th><th id="th-level">Strike/Level</th><th>T(d)</th><th>Vol%</th>
+              <th id="th-qty">Qty</th><th id="th-entry">Entry</th><th>MTM</th><th>P&amp;L</th>
+              <th>Δ Delta</th><th>Γ Gamma</th><th>ν Vega</th><th>Θ Theta</th><th>ρ Rho</th>
+              <th id="th-keyrisk">Key Risk</th><th id="th-action">Action</th>
             </tr></thead>
-            <tbody id="port-tbody"></tbody>
+            <tbody id="port-all-tbody"></tbody>
+            <tfoot><tr id="port-all-totals-row" style="font-weight:700;background:var(--bgi)">
+              <td colspan="10" style="text-align:right" id="port-all-total-label">Total</td>
+              <td id="port-all-pnl" class="pos"></td>
+              <td id="port-all-delta"></td>
+              <td id="port-all-gamma"></td>
+              <td id="port-all-vega"></td>
+              <td id="port-all-theta"></td>
+              <td id="port-all-rho"></td>
+              <td colspan="2"></td>
+            </tr></tfoot>
           </table>
         </div>
-        <div class="totals-grid" id="port-totals"></div>
-      </div>
-    </div>
-    <!-- Structured Products Portfolio -->
-    <div style="margin-top:20px">
-      <div class="panel-title" id="struct-port-title">Structured Products Positions</div>
-      <div class="empty-state" id="struct-port-empty" style="padding:20px;font-size:11px">No structured positions added yet.</div>
-      <div id="struct-port-container" style="display:none">
-        <div class="tscroll">
-          <table class="dtable" id="struct-port-table">
-            <thead><tr>
-              <th>ID</th><th>Type</th><th>Label</th>
-              <th>Underlying (S)</th><th>Tenor (Yr)</th><th>Key Level</th><th>Rate/Vol</th>
-              <th>Qty</th><th>Entry</th><th>Last MTM</th><th>P&amp;L</th>
-              <th>Δ Delta</th><th>Key Risk</th><th>Action</th>
-            </tr></thead>
-            <tbody id="struct-port-tbody"></tbody>
-          </table>
+        <div class="totals-grid" id="port-summary-cards"></div>
+        <!-- Portfolio Stress Test -->
+        <div class="analysis-block" style="margin-top:12px">
+          <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+            <span id="port-stress-title">📉 Portfolio Stress Test</span><span>▼</span>
+          </div>
+          <div class="analysis-body">
+            <p class="hint" id="port-stress-hint">Portfolio P&amp;L under spot × volatility stress scenarios (delta+gamma approximation for structured products).</p>
+            <div id="port-stress-wrap"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -636,6 +638,7 @@ input:focus{border-color:var(--blue)}
   <!-- ABOUT TAB -->
   <div class="tab-panel" id="panel-about">
     <div class="about-card">
+      <div class="about-en">
       <h2>&#128202; Option Pricing &amp; Risk Analytics Tool</h2>
       <p>A professional-grade option pricing and risk management tool designed for OTC derivatives roles. Features real-time BSM and Monte Carlo pricing, full Greek calculations, portfolio exposure monitoring, volatility smile analysis, and stress testing — all visualized in an interactive web interface.</p>
       <div class="a-sec"><h3>Core Features</h3>
@@ -669,6 +672,42 @@ input:focus{border-color:var(--blue)}
 python app.py
 # Open http://localhost:5000 in browser</code>
       </div>
+      </div><!-- .about-en -->
+      <div class="about-cn" style="display:none">
+      <h2>&#128202; 期权定价与风险分析工具</h2>
+      <p>专业级场外衍生品期权定价与风险管理工具，面向OTC衍生品交易、结构化产品、金融工程等岗位。支持实时BSM与蒙特卡洛定价、完整希腊字母计算、持仓组合敞口监控、波动率微笑分析与压力测试，全部以交互式网页界面呈现。</p>
+      <div class="a-sec"><h3>核心功能</h3>
+        <ul>
+          <li>Black-Scholes-Merton定价，完整希腊字母计算（Δ, Γ, ν, Θ, ρ）</li>
+          <li>蒙特卡洛模拟（最多20万路径），损益分布直方图</li>
+          <li>隐含波动率求解（Newton-Raphson / Brent法）</li>
+          <li>持仓组合敞口汇总，监控组合希腊字母净头寸</li>
+          <li>盯市估值与每笔持仓保证金估算</li>
+          <li>从市场价格反推隐含波动率，绘制波动率微笑曲线</li>
+          <li>敏感性压力测试矩阵（波动率±20%，到期时间±60天）</li>
+          <li>一键导出Excel报告（多Sheet）</li>
+        </ul>
+      </div>
+      <div class="a-sec"><h3>技术栈</h3>
+        <div class="badges">
+          <span class="badge">Python 3.10+</span>
+          <span class="badge">Flask</span>
+          <span class="badge">py_vollib</span>
+          <span class="badge">NumPy</span>
+          <span class="badge">Pandas</span>
+          <span class="badge">openpyxl</span>
+          <span class="badge">ECharts 5</span>
+        </div>
+      </div>
+      <div class="a-sec"><h3>目标岗位</h3>
+        <p>场外衍生品交易助理 &bull; 结构化产品 &bull; 金融工程 &bull; 量化研究</p>
+      </div>
+      <div class="a-sec"><h3>快速启动</h3>
+        <code class="code-blk">pip install py_vollib numpy pandas matplotlib flask openpyxl
+python app.py
+# 浏览器打开 http://localhost:5000</code>
+      </div>
+      </div><!-- .about-cn -->
     </div>
   </div>
 
@@ -1092,56 +1131,160 @@ function addPosition(){
     T_raw:raw.T, tUnit:raw.tUnit});
   $('pa-label').value='';
   $('port-add-panel').classList.remove('open');
-  refreshPortfolio();
+  refreshAllPortfolio();
 }
 function removePosition(id){
   positions=positions.filter(p=>p.id!==id);
-  refreshPortfolio();
+  refreshAllPortfolio();
 }
-async function refreshPortfolio(){
-  if(positions.length===0){
-    $('port-empty').style.display='block';
-    $('port-table-container').style.display='none';
+async function refreshAllPortfolio(){
+  const hasVanilla = positions.length > 0;
+  const hasStruct = structPositions.length > 0;
+  if(!hasVanilla && !hasStruct){
+    $('port-all-empty').style.display='block';
+    $('port-all-container').style.display='none';
     return;
   }
   try{
-    const res=await fetch('/api/portfolio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({positions})});
-    const d=await res.json();
-    if(d.error){showErr(d.error);return;}
-    renderPortfolio(d);
+    let vanillaRows = [];
+    if(hasVanilla){
+      const res=await fetch('/api/portfolio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({positions})});
+      const d=await res.json();
+      if(d.error){showErr(d.error);return;}
+      vanillaRows=d.positions;
+    }
+    const cn = currentLang==='cn';
+    const rows=[];
+    for(let r of vanillaRows){
+      rows.push({
+        id:'V'+r.id, ptype:r.flag==='c'?(cn?'看涨':'Call'):(cn?'看跌':'Put'),
+        ptypeStyle:'color:var(--green);font-weight:700',
+        label:r.label, underlying:fmt(r.S,0), level:fmt(r.K,0),
+        tdays:r.T_days, vol:fmt(r.sigma*100,1)+'%', qty:r.qty,
+        entry:fmt(r.entry,2), mtm:fmt(r.mtm,2),
+        pnl:r.pnl, pnlFmt:fmtC(r.pnl,2),
+        delta:r.delta_net, deltaFmt:fmtC(r.delta_net,4),
+        gamma:r.gamma_net, gammaFmt:fmt(r.gamma_net,4),
+        vega:r.vega_net, vegaFmt:fmt(r.vega_net,4),
+        theta:r.theta_net, thetaFmt:fmtC(r.theta_net,4),
+        rho:r.rho_net, rhoFmt:fmtC(r.rho_net,4),
+        keyRisk:'—', removeId:r.id, removeType:'vanilla'
+      });
+    }
+    const typeColors={snowball:'var(--blu2)',sharkfin:'var(--yellow)',forward:'var(--green)',irs:'var(--purple)'};
+    for(let p of structPositions){
+      const pnl=(p.mtm-p.entry)*p.qty;
+      const deltaNum=(p.delta==='—'||p.delta===null)?null:parseFloat(p.delta);
+      rows.push({
+        id:'S'+p.id, ptype:p.product.toUpperCase(),
+        ptypeStyle:`color:${typeColors[p.product]||'var(--tx)'};font-weight:700`,
+        label:p.label, underlying:fmt(p.underlying,0), level:p.keyLevel,
+        tdays:Math.round(p.tenor*365), vol:p.rateOrVol, qty:p.qty,
+        entry:fmt(p.entry,2), mtm:fmt(p.mtm,2),
+        pnl:pnl, pnlFmt:fmtC(pnl,2),
+        delta:deltaNum, deltaFmt:p.delta,
+        gamma:null, gammaFmt:'—', vega:null, vegaFmt:'—',
+        theta:null, thetaFmt:'—', rho:null, rhoFmt:'—',
+        keyRisk:p.keyRisk, removeId:p.id, removeType:'struct'
+      });
+    }
+    $('port-all-empty').style.display='none';
+    $('port-all-container').style.display='block';
+    $('port-all-tbody').innerHTML=rows.map(r=>`<tr>
+      <td style="color:var(--tx2);font-size:10px">${r.id}</td>
+      <td style="${r.ptypeStyle}">${r.ptype}</td>
+      <td>${r.label}</td>
+      <td>${r.underlying}</td>
+      <td style="font-size:10px">${r.level}</td>
+      <td>${r.tdays}</td>
+      <td style="font-size:10px">${r.vol}</td>
+      <td>${r.qty>=0?'+'+r.qty:r.qty}</td>
+      <td>${r.entry}</td>
+      <td>${r.mtm}</td>
+      <td class="${r.pnl>=0?'pos':'neg'}">${r.pnlFmt}</td>
+      <td class="${r.delta!==null?(r.delta>=0?'pos':'neg'):''}">${r.deltaFmt}</td>
+      <td>${r.gammaFmt}</td>
+      <td>${r.vegaFmt}</td>
+      <td class="${r.theta!==null?(r.theta>=0?'pos':'neg'):''}">${r.thetaFmt}</td>
+      <td class="${r.rho!==null?(r.rho>=0?'pos':'neg'):''}">${r.rhoFmt}</td>
+      <td style="font-size:10px;color:var(--tx2)">${r.keyRisk}</td>
+      <td><button class="xbtn" onclick="${r.removeType==='vanilla'?'removePosition':'removeStructPosition'}(${r.removeId})">&#10005;</button></td>
+    </tr>`).join('');
+    // Aggregate totals
+    let netDelta=0,netGamma=0,netVega=0,netTheta=0,netRho=0,totalPnl=0,totalMtm=0;
+    let nDelta=0,nGamma=0,nVega=0,nTheta=0,nRho=0;
+    for(let r of rows){
+      totalPnl+=r.pnl||0;
+      totalMtm+=parseFloat(r.mtm)||0;
+      if(r.delta!==null&&!isNaN(r.delta)){netDelta+=r.delta;nDelta++;}
+      if(r.gamma!==null&&!isNaN(r.gamma)){netGamma+=r.gamma;nGamma++;}
+      if(r.vega!==null&&!isNaN(r.vega)){netVega+=r.vega;nVega++;}
+      if(r.theta!==null&&!isNaN(r.theta)){netTheta+=r.theta;nTheta++;}
+      if(r.rho!==null&&!isNaN(r.rho)){netRho+=r.rho;nRho++;}
+    }
+    const Tr=(en,cn_)=>currentLang==='cn'?cn_:en;
+    $('port-all-total-label').textContent=Tr('Total','合计');
+    $('port-all-pnl').className=totalPnl>=0?'pos':'neg';
+    $('port-all-pnl').textContent=fmt(totalPnl,2);
+    $('port-all-delta').textContent=nDelta>0?fmtC(netDelta,4):'—';
+    $('port-all-gamma').textContent=nGamma>0?fmt(netGamma,4):'—';
+    $('port-all-vega').textContent=nVega>0?fmt(netVega,4):'—';
+    $('port-all-theta').textContent=nTheta>0?fmtC(netTheta,4):'—';
+    $('port-all-rho').textContent=nRho>0?fmtC(netRho,4):'—';
+    $('port-summary-cards').innerHTML=`
+      <div class="total-card"><div class="total-label">${Tr('Total MTM','总盯市价值')}</div><div class="total-val">${fmt(totalMtm,2)}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Total P&L','总损益')}</div><div class="total-val ${totalPnl>=0?'pos':'neg'}">${fmt(totalPnl,2)}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Net Delta','净Delta')}</div><div class="total-val ${netDelta>=0?'pos':'neg'}">${nDelta>0?fmt(netDelta,4):'—'}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Net Gamma','净Gamma')}</div><div class="total-val">${nGamma>0?fmt(netGamma,4):'—'}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Net Vega','净Vega')}</div><div class="total-val">${nVega>0?fmt(netVega,4):'—'}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Net Theta','净Theta')}</div><div class="total-val ${netTheta>=0?'pos':'neg'}">${nTheta>0?fmt(netTheta,4):'—'}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Net Rho','净Rho')}</div><div class="total-val">${nRho>0?fmtC(netRho,4):'—'}</div></div>
+      <div class="total-card"><div class="total-label">${Tr('Positions','持仓数量')}</div><div class="total-val">${rows.length}</div></div>`;
+    calcPortfolioStress(rows);
   }catch(e){showErr('Portfolio error: '+e.message);}
 }
-function renderPortfolio(d){
-  $('port-empty').style.display='none';
-  $('port-table-container').style.display='block';
-  const pos=d.positions;
-  $('port-tbody').innerHTML=pos.map(r=>`<tr>
-    <td>${r.id}</td>
-    <td>${r.label}</td>
-    <td>${r.flag==='c'?'Call':'Put'}</td>
-    <td>${fmt(r.S,0)}</td><td>${fmt(r.K,0)}</td><td>${r.T_days}</td>
-    <td>${fmt(r.sigma*100,1)}%</td><td>${fmt(r.r*100,1)}%</td>
-    <td>${r.qty}</td><td>${fmt(r.entry,2)}</td>
-    <td>${fmt(r.mtm,2)}</td>
-    <td>${fmtC(r.pnl,2)}</td>
-    <td>${fmtC(r.delta_net,4)}</td>
-    <td>${fmt(r.gamma_net,4)}</td>
-    <td>${fmt(r.vega_net,4)}</td>
-    <td>${fmtC(r.theta_net,4)}</td>
-    <td>${fmtC(r.rho_net,4)}</td>
-    <td>${fmt(r.margin,0)}</td>
-    <td><button class="xbtn" onclick="removePosition(${r.id})">&#10005;</button></td>
-  </tr>`).join('');
-  const t=d.totals;
-  $('port-totals').innerHTML=`
-    <div class="total-card"><div class="total-label">Total MTM Value</div><div class="total-val">${fmt(t.total_mtm,2)}</div></div>
-    <div class="total-card"><div class="total-label">Total P&L</div><div class="total-val ${t.total_pnl>=0?'pos':'neg'}">${fmt(t.total_pnl,2)}</div></div>
-    <div class="total-card"><div class="total-label">Net Delta</div><div class="total-val ${t.net_delta>=0?'pos':'neg'}">${fmt(t.net_delta,4)}</div></div>
-    <div class="total-card"><div class="total-label">Net Gamma</div><div class="total-val">${fmt(t.net_gamma,4)}</div></div>
-    <div class="total-card"><div class="total-label">Net Vega</div><div class="total-val">${fmt(t.net_vega,4)}</div></div>
-    <div class="total-card"><div class="total-label">Net Theta</div><div class="total-val ${t.net_theta>=0?'pos':'neg'}">${fmt(t.net_theta,4)}</div></div>
-    <div class="total-card"><div class="total-label">Net Rho</div><div class="total-val">${fmt(t.net_rho,4)}</div></div>
-    <div class="total-card"><div class="total-label">Total Margin</div><div class="total-val">${fmt(t.total_margin,0)}</div></div>`;
+
+function calcPortfolioStress(rows){
+  const wrap=$('port-stress-wrap');
+  if(!wrap||rows.length===0){if(wrap)wrap.innerHTML='';return;}
+  const spotShocks=[-0.20,-0.10,0,0.10,0.20];
+  const volShocks=[-0.05,-0.025,0,0.025,0.05]; // absolute pp
+  const matrix=volShocks.map(vs=>spotShocks.map(ss=>{
+    let pnl=0;
+    for(let r of rows){
+      const S=parseFloat(r.underlying)||0;
+      const dS=S*ss;
+      if(r.removeType==='vanilla'){
+        const delta=r.delta||0, gamma=r.gamma||0, vega=r.vega||0;
+        pnl+=(delta*dS + 0.5*gamma*dS*dS + vega*(vs*100));
+      } else {
+        pnl+=(r.delta||0)*dS;
+      }
+    }
+    return pnl;
+  }));
+  const spotLabels=spotShocks.map(s=>(s>=0?'+':'')+(s*100).toFixed(0)+'%');
+  const volLabels=volShocks.map(v=>(v>=0?'+':'')+(v*100).toFixed(1)+'%');
+  const flat=matrix.flat();
+  const maxAbs=Math.max(...flat.map(Math.abs),1);
+  const cn=currentLang==='cn';
+  let html=`<div class="tscroll"><table class="dtable" style="font-size:10px">
+    <thead><tr><th>${cn?'波动率 \\ 现货':'Vol \\ Spot'}</th>`;
+  spotLabels.forEach(l=>html+=`<th>${l}</th>`);
+  html+='</tr></thead><tbody>';
+  matrix.forEach((row,vi)=>{
+    html+=`<tr><td style="font-weight:700">${volLabels[vi]}</td>`;
+    row.forEach((val,si)=>{
+      const pct=Math.min(Math.abs(val)/maxAbs,1);
+      const alpha=0.15+0.65*pct;
+      const bg=val>=0?`rgba(0,200,100,${alpha})`:`rgba(220,60,60,${alpha})`;
+      const border=(si===2&&vi===2)?'outline:2px solid var(--yellow);outline-offset:-2px':'';
+      html+=`<td style="background:${bg};color:#fff;text-align:right;${border}">${val>=0?'+':''}${fmt(val,1)}</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+  wrap.innerHTML=html;
 }
 
 // ========== IV SOLVER ==========
@@ -1156,7 +1299,7 @@ async function solveIV(){
     if(d.error){el.style.display='block';el.style.color='var(--red)';el.textContent='Error: '+d.error;return;}
     el.style.display='block';
     el.style.color='var(--green)';
-    el.innerHTML=`Implied Volatility: <b>${fmt(d.implied_volatility*100,2)}%</b>`;
+    el.innerHTML=`${currentLang==='cn'?'隐含波动率':'Implied Volatility'}: <b>${fmt(d.implied_volatility*100,2)}%</b>`;
   }catch(e){showErr('IV error: '+e.message);}
 }
 
@@ -1373,6 +1516,15 @@ const I18N = {
     lbl_fw_coc:'Cost of Carry', lbl_fw_fund:'Funding Cost', lbl_fw_div:'Dividend Income',
     lbl_fw_mtm:'MTM per Unit', lbl_fw_ntl_mtm:'Notional MTM', lbl_fw_fwd:'Forward Price',
     lbl_ir_pv_fixed:'PV Fixed Leg', lbl_ir_pv_float:'PV Float Leg', lbl_ir_dv01:'DV01 (BPV)', lbl_ir_cf:'Cash Flow Schedule',
+    /* Portfolio / unified table */
+    port_all_empty:'No positions added yet.<br>Use "Add to Portfolio" in the sidebar to start.',
+    btn_confirm_add:'✓ Confirm Add',
+    port_stress_title:'📉 Portfolio Stress Test',
+    port_stress_hint:'Portfolio P&L under spot × volatility stress scenarios (delta+gamma approximation for structured products).',
+    /* Analysis block headings */
+    lbl_smile_h:'📈 Volatility Smile / Skew',
+    lbl_mc_h:'🎲 Monte Carlo P&L Distribution',
+    lbl_sens_h:'🛡 Sensitivity Analysis / Stress Test',
   },
   cn: {
     /* Main tabs */
@@ -1425,6 +1577,15 @@ const I18N = {
     lbl_fw_coc:'持有成本', lbl_fw_fund:'融资成本', lbl_fw_div:'股息收益',
     lbl_fw_mtm:'每单位盯市价值', lbl_fw_ntl_mtm:'名义本金盯市价值', lbl_fw_fwd:'远期价格',
     lbl_ir_pv_fixed:'固定腿现值', lbl_ir_pv_float:'浮动腿现值', lbl_ir_dv01:'DV01 (基点价值)', lbl_ir_cf:'现金流计划表',
+    /* Portfolio / unified table */
+    port_all_empty:'暂无持仓。<br>使用左侧"加入持仓组合"按钮添加。',
+    btn_confirm_add:'✓ 确认添加',
+    port_stress_title:'📉 组合压力测试',
+    port_stress_hint:'组合损益在现货×波动率压力情景下的表现（结构化产品使用delta+gamma近似）。',
+    /* Analysis block headings */
+    lbl_smile_h:'📈 波动率微笑 / 偏斜',
+    lbl_mc_h:'🎲 蒙特卡洛损益分布',
+    lbl_sens_h:'🛡 敏感性分析 / 压力测试',
   }
 };
 
@@ -1477,6 +1638,19 @@ function switchLang(lang) {
     'lbl-fw-mtm':'lbl_fw_mtm','lbl-fw-ntl-mtm':'lbl_fw_ntl_mtm','lbl-fw-fwd':'lbl_fw_fwd',
     'lbl-ir-pv-fixed':'lbl_ir_pv_fixed','lbl-ir-pv-float':'lbl_ir_pv_float',
     'lbl-ir-dv01':'lbl_ir_dv01','lbl-ir-cf':'lbl_ir_cf',
+    /* Portfolio unified table */
+    'port-all-empty':'port_all_empty',
+    'btn-confirm-add':'btn_confirm_add',
+    'port-stress-title':'port_stress_title',
+    'port-stress-hint':'port_stress_hint',
+    /* Analysis block headings */
+    'lbl-smile-h':'lbl_smile_h',
+    'lbl-mc-h':'lbl_mc_h',
+    'lbl-sens-h':'lbl_sens_h',
+    /* Analysis block hints (re-use panel keys) */
+    'smile-hint2':'smile_hint',
+    'mc-hint2':'mc_hint',
+    'sens-hint2':'sens_hint',
   };
   Object.entries(idMap).forEach(([elId, key])=>{
     const el = $(elId);
@@ -1488,6 +1662,11 @@ function switchLang(lang) {
     const el = $('pname-'+k);
     if(el) el.textContent = v;
   });
+  // Toggle About tab bilingual content
+  document.querySelectorAll('.about-en').forEach(el=>el.style.display=lang==='en'?'':'none');
+  document.querySelectorAll('.about-cn').forEach(el=>el.style.display=lang==='cn'?'':'none');
+  // Re-render combined portfolio for language-sensitive content (Call/Put, labels)
+  if(positions.length>0||structPositions.length>0) refreshAllPortfolio();
 }
 
 // ========== STRUCTURED PRODUCTS: SUB-TAB SWITCH ==========
@@ -1811,43 +1990,14 @@ function addStructPosition(product){
   const prefixMap = {snowball:'sb',sharkfin:'sf',forward:'fw',irs:'ir'};
   const p = $(prefixMap[product]+'-port-add-panel');
   if(p) p.classList.remove('open');
-  refreshStructPortfolio();
+  refreshAllPortfolio();
 }
 
-function refreshStructPortfolio(){
-  if(structPositions.length===0){
-    $('struct-port-empty').style.display='block';
-    $('struct-port-container').style.display='none';
-    return;
-  }
-  $('struct-port-empty').style.display='none';
-  $('struct-port-container').style.display='block';
-  const typeColor={snowball:'var(--blu2)',sharkfin:'var(--yellow)',forward:'var(--green)',irs:'var(--purple)'};
-  $('struct-port-tbody').innerHTML = structPositions.map(p=>{
-    const pnl = (p.mtm-p.entry)*p.qty;
-    const c = typeColor[p.product]||'var(--tx)';
-    return `<tr>
-      <td>${p.id}</td>
-      <td style="color:${c};font-weight:700">${p.product.toUpperCase()}</td>
-      <td>${p.label}</td>
-      <td>${fmt(p.underlying,0)}</td>
-      <td>${fmt(p.tenor,2)}</td>
-      <td style="font-size:10px;color:var(--tx2)">${p.keyLevel}</td>
-      <td style="font-size:10px;color:var(--tx2)">${p.rateOrVol}</td>
-      <td>${p.qty>=0?'+'+p.qty:p.qty}</td>
-      <td>${fmt(p.entry,2)}</td>
-      <td>${fmt(p.mtm,2)}</td>
-      <td class="${pnl>=0?'pos':'neg'}">${fmt(pnl,2)}</td>
-      <td class="${p.delta!=='—'?(+p.delta>=0?'pos':'neg'):''}">${p.delta}</td>
-      <td style="font-size:10px;color:var(--tx2)">${p.keyRisk}</td>
-      <td><button class="xbtn" onclick="removeStructPosition(${p.id})">&#10005;</button></td>
-    </tr>`;
-  }).join('');
-}
+function refreshStructPortfolio(){ refreshAllPortfolio(); }
 
 function removeStructPosition(id){
   structPositions = structPositions.filter(p=>p.id!==id);
-  refreshStructPortfolio();
+  refreshAllPortfolio();
 }
 
 // ========== CSV EXPORT ==========
