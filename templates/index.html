@@ -1226,11 +1226,17 @@ async function refreshAllPortfolio(){
     $('port-all-total-label').textContent=Tr('Total','合计');
     $('port-all-pnl').className=totalPnl>=0?'pos':'neg';
     $('port-all-pnl').textContent=fmt(totalPnl,2);
-    $('port-all-delta').textContent=nDelta>0?fmtC(netDelta,4):'—';
-    $('port-all-gamma').textContent=nGamma>0?fmt(netGamma,4):'—';
-    $('port-all-vega').textContent=nVega>0?fmt(netVega,4):'—';
-    $('port-all-theta').textContent=nTheta>0?fmtC(netTheta,4):'—';
-    $('port-all-rho').textContent=nRho>0?fmtC(netRho,4):'—';
+    const setTotCell=(id,val,n,dec,colored)=>{
+      const el=$(id); if(!el)return;
+      if(n<=0){el.className='';el.textContent='—';return;}
+      if(colored){el.className=val>=0?'pos':'neg';el.textContent=fmt(val,dec);}
+      else{el.className='';el.textContent=fmt(val,dec);}
+    };
+    setTotCell('port-all-delta',netDelta,nDelta,4,true);
+    setTotCell('port-all-gamma',netGamma,nGamma,4,false);
+    setTotCell('port-all-vega',netVega,nVega,4,false);
+    setTotCell('port-all-theta',netTheta,nTheta,4,true);
+    setTotCell('port-all-rho',netRho,nRho,4,true);
     $('port-summary-cards').innerHTML=`
       <div class="total-card"><div class="total-label">${Tr('Total MTM','总盯市价值')}</div><div class="total-val">${fmt(totalMtm,2)}</div></div>
       <div class="total-card"><div class="total-label">${Tr('Total P&L','总损益')}</div><div class="total-val ${totalPnl>=0?'pos':'neg'}">${fmt(totalPnl,2)}</div></div>
