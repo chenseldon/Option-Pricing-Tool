@@ -1918,12 +1918,12 @@ async function calcCnFdm(productType){
     const data = await resp.json();
     if(data.error){ showErr('CN-FDM: ' + data.error); return; }
 
-    $(`${prefix}-cnfdm-price`).textContent = fmt(data.price, 4);
+    $(`${prefix}-cnfdm-price`).textContent = fmt(data.price, 6);
     const g = data.greeks || {};
-    $(`${prefix}-cnfdm-delta`).textContent = fmt(g.delta, 4);
-    $(`${prefix}-cnfdm-gamma`).textContent = fmt(g.gamma, 6);
-    $(`${prefix}-cnfdm-vega`).textContent  = fmt(g.vega, 4);
-    $(`${prefix}-cnfdm-theta`).textContent = fmt(g.theta, 4);
+    $(`${prefix}-cnfdm-delta`).textContent = fmt(g.delta, 6);
+    $(`${prefix}-cnfdm-gamma`).textContent = fmt(g.gamma, 8);
+    $(`${prefix}-cnfdm-vega`).textContent  = fmt(g.vega, 6);
+    $(`${prefix}-cnfdm-theta`).textContent = fmt(g.theta, 6);
 
     if(isSb){
       $('sb-cnfdm-method').textContent = data.method || 'Rannacher CN-FDM';

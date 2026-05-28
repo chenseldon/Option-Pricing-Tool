@@ -370,18 +370,16 @@ class CN_FDM:
         """
         全套希腊字母（数值稳定）
 
-        Delta/Gamma : 从 t=0 价值网格直接中心差分（最高效，无需重解 PDE）
-        Theta       : 前向差分（T−1天），重解一次 PDE
-        Vega        : 中心扰动（σ±0.1%），重解两次 PDE
-
-        说明：
-            对数空间差分转换到 S 空间：
-            ∂²V/∂S² = (1/S²)(∂²V/∂x² − ∂V/∂x)，x=ln(S)
+        Delta/Gamma : 从 t=0 价值网格直接中心差分，归一化为相对价格灵敏度
+                      delta_norm = S0 × dV/dS  （dV per 1 unit of S/S0 move）
+                      gamma_norm = S0² × d²V/dS²
+                      归一化后数值与 S0 量级无关（S0=100 或 S0=5000 结果一致）
+        Theta       : 每年价值变化（theta = dV/dτ，τ 以年计）
         """
         V_base = self._solve()
         p0     = self._interp(V_base, self.S0)
 
-        # ── Delta & Gamma（从网格直接读取）────────────────────
+        # ── Delta & Gamma（从网格直接读取，归一化处理）─────────
         j0 = int(np.argmin(np.abs(self.S_grid - self.S0)))
         j0 = int(np.clip(j0, 1, self.N - 2))
 
@@ -389,27 +387,34 @@ class CN_FDM:
         S_0, V_c = self.S_grid[j0],     V_base[j0]
         S_p, V_p = self.S_grid[j0 + 1], V_base[j0 + 1]
 
-        dS1   = S_0 - S_m
-        dS2   = S_p - S_0
-        delta = (V_p - V_m) / (dS1 + dS2)
+        dS1       = S_0 - S_m
+        dS2       = S_p - S_0
+        delta_raw = (V_p - V_m) / (dS1 + dS2)          # dV/dS（绝对值，量纲为 1/S）
 
         dx     = self.dx
         dVdx   = (V_base[j0 + 1] - V_base[j0 - 1]) / (2.0 * dx)
         d2Vdx2 = (V_base[j0 + 1] - 2.0 * V_base[j0] + V_base[j0 - 1]) / dx**2
-        gamma  = (d2Vdx2 - dVdx) / (S_0 ** 2)
+        gamma_raw = (d2Vdx2 - dVdx) / (S_0 ** 2)       # d²V/dS²（绝对值）
 
-        # ── Theta（重解缩短 1 天的 PDE）───────────────────────
+        # 归一化：消除 S0 量级影响，与产品标的价格无关
+        # delta_norm = dV / d(S/S0) = S0 × dV/dS  （无量纲，1% spot 涨跌对价格的影响 × 100）
+        # gamma_norm = d²V / d(S/S0)² = S0² × d²V/dS²
+        delta = delta_raw * S_0
+        gamma = gamma_raw * S_0 ** 2
+
+        # ── Theta（每日价值变化）──────────────────────────────
+        # d_T = 1 天（单位：年）；theta = 价格分数在 1 个自然日内的变化量
         d_T = d_T_days / 365.0
         if self.T - d_T > 1e-4:
             theta_p = self._clone(T=self.T - d_T).price()
-            theta   = (theta_p - p0) / d_T / 365.0
+            theta   = (theta_p - p0) / d_T             # 年化 theta；若需日化可 / 365
         else:
             theta = 0.0
 
-        # ── Vega（中心扰动重解）────────────────────────────────
+        # ── Vega（中心扰动重解，归一到 1% 波动率变化）──────────
         p_up = self._clone(sigma=max(self.sigma + d_vol, 1e-4)).price()
         p_dn = self._clone(sigma=max(self.sigma - d_vol, 1e-4)).price()
-        vega = (p_up - p_dn) / (2.0 * d_vol) * 0.01   # 归一到 1% 波动率变化
+        vega = (p_up - p_dn) / (2.0 * d_vol) * 0.01   # 每 1% vol 变化的价格变动
 
         return {
             "delta": round(float(delta), 6),
