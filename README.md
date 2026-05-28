@@ -1,182 +1,279 @@
-# 📈 Option Pricing Tool
+# 📈 OTC Option Pricing & Risk Analytics Tool
 
-> OTC Derivatives · European Vanilla Options · Black-Scholes-Merton + Monte Carlo  
-> GitHub Portfolio Project | OTC Derivatives Trading Assistant
+> **场外衍生品定价与风险管理工具** | OTC Derivatives · Vanilla + Structured Products · BSM + Monte Carlo  
+> Campus Recruitment Portfolio Project | 校招实战项目 — 场外衍生品交易助理方向
 
----
-
-## Features
-
-- **Black-Scholes-Merton pricing** with continuous dividend yield (vanilla OTC options)
-- **Monte Carlo simulation** (risk-neutral measure, 100,000 paths)
-- **Full Greeks**: Delta / Gamma / Vega / Theta / Rho
-- **Implied Volatility solver** (Newton-Raphson iteration)
-- **Web UI** (Flask + ECharts): interactive price & Greeks charts in browser
-- **CLI demo + interactive mode**: `main.py` for terminal use
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-2.0+-green.svg)](https://flask.palletsprojects.com/)
+[![ECharts](https://img.shields.io/badge/ECharts-5.x-orange.svg)](https://echarts.apache.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## Project Structure
+## 🎯 Project Overview
+
+A professional-grade **OTC derivatives pricing and risk analytics web application** built for the trading desk workflow. Covers the full lifecycle from product quoting to portfolio exposure monitoring — directly aligned with the daily responsibilities of an **OTC Derivatives Trading Assistant (场外衍生品交易助理)**.
+
+**Key selling points for campus recruitment:**
+- Implements real desk tools: BSM pricing, Monte Carlo, implied vol, barrier pricing, snowball autocallable
+- Portfolio-level Greeks aggregation (not just single-option pricing)
+- Stress testing / sensitivity matrices across vol and time shifts
+- Structured product quoting (bid/mid/ask) with spread overlay
+- CN/EN bilingual interface
+
+---
+
+## ✨ Features
+
+### 📈 Option Pricing (Vanilla)
+- **Black-Scholes-Merton** closed-form pricing with continuous dividend yield
+- **Monte Carlo simulation** (risk-neutral GBM, up to 200k paths)
+- **Full Greeks**: Δ Delta / Γ Gamma / ν Vega / Θ Theta / ρ Rho
+- **Implied Volatility solver** (Newton-Raphson, < 1ms per solve)
+- **Interactive charts**: ECharts price curve + 5 Greeks curves
+- **Unit auto-conversion**: input T in days or years, σ/r in % or decimal
+
+### 💰 Structured Products Quoting
+| Product | Pricing Model |
+|---|---|
+| **Snowball / Autocallable (雪球)** | Monte Carlo path simulation with knock-out/knock-in observation |
+| **Shark Fin / Barrier Option (鲨鱼鳍)** | Rubinstein-Reiner closed-form (UOC / DOP) |
+| **OTC Equity Forward (场外远期)** | Cost-of-carry: F = S·e^((r−q)T) with funding/dividend decomposition |
+| **Interest Rate Swap (利率互换)** | Flat-curve DCF; full cash flow schedule + DV01 sensitivity |
+
+All products output **Bid / Mid / Ask** with configurable spread (bps).
+
+### 📊 Portfolio Exposure Monitor
+- Add multiple vanilla positions with qty / entry price
+- **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
+- **MTM valuation** and per-position P&L (mark-to-market vs entry)
+- **Margin estimation** (notional × fixed% + |Δ| × variable%)
+- Structured product positions: separate table with product-specific risk metrics (KO/KI prob, barrier discount, forward delta, DV01)
+- **Export CSV**: one-click report download for all positions
+
+### 🔬 Analytics Panels (inline in Pricing tab)
+- **Volatility Smile / Skew**: input market prices at different strikes → compute IV → plot smile curve
+- **MC P&L Distribution**: histogram of terminal payoffs with mean, median, 95% CI
+- **Sensitivity / Stress Test**: 5×5 price and delta matrix across ±20% vol × ±60 day shifts
+- **Structured Sensitivity**: product-specific stress grids (Snowball / SharkFin: spot×vol, Forward: spot×rate, IRS: parallel rate shifts ±200bps)
+
+### 🌐 CN/EN Bilingual Interface
+- Full Chinese / English language toggle
+- All labels, metrics, and product descriptions translated
+
+---
+
+## 🗂 Project Structure
 
 ```
 期权定价工具/
-├── app.py               # Flask web backend (API + serve HTML)
-├── bs_pricing.py        # BSM pricing + Monte Carlo + IV solver
-├── greeks_calc.py       # Greeks calculation module (Delta/Gamma/Vega/Theta/Rho)
-├── visualization.py     # Matplotlib charts (price curve + Greeks curves)
+├── app.py               # Flask backend — all pricing API endpoints
+├── bs_pricing.py        # BSM pricing + Monte Carlo simulation + IV solver
+├── greeks_calc.py       # Greeks calculation (Delta/Gamma/Vega/Theta/Rho)
+├── visualization.py     # Matplotlib charts (CLI use, PNG export)
 ├── main.py              # CLI entry point (demo mode + interactive mode)
 ├── templates/
-│   └── index.html       # Single-page web frontend (ECharts)
-├── requirements.txt     # Dependencies
+│   └── index.html       # Single-page frontend (ECharts, pure HTML/CSS/JS)
+├── requirements.txt     # Python dependencies
 └── README.md
 ```
 
----
+### API Endpoints
 
-## Tech Stack
-
-| Library | Min Version | Role |
+| Endpoint | Method | Description |
 |---|---|---|
-| `py_vollib` | ≥ 1.0.1 | Core pricing: BSM, Greeks, IV (analytical) |
-| `numpy` | ≥ 1.21 | Monte Carlo simulation, numerical computation |
-| `pandas` | ≥ 1.3 | Greeks summary table output |
-| `matplotlib` | ≥ 3.4 | Price & Greeks chart (PNG export) |
-| `flask` | ≥ 2.0 | Web application backend |
+| `/api/calculate` | POST | BSM + MC pricing, full Greeks, price curve data |
+| `/api/greeks_curve` | POST | Greeks vs spot arrays for ECharts rendering |
+| `/api/iv` | POST | Implied volatility solver |
+| `/api/portfolio` | POST | Portfolio-level Greeks aggregation + MTM |
+| `/api/mc_distribution` | POST | MC payoff distribution histogram data |
+| `/api/sensitivity` | POST | Price/delta sensitivity matrix |
+| `/api/vol_smile` | POST | Implied vol from market prices (smile curve) |
+| `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
+| `/api/snowball` | POST | Snowball autocallable MC pricing |
+| `/api/shark_fin` | POST | Shark fin barrier option pricing |
+| `/api/forward` | POST | OTC equity forward pricing |
+| `/api/irs` | POST | Interest rate swap NPV + cash flows |
 
 ---
 
-## Installation
+## 🛠 Tech Stack
+
+| Library | Version | Role |
+|---|---|---|
+| `py_vollib` | ≥ 1.0.1 | BSM analytical pricing, Greeks, IV solver |
+| `numpy` | ≥ 1.21 | Monte Carlo GBM simulation, vectorized math |
+| `pandas` | ≥ 1.3 | Portfolio aggregation, data structuring |
+| `scipy` | ≥ 1.7 | Statistical distributions, optimization |
+| `flask` | ≥ 2.0 | REST API backend |
+| `matplotlib` | ≥ 3.4 | CLI chart output (PNG) |
+| **ECharts 5** | CDN | Interactive web charts (no npm required) |
+
+---
+
+## ⚙️ Installation
 
 ```bash
+# Clone the repo
+git clone https://github.com/chenseldon/Option-Pricing-Tool.git
+cd Option-Pricing-Tool
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-Or install individually:
-
-```bash
-pip install py_vollib numpy pandas matplotlib flask
-```
-
-> ⚠️ If `py_vollib` fails to install, try:
+> ⚠️ If `py_vollib` fails on Windows, try:
 > ```bash
 > pip install py_vollib --no-build-isolation
 > ```
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
-### Option A — Web Interface (Recommended)
+### Web Interface (Recommended)
 
 ```bash
 python app.py
 ```
 
-Then open **http://127.0.0.1:5000** in your browser.
+Open **http://127.0.0.1:5000** in your browser.
 
-**Features:**
-- Input any option parameters (S, K, T, r, σ, q, Call/Put)
-- Click **Calculate** — instantly see BSM price, Monte Carlo price, all Greeks
-- **Price Curve tab**: BSM price vs intrinsic value (ECharts interactive)
-- **Greeks Curves tab**: 5 mini-charts for Delta/Gamma/Vega/Theta/Rho
-- **IV Solver**: enter market price → get implied volatility
-- Press `Enter` to calculate quickly
+**Workflow:**
+1. Select **Product Type** from the left sidebar (Call / Put / Snowball / Shark Fin / OTC Forward / IRS)
+2. Input parameters — T accepts days or years, σ/r accept % or decimal
+3. Click **▶ Calculate** (or **▶ Price Product** for structured products)
+4. View results, Greeks, charts on the right panel
+5. Add positions to Portfolio for combined exposure monitoring
+6. Expand inline analytics panels for smile curve, MC distribution, stress test
+7. Export CSV report
 
-### Option B — CLI Mode
+### CLI Mode
 
 ```bash
 python main.py
 ```
 
 ```
-  1. Demo mode  — auto-run CSI 500 index option test cases + save PNG charts
-  2. Interactive — manually enter parameters, real-time output
+  1. Demo mode  — auto-run CSI 500 ATM call test + save PNG charts
+  2. Interactive — manually enter parameters
 ```
 
 ---
 
-## Sample Output (CLI Demo)
+## 📐 Pricing Models
 
-### Test Case 1: ATM Call (CSI 500 Index Option)
-
-| Param | Value | Notes |
-|---|---|---|
-| S | 5500 | Underlying (CSI 500 index, points) |
-| K | 5500 | At-the-money |
-| T | 0.25 yr | ~3 months |
-| r | 2% | 1-year T-bond yield reference |
-| σ | 20% | CSI 500 historical volatility |
-| q | 1% | Index dividend yield |
-
-```
-──────────────────────────────────────────────────────────────
-  Option Type : Call Option
-  S = 5500   K = 5500   T = 0.25 yr   r = 2.00%   σ = 20.00%   q = 1.00%
-──────────────────────────────────────────────────────────────
-
-  [BSM Theoretical Price]  = 303.xxxx
-  [Monte Carlo Price]      = 303.xxxx  (vs BSM Δ < 2.0000)
-
-  [Greeks Summary]
-
-  Greek      Value     Business Meaning
-  Delta     0.4982     Direction risk — hedge ratio
-  Gamma     0.000xxx   Delta convexity — re-hedge cost
-  Vega      xx.xxxx    P&L per 1% vol move
-  Theta     -x.xxxx    Daily time decay (buyer cost)
-  Rho       xx.xxxx    P&L per 1% rate move
-```
-
-### Saved Charts
-
-| File | Content |
-|---|---|
-| `option_price_curve.png` | BSM price + intrinsic value + time value fill |
-| `greeks_curve.png` | 5-panel Greeks vs underlying price |
-
----
-
-## Model Reference
-
-### Black-Scholes-Merton (with dividend yield q)
+### Black-Scholes-Merton (with continuous dividend yield q)
 
 $$C = S e^{-qT} N(d_1) - K e^{-rT} N(d_2)$$
 $$P = K e^{-rT} N(-d_2) - S e^{-qT} N(-d_1)$$
-$$d_1 = \frac{\ln(S/K) + (r - q + \sigma^2/2) T}{\sigma \sqrt{T}}, \quad d_2 = d_1 - \sigma\sqrt{T}$$
+$$d_1 = \frac{\ln(S/K) + (r - q + \sigma^2/2)\,T}{\sigma\sqrt{T}}, \quad d_2 = d_1 - \sigma\sqrt{T}$$
 
-### Greeks
+### Greeks Summary
 
-| Greek | Formula | Trading Use |
+| Greek | Formula | Desk Use |
 |---|---|---|
-| **Delta** | ∂V/∂S | Daily delta-hedging (buy/sell underlying) |
-| **Gamma** | ∂²V/∂S² | Re-hedge frequency & convexity cost |
-| **Vega** | ∂V/∂σ | Volatility risk — hedge with listed options |
-| **Theta** | ∂V/∂t | Time decay — buyer's daily holding cost |
-| **Rho** | ∂V/∂r | Rate sensitivity — material for long-dated options |
+| **Delta** | ∂V/∂S | Delta-hedging ratio — buy/sell underlying to stay flat |
+| **Gamma** | ∂²V/∂S² | Re-hedge cost — convexity; high gamma → frequent rebalancing |
+| **Vega** | ∂V/∂σ | P&L per 1% vol move — hedge with listed options/variance swaps |
+| **Theta** | ∂V/∂t | Daily time decay — buyer's carry cost, seller's premium income |
+| **Rho** | ∂V/∂r | Rate sensitivity — material for long-dated or deep ITM options |
+
+### Snowball Autocallable (Monte Carlo)
+
+$$\text{Payoff} = \begin{cases} \text{Coupon} \times t_i & \text{if } S_{t_i} \geq KO \\ -\max(0, 1 - S_T/KI) \times \text{Notional} & \text{if } S_T \leq KI \\ 0 & \text{otherwise} \end{cases}$$
+
+Monte Carlo samples 10k–200k GBM paths; outputs KO/KI probabilities and 95% CI.
+
+### Shark Fin (Rubinstein-Reiner Closed Form)
+
+Up-and-Out Call / Down-and-Out Put priced via 4-term closed-form barrier formula with optional cash rebate on breach. Reduces to vanilla BSM when H is far from S.
+
+### OTC Forward
+
+$$F = S \cdot e^{(r-q)T}$$
+
+Decomposed into funding cost and dividend income. MTM = discounted difference between current forward price and contracted price.
+
+### Interest Rate Swap (Flat Curve DCF)
+
+$$NPV = PV_{\text{float}} - PV_{\text{fixed}} = \sum_{i} \frac{L \cdot r_{flt} \cdot \Delta t_i}{(1+r_{disc})^{t_i}} - \sum_{i} \frac{L \cdot r_{fix} \cdot \Delta t_i}{(1+r_{disc})^{t_i}}$$
+
+DV01 (Dollar Value of 01) = NPV change per +1bp parallel rate shift.
 
 ---
 
-## Parameter Validation
+## 📊 Sample Output
 
-| Param | Valid Range | Error if violated |
+### ATM Call Option (CSI 500)
+
+| Input | Value |
+|---|---|
+| S (spot) | 5,500 |
+| K (strike) | 5,500 (ATM) |
+| T | 90 days (0.25 yr) |
+| r | 2.0% |
+| σ | 20.0% |
+| q | 1.0% |
+
+| Output | BSM | Monte Carlo |
 |---|---|---|
-| S (underlying) | > 0 | "S must be greater than 0" |
-| K (strike) | > 0 | "K must be greater than 0" |
-| T (expiry, yr) | > 0 | "T must be greater than 0" |
-| σ (volatility) | (0, 2] | "sigma must be in range (0, 2]" |
-| q (dividend) | ≥ 0 | "q must be >= 0" |
+| Price | ~303 | ~303 ± 2 |
+| Delta | 0.498 | — |
+| Gamma | 0.00032 | — |
+| Vega | 6.64 (per 1%) | — |
+| Theta | −2.08 (per day) | — |
+
+### Snowball (Typical China OTC)
+
+| Input | Value |
+|---|---|
+| S₀ | 5,000 |
+| KO level | 103% |
+| KI level | 75% |
+| Coupon | 20% p.a. |
+| Tenor | 1 year |
+
+Output: Mid ≈ 8–12% of notional, KO prob ≈ 50–70%, KI prob ≈ 15–25%
 
 ---
 
-## Target Roles
+## 🎓 Target Roles
 
-- OTC derivatives trading assistant / structuring
-- Asset management / financial engineering
-- Quantitative research internship
+This project directly targets the following campus recruitment positions:
+
+- **场外衍生品交易助理** (OTC Derivatives Trading Assistant)
+- **结构化产品助理** (Structured Products Associate)
+- **金融工程 / 量化研究实习** (Financial Engineering / Quant Research Intern)
+- **资管风控** (Asset Management Risk Control)
+
+**Business scenarios covered:**
+- Quoting vanilla and structured products from market parameters
+- Greeks-based delta hedging and re-hedge cost estimation
+- Portfolio exposure monitoring and MTM valuation
+- Stress testing across vol and rate scenarios
+- Implied volatility smile construction from market prices
 
 ---
 
-## License
+## ⚠️ Parameter Validation
 
-MIT License — for personal learning and portfolio use
+| Param | Valid Range | Notes |
+|---|---|---|
+| S, K | > 0 | Positive prices only |
+| T | > 0 | Days or years (auto-converted) |
+| σ | (0%, 500%] | Annualized volatility |
+| q | ≥ 0 | Continuous dividend yield |
+| KO level | > 100% (snowball) | Knock-out above initial price |
+| H barrier | > S for UOC | Barrier above current spot |
+
+---
+
+## 📄 License
+
+MIT License — free for personal learning, portfolio, and interview demonstration use.
+
+---
+
+*Built with Python + Flask + ECharts · 2024–2025*
 

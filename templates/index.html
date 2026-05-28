@@ -458,9 +458,9 @@ input:focus{border-color:var(--blue)}
 </aside>
 <div class="main">
   <div class="main-tabs">
-    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Pricing</button>
-    <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
+    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
     <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
+    <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
     <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
 
@@ -621,8 +621,10 @@ input:focus{border-color:var(--blue)}
         <div class="tscroll">
           <table class="dtable" id="struct-port-table">
             <thead><tr>
-              <th>ID</th><th>Type</th><th>Label</th><th>Key Params</th>
-              <th>Qty</th><th>Entry</th><th>Last MTM</th><th>P&amp;L</th><th>Action</th>
+              <th>ID</th><th>Type</th><th>Label</th>
+              <th>Underlying (S)</th><th>Tenor (Yr)</th><th>Key Level</th><th>Rate/Vol</th>
+              <th>Qty</th><th>Entry</th><th>Last MTM</th><th>P&amp;L</th>
+              <th>Δ Delta</th><th>Key Risk</th><th>Action</th>
             </tr></thead>
             <tbody id="struct-port-tbody"></tbody>
           </table>
@@ -941,7 +943,7 @@ function loadPreset(i){
 }
 
 // ========== TABS ==========
-const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',struct:'panel-struct',about:'panel-about'};
+const PANELS={pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
@@ -1322,7 +1324,7 @@ window.addEventListener('load',()=>{
 const I18N = {
   en: {
     /* Main tabs */
-    tab_pricing:'📈 Pricing', tab_portfolio:'📊 Portfolio',
+    tab_pricing:'📈 Option Pricing', tab_portfolio:'📊 Portfolio',
     tab_struct:'💰 Structured', tab_about:'📋 About',
     /* Sidebar labels */
     lbl_prod_type:'Product Type',
@@ -1374,7 +1376,7 @@ const I18N = {
   },
   cn: {
     /* Main tabs */
-    tab_pricing:'📈 定价', tab_portfolio:'📊 持仓组合',
+    tab_pricing:'📈 期权定价', tab_portfolio:'📊 持仓组合',
     tab_struct:'💰 结构化产品', tab_about:'📋 关于',
     /* Sidebar labels */
     lbl_prod_type:'产品类型',
@@ -1734,37 +1736,78 @@ function toggleStructPortAdd(prefix){
   if(el) el.classList.toggle('open');
 }
 
+// Standard normal CDF used for analytical delta approximations
+function normalCDF(x){
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const sign=x<0?-1:1; x=Math.abs(x)/Math.sqrt(2);
+  const t=1/(1+p*x);
+  const y=1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+  return 0.5*(1+sign*y);
+}
+
 function addStructPosition(product){
-  let qty, entry, lbl, keyParams, mtm;
+  let qty, entry, lbl, mtm;
+  let underlying, tenor, keyLevel, rateOrVol, delta, keyRisk;
   const sp = lastStructResults[product];
+
   if(product==='snowball'){
     qty = +$('sb-pa-qty').value||1;
-    entry = +$('sb-pa-entry').value||(sp?+sp.mid.replace('%',''):0);
+    entry = +$('sb-pa-entry').value||(sp ? parseFloat(sp.mid) : 0);
     lbl = $('sb-pa-label').value || ('SB-'+structPosId);
     mtm = sp ? parseFloat(sp.mid) : 0;
-    keyParams = sp ? `S=${$('sb-S').value} σ=${$('sb-sig').value}% KO=${$('sb-ko').value}% T=${$('sb-T').value}Y` : '—';
+    underlying = +$('sb-S').value;
+    tenor = +$('sb-T').value;
+    keyLevel = `KO:${$('sb-ko').value}% / KI:${$('sb-ki').value}%`;
+    rateOrVol = `σ:${$('sb-sig').value}%`;
+    delta = '—'; // MC-dependent; not analytically computed
+    keyRisk = sp ? `KO:${sp.ko_prob} / KI:${sp.ki_prob}` : '—';
   } else if(product==='sharkfin'){
     qty = +$('sf-pa-qty').value||1;
-    entry = +$('sf-pa-entry').value||(sp?sp.mid:0);
+    entry = +$('sf-pa-entry').value||(sp ? sp.mid : 0);
     lbl = $('sf-pa-label').value || ('SF-'+structPosId);
     mtm = sp ? sp.mid : 0;
-    keyParams = sp ? `S=${$('sf-S').value} K=${$('sf-K').value} H=${$('sf-H').value} T=${$('sf-T').value}Y` : '—';
+    underlying = +$('sf-S').value;
+    tenor = +$('sf-T').value;
+    keyLevel = `K:${$('sf-K').value} / H:${$('sf-H').value}`;
+    rateOrVol = `σ:${$('sf-sig').value}%`;
+    // Approx delta: vanilla delta × (barrier_price / vanilla_price)
+    if(sp && sp.vanilla_price > 0){
+      const S=+$('sf-S').value, K=+$('sf-K').value, T=+$('sf-T').value;
+      const r=+$('sf-r').value/100, sig=+$('sf-sig').value/100, q=+$('sf-q').value/100;
+      const d1 = (Math.log(S/K)+(r-q+sig*sig/2)*T)/(sig*Math.sqrt(T));
+      const vDelta = $('sf-flag').value==='c' ? Math.exp(-q*T)*normalCDF(d1) : -Math.exp(-q*T)*normalCDF(-d1);
+      delta = fmt(vDelta*(sp.mid/sp.vanilla_price)*qty, 4);
+    } else { delta = '—'; }
+    keyRisk = sp ? `Discount:${fmt(sp.barrier_discount,2)}` : '—';
   } else if(product==='forward'){
     qty = +$('fw-pa-qty').value||1;
-    entry = +$('fw-pa-entry').value||(sp?sp.mid:0);
+    entry = +$('fw-pa-entry').value||(sp ? sp.forward_price : 0);
     lbl = $('fw-pa-label').value || ('FW-'+structPosId);
-    mtm = sp ? sp.mid : 0;
-    keyParams = sp ? `S=${$('fw-S').value} T=${$('fw-T').value}Y r=${$('fw-r').value}%` : '—';
+    mtm = sp ? sp.forward_price : 0;
+    underlying = +$('fw-S').value;
+    tenor = +$('fw-T').value;
+    keyLevel = `F:${sp ? fmt(sp.forward_price,2) : '—'}`;
+    rateOrVol = `r:${$('fw-r').value}% / q:${$('fw-q').value}%`;
+    // Forward delta = ±e^(-qT)
+    const fwSign = $('fw-dir').value==='sell' ? -1 : 1;
+    delta = fmt(Math.exp(-+$('fw-q').value/100 * +$('fw-T').value) * fwSign * qty, 4);
+    keyRisk = sp ? `CoC:${fmt(sp.cost_of_carry,2)}` : '—';
   } else if(product==='irs'){
-    qty = 1;
     const dir = $('ir-pa-dir').value;
+    qty = dir==='receive_fixed' ? -1 : 1;
     entry = sp ? sp.npv : 0;
     lbl = $('ir-pa-label').value || ('IRS-'+structPosId);
     mtm = sp ? sp.npv : 0;
-    keyParams = sp ? `Ntl=${$('ir-notional').value} Fix=${$('ir-fixed').value}% Flt=${$('ir-float').value}% T=${$('ir-T').value}Y [${dir}]` : '—';
-    qty = dir==='receive_fixed' ? -1 : 1;
+    underlying = +$('ir-notional').value;
+    tenor = +$('ir-T').value;
+    keyLevel = `Fix:${$('ir-fixed').value}% / Flt:${$('ir-float').value}%`;
+    rateOrVol = `Freq:${$('ir-freq').value}×/yr`;
+    delta = '—'; // interest rate product, no equity delta
+    keyRisk = sp ? `DV01:${fmt(sp.dv01,0)}` : '—';
   }
-  structPositions.push({id:structPosId++, product, label:lbl, qty, entry, mtm, keyParams});
+
+  structPositions.push({id:structPosId++, product, label:lbl, qty, entry, mtm,
+    underlying, tenor, keyLevel, rateOrVol, delta, keyRisk});
   const prefixMap = {snowball:'sb',sharkfin:'sf',forward:'fw',irs:'ir'};
   const p = $(prefixMap[product]+'-port-add-panel');
   if(p) p.classList.remove('open');
@@ -1779,18 +1822,25 @@ function refreshStructPortfolio(){
   }
   $('struct-port-empty').style.display='none';
   $('struct-port-container').style.display='block';
+  const typeColor={snowball:'var(--blu2)',sharkfin:'var(--yellow)',forward:'var(--green)',irs:'var(--purple)'};
   $('struct-port-tbody').innerHTML = structPositions.map(p=>{
     const pnl = (p.mtm-p.entry)*p.qty;
+    const c = typeColor[p.product]||'var(--tx)';
     return `<tr>
       <td>${p.id}</td>
-      <td style="color:var(--blu2)">${p.product.toUpperCase()}</td>
+      <td style="color:${c};font-weight:700">${p.product.toUpperCase()}</td>
       <td>${p.label}</td>
-      <td style="font-size:10px;color:var(--tx2)">${p.keyParams}</td>
+      <td>${fmt(p.underlying,0)}</td>
+      <td>${fmt(p.tenor,2)}</td>
+      <td style="font-size:10px;color:var(--tx2)">${p.keyLevel}</td>
+      <td style="font-size:10px;color:var(--tx2)">${p.rateOrVol}</td>
       <td>${p.qty>=0?'+'+p.qty:p.qty}</td>
       <td>${fmt(p.entry,2)}</td>
       <td>${fmt(p.mtm,2)}</td>
       <td class="${pnl>=0?'pos':'neg'}">${fmt(pnl,2)}</td>
-      <td><button class="xbtn" onclick="removeStructPosition(${p.id})">✕</button></td>
+      <td class="${p.delta!=='—'?(+p.delta>=0?'pos':'neg'):''}">${p.delta}</td>
+      <td style="font-size:10px;color:var(--tx2)">${p.keyRisk}</td>
+      <td><button class="xbtn" onclick="removeStructPosition(${p.id})">&#10005;</button></td>
     </tr>`;
   }).join('');
 }
