@@ -147,8 +147,16 @@ input:focus{border-color:var(--blue)}
 .prod-btn:hover:not(.on){border-color:var(--blu2);color:var(--tx)}
 .prod-btn .picon{font-size:15px;line-height:1}
 .prod-btn .pname{font-size:9.5px;font-weight:700}
-.prod-desc{background:rgba(13,110,253,0.09);border-left:3px solid var(--blue);border-radius:0 4px 4px 0;padding:7px 10px;font-size:10.5px;color:var(--tx2);line-height:1.55}
-.prod-desc b{color:var(--blu2);font-size:11px}
+/* ── Analysis blocks ── */
+.analysis-block{border:1px solid var(--bd);border-radius:5px;margin-top:14px;overflow:hidden}
+.analysis-hdr{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;background:var(--bg3);cursor:pointer;font-size:11px;font-weight:700;color:var(--tx2);border-bottom:1px solid transparent;user-select:none}
+.analysis-hdr:hover{color:var(--tx);background:var(--bg2)}
+.analysis-hdr.open{color:var(--blu2);border-bottom-color:var(--bd)}
+.analysis-body{padding:12px 14px;display:none}
+.analysis-body.open{display:block}
+/* ── Struct portfolio entry ── */
+.struct-port-add{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:9px;margin-top:4px;display:none;flex-direction:column;gap:5px}
+.struct-port-add.open{display:flex}
 </style>
 </head>
 <body>
@@ -181,9 +189,6 @@ input:focus{border-color:var(--blue)}
         <span class="picon">💱</span><span class="pname" id="pname-irs">Int. Rate Swap</span></button>
     </div>
   </div>
-  <!-- Product Description -->
-  <div class="prod-desc" id="prod-desc-text"></div>
-
   <!-- ── Vanilla Parameters (Call/Put) ── -->
   <div id="params-vanilla">
     <div class="sec-label" id="lbl-params">Parameters</div>
@@ -255,7 +260,7 @@ input:focus{border-color:var(--blue)}
       </div>
       <button class="btn-ok" onclick="addPosition()">✓ Confirm Add</button>
     </div>
-    <button class="btn-exp" id="btn-export-xl" onclick="exportExcel()">↓ Export Excel Report</button>
+    <button class="btn btn-exp" id="btn-export-xl" onclick="exportVanillaCSV()">↓ Export CSV</button>
     <!-- IV Solver -->
     <div class="sec-label" id="lbl-iv">IV Solver</div>
     <div class="fg"><label id="lbl-iv-mkt">Market Option Price</label>
@@ -300,6 +305,23 @@ input:focus{border-color:var(--blue)}
       <input type="number" id="sb-spread" value="50" step="5"/></div>
     <div class="sec-label" id="lbl-sb-actions">Actions</div>
     <button class="btn btn-p" id="btn-struct-price" onclick="calcCurrentStruct()">▶ Price Product</button>
+    <button class="btn btn-s" onclick="toggleStructPortAdd('sb')"><span id="lbl-sb-add-port">+ Add to Portfolio</span></button>
+    <div class="struct-port-add" id="sb-port-add-panel">
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sb-qty">Quantity (+ Long / - Short)</label>
+        <input type="number" id="sb-pa-qty" value="1" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sb-entry">Entry Price (%)</label>
+        <input type="number" id="sb-pa-entry" value="0" step="0.1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sb-label">Label (Optional)</label>
+        <input type="text" id="sb-pa-label" placeholder="e.g. Snowball-Jan"/>
+      </div>
+      <button class="btn-ok" onclick="addStructPosition('snowball')">✓ Confirm Add</button>
+    </div>
+    <button class="btn-exp" id="btn-sb-export" onclick="exportStructCSV('snowball')">↓ Export CSV</button>
   </div>
 
   <!-- ── Shark Fin Parameters ── -->
@@ -332,6 +354,23 @@ input:focus{border-color:var(--blue)}
       <input type="number" id="sf-spread" value="50" step="5"/></div>
     <div class="sec-label" id="lbl-sf-actions">Actions</div>
     <button class="btn btn-p" onclick="calcCurrentStruct()">▶ Price Product</button>
+    <button class="btn btn-s" onclick="toggleStructPortAdd('sf')"><span id="lbl-sf-add-port">+ Add to Portfolio</span></button>
+    <div class="struct-port-add" id="sf-port-add-panel">
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sf-qty">Quantity (+ Long / - Short)</label>
+        <input type="number" id="sf-pa-qty" value="1" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sf-entry">Entry Price</label>
+        <input type="number" id="sf-pa-entry" value="0" step="0.1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-sf-label">Label (Optional)</label>
+        <input type="text" id="sf-pa-label" placeholder="e.g. SharkFin-UOC"/>
+      </div>
+      <button class="btn-ok" onclick="addStructPosition('sharkfin')">✓ Confirm Add</button>
+    </div>
+    <button class="btn-exp" id="btn-sf-export" onclick="exportStructCSV('sharkfin')">↓ Export CSV</button>
   </div>
 
   <!-- ── OTC Forward Parameters ── -->
@@ -356,6 +395,23 @@ input:focus{border-color:var(--blue)}
       <input type="number" id="fw-spread" value="50" step="5"/></div>
     <div class="sec-label" id="lbl-fw-actions">Actions</div>
     <button class="btn btn-p" onclick="calcCurrentStruct()">▶ Price Product</button>
+    <button class="btn btn-s" onclick="toggleStructPortAdd('fw')"><span id="lbl-fw-add-port">+ Add to Portfolio</span></button>
+    <div class="struct-port-add" id="fw-port-add-panel">
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-fw-qty">Quantity (+ Long / - Short)</label>
+        <input type="number" id="fw-pa-qty" value="1" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-fw-entry">Entry Fwd Price</label>
+        <input type="number" id="fw-pa-entry" value="0" step="1"/>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-fw-label">Label (Optional)</label>
+        <input type="text" id="fw-pa-label" placeholder="e.g. Forward-H1"/>
+      </div>
+      <button class="btn-ok" onclick="addStructPosition('forward')">✓ Confirm Add</button>
+    </div>
+    <button class="btn-exp" id="btn-fw-export" onclick="exportStructCSV('forward')">↓ Export CSV</button>
   </div>
 
   <!-- ── IRS Parameters ── -->
@@ -382,17 +438,30 @@ input:focus{border-color:var(--blue)}
       <input type="number" id="ir-spread" value="10" step="5"/></div>
     <div class="sec-label" id="lbl-ir-actions">Actions</div>
     <button class="btn btn-p" onclick="calcCurrentStruct()">▶ Price Product</button>
+    <button class="btn btn-s" onclick="toggleStructPortAdd('ir')"><span id="lbl-ir-add-port">+ Add to Portfolio</span></button>
+    <div class="struct-port-add" id="ir-port-add-panel">
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-ir-qty">Direction</label>
+        <select id="ir-pa-dir">
+          <option value="pay_fixed">Pay Fixed / Receive Float</option>
+          <option value="receive_fixed">Receive Fixed / Pay Float</option>
+        </select>
+      </div>
+      <div class="fg" style="margin-bottom:0">
+        <label id="lbl-ir-label">Label (Optional)</label>
+        <input type="text" id="ir-pa-label" placeholder="e.g. IRS-2Y-Pay"/>
+      </div>
+      <button class="btn-ok" onclick="addStructPosition('irs')">✓ Confirm Add</button>
+    </div>
+    <button class="btn-exp" id="btn-ir-export" onclick="exportStructCSV('irs')">↓ Export CSV</button>
   </div>
 </aside>
 <div class="main">
   <div class="main-tabs">
-    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">&#128200; Pricing</button>
-    <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">&#128202; Portfolio</button>
-    <button class="mtab" onclick="switchMain('smile')" data-i18n="tab_smile">&#128516; Vol Smile</button>
-    <button class="mtab" onclick="switchMain('mc')" data-i18n="tab_mc">&#127922; MC Distribution</button>
-    <button class="mtab" onclick="switchMain('sens')" data-i18n="tab_sens">&#128737; Sensitivity</button>
-    <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">&#128176; Structured</button>
-    <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">&#128203; About</button>
+    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Pricing</button>
+    <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
+    <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
+    <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
 
   <!-- PRICING TAB -->
@@ -448,6 +517,76 @@ input:focus{border-color:var(--blue)}
         </div>
       </div>
     </div>
+
+    <!-- ── Analysis Sections (inline, below main pricing panel) ── -->
+    <!-- Vol Smile -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-smile-h">📈 Volatility Smile / Skew</span>
+        <span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="smile-hint2">Enter market option prices for different strikes to compute implied volatilities and visualize the smile curve.</p>
+        <div class="smile-layout">
+          <div class="smile-input-area">
+            <div class="sec-label" style="margin-bottom:8px">Strike &amp; Market Price Pairs</div>
+            <div id="smile-rows"></div>
+            <div class="smile-btns">
+              <button class="btn btn-s" style="width:auto;padding:5px 12px" onclick="addSmileRow()">+ Add Row</button>
+              <button class="btn btn-p" style="width:auto;padding:5px 12px" onclick="calcVolSmile()">Compute</button>
+            </div>
+          </div>
+          <div style="flex:1;min-width:300px;min-height:340px">
+            <div id="chart-smile" style="width:100%;height:360px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MC P&L Distribution -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-mc-h">🎲 Monte Carlo P&amp;L Distribution</span>
+        <span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="mc-hint2">Simulate option payoff paths and visualize the terminal P&amp;L distribution using current sidebar parameters.</p>
+        <div class="mc-ctrl" style="margin-bottom:10px">
+          <label>Paths:</label>
+          <select id="mc-paths">
+            <option value="10000">10,000</option>
+            <option value="50000" selected>50,000</option>
+            <option value="100000">100,000</option>
+            <option value="200000">200,000</option>
+          </select>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcMCDist()">Run Simulation</button>
+        </div>
+        <div class="mc-stats" id="mc-stats"></div>
+        <div id="chart-mc" style="width:100%;height:340px"></div>
+      </div>
+    </div>
+
+    <!-- Sensitivity / Stress Test -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-sens-h">🛡 Sensitivity Analysis / Stress Test</span>
+        <span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="sens-hint2">Stress test option price and delta across ±20% volatility and ±60 day time shifts.</p>
+        <div style="margin-bottom:10px">
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSensitivity()">Run Stress Test</button>
+        </div>
+        <div class="sens-section">
+          <div class="panel-title">Option Price Sensitivity</div>
+          <div class="tscroll"><div id="sens-price-table"></div></div>
+        </div>
+        <div class="sens-section">
+          <div class="panel-title">Delta Sensitivity</div>
+          <div class="tscroll"><div id="sens-delta-table"></div></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- PORTFOLIO TAB -->
@@ -474,59 +613,21 @@ input:focus{border-color:var(--blue)}
         <div class="totals-grid" id="port-totals"></div>
       </div>
     </div>
-  </div>
-
-  <!-- VOL SMILE TAB -->
-  <div class="tab-panel" id="panel-smile">
-    <div class="tab-hdr"><h2 id="smile-h2">Volatility Smile / Skew</h2></div>
-    <p class="hint" id="smile-hint">Enter market option prices for different strike prices to compute implied volatilities and visualize the volatility smile curve.</p>
-    <div class="smile-layout">
-      <div class="smile-input-area">
-        <div class="sec-label" style="margin-bottom:8px">Strike &amp; Market Price Pairs</div>
-        <div id="smile-rows"></div>
-        <div class="smile-btns">
-          <button class="btn btn-s" style="width:auto;padding:5px 12px" onclick="addSmileRow()">+ Add Row</button>
-          <button class="btn btn-p" style="width:auto;padding:5px 12px" onclick="calcVolSmile()">Compute</button>
+    <!-- Structured Products Portfolio -->
+    <div style="margin-top:20px">
+      <div class="panel-title" id="struct-port-title">Structured Products Positions</div>
+      <div class="empty-state" id="struct-port-empty" style="padding:20px;font-size:11px">No structured positions added yet.</div>
+      <div id="struct-port-container" style="display:none">
+        <div class="tscroll">
+          <table class="dtable" id="struct-port-table">
+            <thead><tr>
+              <th>ID</th><th>Type</th><th>Label</th><th>Key Params</th>
+              <th>Qty</th><th>Entry</th><th>Last MTM</th><th>P&amp;L</th><th>Action</th>
+            </tr></thead>
+            <tbody id="struct-port-tbody"></tbody>
+          </table>
         </div>
       </div>
-      <div style="flex:1;min-width:300px;min-height:340px">
-        <div id="chart-smile" style="width:100%;height:360px"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MC DISTRIBUTION TAB -->
-  <div class="tab-panel" id="panel-mc">
-    <div class="tab-hdr"><h2 id="mc-h2">Monte Carlo P&amp;L Distribution</h2></div>
-    <p class="hint" id="mc-hint">Simulate option payoff paths and visualize the terminal P&amp;L distribution. Uses the current sidebar parameters.</p>
-    <div class="mc-ctrl">
-      <label>Paths:</label>
-      <select id="mc-paths">
-        <option value="10000">10,000</option>
-        <option value="50000" selected>50,000</option>
-        <option value="100000">100,000</option>
-        <option value="200000">200,000</option>
-      </select>
-      <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcMCDist()">Run Simulation</button>
-    </div>
-    <div class="mc-stats" id="mc-stats"></div>
-    <div id="chart-mc" style="width:100%;height:380px"></div>
-  </div>
-
-  <!-- SENSITIVITY TAB -->
-  <div class="tab-panel" id="panel-sens">
-    <div class="tab-hdr"><h2 id="sens-h2">Sensitivity Analysis / Stress Test</h2></div>
-    <p class="hint" id="sens-hint">Stress test the option price and delta across ±20% volatility and ±60 day time shifts. The highlighted cell is the current parameter.</p>
-    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSensitivity()">Run Stress Test</button>
-    </div>
-    <div class="sens-section">
-      <div class="panel-title">Option Price Sensitivity</div>
-      <div class="tscroll"><div id="sens-price-table"></div></div>
-    </div>
-    <div class="sens-section">
-      <div class="panel-title">Delta Sensitivity</div>
-      <div class="tscroll"><div id="sens-delta-table"></div></div>
     </div>
   </div>
 
@@ -594,6 +695,17 @@ python app.py
           <div class="metric-card"><div class="metric-label" id="lbl-sb-ki-lv">KI Level</div><div class="metric-val" id="sb-ki-lv">—</div></div>
         </div>
       </div>
+      <!-- Snowball Sensitivity -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span>🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint">Shows Snowball mid-price under ±20% spot and vol scenarios. Click Price Product first.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('snowball')">Run Stress Test</button>
+          <div id="sb-sens-table"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ── SHARK FIN RESULTS ── -->
@@ -611,6 +723,17 @@ python app.py
           <div class="metric-card"><div class="metric-label" id="lbl-sf-vanilla">Vanilla BSM Price</div><div class="metric-val" id="sf-vanilla">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-sf-disc">Barrier Discount</div><div class="metric-val" id="sf-disc">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-sf-rebate-pv">Rebate PV</div><div class="metric-val" id="sf-rebate-pv">—</div></div>
+        </div>
+      </div>
+      <!-- Shark Fin Sensitivity -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span>🛡 Sensitivity Analysis (Spot &amp; Vol)</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint">Shows Shark Fin price under ±20% spot and vol scenarios.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('sharkfin')">Run Stress Test</button>
+          <div id="sf-sens-table"></div>
         </div>
       </div>
     </div>
@@ -632,6 +755,17 @@ python app.py
           <div class="metric-card"><div class="metric-label" id="lbl-fw-div">Dividend Income</div><div class="metric-val" id="fw-div">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-fw-mtm">MTM per Unit</div><div class="metric-val" id="fw-mtm">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-fw-ntl-mtm">Notional MTM</div><div class="metric-val" id="fw-notional-mtm">—</div></div>
+        </div>
+      </div>
+      <!-- Forward Sensitivity -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span>🛡 Sensitivity Analysis (Spot &amp; Rate)</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint">Shows OTC Forward price under ±20% spot and rate scenarios.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('forward')">Run Stress Test</button>
+          <div id="fw-sens-table"></div>
         </div>
       </div>
     </div>
@@ -658,6 +792,17 @@ python app.py
             <thead><tr><th>Period</th><th>Date (yr)</th><th>DF</th><th>Fixed Pmt</th><th>Float Pmt</th><th>Net Pmt</th><th>PV(Fixed)</th><th>PV(Float)</th></tr></thead>
             <tbody id="ir-cf-tbody"><tr><td colspan="8" style="padding:16px;color:var(--tx2)">Click "Price Product" to see cash flows</td></tr></tbody>
           </table>
+        </div>
+      </div>
+      <!-- IRS Sensitivity -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span>🛡 DV01 / Rate Sensitivity</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint">Shows IRS NPV under ±50/100/200bps parallel rate shifts.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcStructSens('irs')">Run Stress Test</button>
+          <div id="ir-sens-table"></div>
         </div>
       </div>
     </div>
@@ -738,10 +883,6 @@ function setProduct(key){
     const b = $('prod-'+k);
     if(b) b.classList.toggle('on', k===key);
   });
-  // Update product description
-  const desc = PRODUCT_DESCS[currentLang] || PRODUCT_DESCS['en'];
-  const descEl = $('prod-desc-text');
-  if(descEl) descEl.innerHTML = desc[key] || '';
   // Show/hide param panels
   const isVanilla = key==='call'||key==='put';
   $('params-vanilla').style.display  = isVanilla ? '' : 'none';
@@ -800,7 +941,7 @@ function loadPreset(i){
 }
 
 // ========== TABS ==========
-const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',smile:'panel-smile',mc:'panel-mc',sens:'panel-sens',struct:'panel-struct',about:'panel-about'};
+const PANELS={pricing:'panel-pricing',portfolio:'panel-portfolio',struct:'panel-struct',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
@@ -816,16 +957,19 @@ function switchInner(key){
   document.querySelectorAll('.itab').forEach((b,i)=>b.classList.toggle('on',['price-curve','greeks-curves'][i]===key));
   $('inner-price-curve').style.display=key==='price-curve'?'flex':'none';
   $('inner-greeks-curves').style.display=key==='greeks-curves'?'flex':'none';
-  // Use setTimeout so the DOM layout is computed before ECharts renders/resizes
+  // Force DOM reflow so ECharts gets correct container dimensions
+  void $('inner-greeks-curves').offsetWidth;
   setTimeout(()=>{
     if(key==='price-curve'){
       if(chartPrice) chartPrice.resize();
     } else {
-      // Lazy-init: if we have data but charts not yet drawn (were hidden at init time), draw now
-      if(lastResult && lastParams) _doRenderGreeksCharts(lastResult, lastParams);
-      else Object.values(gcCharts).forEach(c=>c&&c.resize());
+      if(lastResult && lastParams){
+        _doRenderGreeksCharts(lastResult, lastParams);
+        // Second resize pass after ECharts has initialised
+        setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 120);
+      }
     }
-  }, 60);
+  }, 80);
 }
 
 // ========== CALCULATE ==========
@@ -923,6 +1067,8 @@ function _doRenderGreeksCharts(d,p){
       series:[{type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color,width:1.5},showSymbol:false}]
     });
   });
+  // Trigger a resize pass to correct any dimension issues
+  setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 150);
 }
 </script>
 
@@ -1177,9 +1323,7 @@ const I18N = {
   en: {
     /* Main tabs */
     tab_pricing:'📈 Pricing', tab_portfolio:'📊 Portfolio',
-    tab_smile:'😄 Vol Smile', tab_mc:'🎲 MC Distribution',
-    tab_sens:'🛡 Sensitivity', tab_struct:'💰 Structured',
-    tab_about:'📋 About',
+    tab_struct:'💰 Structured', tab_about:'📋 About',
     /* Sidebar labels */
     lbl_prod_type:'Product Type',
     lbl_params:'Parameters', lbl_presets:'Presets', lbl_actions:'Actions',
@@ -1188,7 +1332,7 @@ const I18N = {
     lbl_r:'Risk-Free Rate (r)', lbl_sig:'Volatility (σ)', lbl_q:'Dividend Yield (q)',
     lbl_add_port:'+ Add to Portfolio', lbl_qty:'Quantity (+ Long / - Short)',
     lbl_entry:'Entry Price (Option Premium)', lbl_pa_label:'Label (Optional)',
-    btn_calc:'▶ Calculate', btn_export:'↓ Export Excel Report',
+    btn_calc:'▶ Calculate', btn_export:'↓ Export CSV',
     pset_0:'▶ ATM 3M Call (CSI 500)', pset_1:'▶ OTM 6M Put (CSI 300)', pset_2:'▶ Short High-Vol (GEM)',
     /* Snowball sidebar */
     lbl_sb_params:'Parameters', lbl_sb_S:'Spot Price (S)', lbl_sb_sig:'Volatility (σ%)',
@@ -1231,9 +1375,7 @@ const I18N = {
   cn: {
     /* Main tabs */
     tab_pricing:'📈 定价', tab_portfolio:'📊 持仓组合',
-    tab_smile:'😄 波动率微笑', tab_mc:'🎲 蒙特卡洛',
-    tab_sens:'🛡 敏感性分析', tab_struct:'💰 结构化产品',
-    tab_about:'📋 关于',
+    tab_struct:'💰 结构化产品', tab_about:'📋 关于',
     /* Sidebar labels */
     lbl_prod_type:'产品类型',
     lbl_params:'参数输入', lbl_presets:'预设场景', lbl_actions:'操作',
@@ -1242,7 +1384,7 @@ const I18N = {
     lbl_r:'无风险利率 (r)', lbl_sig:'波动率 (σ)', lbl_q:'股息率 (q)',
     lbl_add_port:'+ 加入持仓组合', lbl_qty:'数量（正数=多头 / 负数=空头）',
     lbl_entry:'建仓价格（期权权利金）', lbl_pa_label:'标签（可选）',
-    btn_calc:'▶ 计算定价', btn_export:'↓ 导出Excel报告',
+    btn_calc:'▶ 计算定价', btn_export:'↓ 导出CSV',
     pset_0:'▶ ATM 3月看涨 (中证500)', pset_1:'▶ OTM 6月看跌 (沪深300)', pset_2:'▶ 短期高波动 (创业板)',
     /* Snowball sidebar */
     lbl_sb_params:'参数输入', lbl_sb_S:'现货价格 (S)', lbl_sb_sig:'年化波动率 (σ%)',
@@ -1325,9 +1467,6 @@ function switchLang(lang) {
     // Right panel headings
     'struct-h2':'struct_h2','struct-hint':'struct_hint',
     'port-h2':'port_h2','port-hint':'port_hint',
-    'smile-h2':'smile_h2','smile-hint':'smile_hint',
-    'mc-h2':'mc_h2','mc-hint':'mc_hint',
-    'sens-h2':'sens_h2','sens-hint':'sens_hint',
     // Struct result metric labels
     'lbl-sb-kop':'lbl_sb_kop','lbl-sb-kip':'lbl_sb_kip','lbl-sb-n':'lbl_sb_n',
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
@@ -1347,10 +1486,6 @@ function switchLang(lang) {
     const el = $('pname-'+k);
     if(el) el.textContent = v;
   });
-  // Refresh product description card
-  const desc = PRODUCT_DESCS[lang] || PRODUCT_DESCS['en'];
-  const descEl = $('prod-desc-text');
-  if(descEl) descEl.innerHTML = desc[currentProduct] || '';
 }
 
 // ========== STRUCTURED PRODUCTS: SUB-TAB SWITCH ==========
@@ -1386,6 +1521,7 @@ async function calcSnowball(){
     $('sb-ci').textContent  = '±'+fmt(d.ci95*100, 3)+'%';
     $('sb-ko-lv').textContent = fmt(d.params.KO, 1);
     $('sb-ki-lv').textContent = fmt(d.params.KI, 1);
+    lastStructResults['snowball'] = {bid:fmt(d.bid*100,3)+'%', mid:fmt(d.mid*100,3)+'%', ask:fmt(d.ask*100,3)+'%', ko_prob:fmt(d.ko_prob*100,1)+'%', ki_prob:fmt(d.ki_prob*100,1)+'%'};
   }catch(e){showErr('Snowball error: '+e.message);}
 }
 
@@ -1410,6 +1546,7 @@ async function calcSharkFin(){
     $('sf-vanilla').textContent = fmt(d.vanilla_price, 4);
     $('sf-disc').textContent    = fmt(d.barrier_discount, 4);
     $('sf-rebate-pv').textContent = fmt(d.rebate_pv, 4);
+    lastStructResults['sharkfin'] = {bid:d.bid, mid:d.mid, ask:d.ask, vanilla_price:d.vanilla_price, barrier_discount:d.barrier_discount};
   }catch(e){showErr('Shark Fin error: '+e.message);}
 }
 
@@ -1434,6 +1571,7 @@ async function calcForward(){
     $('fw-div').textContent          = fmt(d.dividend_income, 2);
     $('fw-mtm').textContent          = fmt(d.mtm_per_unit, 2);
     $('fw-notional-mtm').textContent = fmt(d.notional_mtm, 0);
+    lastStructResults['forward'] = {bid:d.bid, mid:d.forward_price, forward_price:d.forward_price, ask:d.ask, cost_of_carry:d.cost_of_carry, mtm_per_unit:d.mtm_per_unit};
   }catch(e){showErr('Forward error: '+e.message);}
 }
 
@@ -1479,7 +1617,245 @@ async function calcIRS(){
         <td>${fmtM(cf.pv_float)}</td>
       </tr>`;
     }).join('');
+    lastStructResults['irs'] = {bid:d.bid, npv:d.npv, ask:d.ask, pv_fixed:d.pv_fixed, pv_float:d.pv_float, dv01:d.dv01, cashflows:d.cashflows};
   }catch(e){showErr('IRS error: '+e.message);}
+}
+
+// ========== ANALYSIS TOGGLE ==========
+function toggleAnalysis(hdr){
+  hdr.classList.toggle('open');
+  const body = hdr.nextElementSibling;
+  if(body) body.classList.toggle('open');
+  setTimeout(()=>{
+    if(chartSmile) chartSmile.resize();
+    if(chartMC) chartMC.resize();
+  }, 100);
+}
+
+// ========== STRUCTURED SENSITIVITY ==========
+async function calcStructSens(product){
+  const shiftS = [-0.2,-0.1,0,0.1,0.2];
+  const shiftV = [-0.2,-0.1,0,0.1,0.2];
+  const tableId = {snowball:'sb-sens-table',sharkfin:'sf-sens-table',forward:'fw-sens-table',irs:'ir-sens-table'}[product];
+  const el = $(tableId);
+  if(!el){return;}
+  el.innerHTML = '<div style="color:var(--tx2);font-size:11px;padding:8px">Computing...</div>';
+  try{
+    let baseS, baseSig, baseParams;
+    if(product==='snowball'){
+      baseS = +$('sb-S').value; baseSig = +$('sb-sig').value/100;
+      baseParams = {S:baseS, sigma:baseSig, r:+$('sb-r').value/100, q:+$('sb-q').value/100,
+        T:+$('sb-T').value, KO_pct:+$('sb-ko').value/100, KI_pct:+$('sb-ki').value/100,
+        coupon_pa:+$('sb-cpn').value/100, obs_freq:+$('sb-freq').value,
+        spread:+$('sb-spread').value/100, n_paths:10000};
+    } else if(product==='sharkfin'){
+      baseS = +$('sf-S').value; baseSig = +$('sf-sig').value/100;
+      baseParams = {flag:$('sf-flag').value, S:baseS, K:+$('sf-K').value, T:+$('sf-T').value,
+        r:+$('sf-r').value/100, sigma:baseSig, q:+$('sf-q').value/100,
+        H:+$('sf-H').value, rebate:+$('sf-rebate').value, spread:+$('sf-spread').value/100};
+    } else if(product==='forward'){
+      baseS = +$('fw-S').value; baseSig = 0;
+      baseParams = {S:baseS, T:+$('fw-T').value, r:+$('fw-r').value/100,
+        q:+$('fw-q').value/100, direction:$('fw-dir').value,
+        notional:+$('fw-notional').value, spread:+$('fw-spread').value};
+    } else if(product==='irs'){
+      const base = {notional:+$('ir-notional').value, fixed_rate:+$('ir-fixed').value/100,
+        float_rate:+$('ir-float').value/100, T:+$('ir-T').value,
+        freq:+$('ir-freq').value, r_disc:$('ir-disc').value?+$('ir-disc').value/100:+$('ir-float').value/100,
+        spread:+$('ir-spread').value};
+      const bpsShifts = [-200,-100,-50,0,50,100,200];
+      const endpoint = '/api/irs';
+      const results = await Promise.all(bpsShifts.map(async bps=>{
+        const p = {...base, fixed_rate: base.fixed_rate+bps/10000, float_rate: base.float_rate+bps/10000, r_disc: base.r_disc+bps/10000};
+        const res = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+        const d = await res.json();
+        return {bps, npv: d.error ? null : d.npv};
+      }));
+      let html = '<table class="stbl"><thead><tr><th>Rate Shift (bps)</th>';
+      results.forEach(r=>html+=`<th>${r.bps>=0?'+':''}${r.bps}</th>`);
+      html += '</tr></thead><tbody><tr><td class="rlbl">NPV</td>';
+      const baseNPV = results.find(r=>r.bps===0)?.npv||0;
+      results.forEach(r=>{
+        const isBase = r.bps===0;
+        const v = r.npv!=null?fmt(r.npv,0):'—';
+        html += `<td class="${isBase?'s-base':''}">${v}</td>`;
+      });
+      html += '</tr><tr><td class="rlbl">ΔNPV</td>';
+      results.forEach(r=>{
+        const delta = r.npv!=null ? r.npv-baseNPV : null;
+        const isBase = r.bps===0;
+        html += `<td class="${isBase?'s-base':''} ${delta!=null&&delta>=0?'pos':'neg'}">${delta!=null?fmt(delta,0):'—'}</td>`;
+      });
+      html += '</tr></tbody></table>';
+      el.innerHTML = html;
+      return;
+    }
+    const endpoint = {snowball:'/api/snowball',sharkfin:'/api/shark_fin',forward:'/api/forward'}[product];
+    const getPrice = async (s_shift, v_shift)=>{
+      let p = {...baseParams};
+      p.S = baseS*(1+s_shift);
+      if(product!=='forward') p.sigma = baseSig*(1+v_shift);
+      else p.r = (baseParams.r||0)*(1 + v_shift);
+      const res = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+      const d = await res.json();
+      if(d.error) return null;
+      if(product==='snowball') return d.mid*100;
+      if(product==='sharkfin') return d.mid;
+      if(product==='forward') return d.forward_price;
+    };
+    const sLabels = shiftS.map(s=>`S ${s>=0?'+':''}${(s*100).toFixed(0)}%`);
+    const vLabels = shiftV.map(v=>(product==='forward'?'r ':'σ ')+(v>=0?'+':'')+(v*100).toFixed(0)+'%');
+    const grid = await Promise.all(shiftV.map(v=>Promise.all(shiftS.map(s=>getPrice(s,v)))));
+    let html = `<table class="stbl"><thead><tr><th class="rlbl">${product==='forward'?'Rate':'Vol'} \\ Spot</th>`;
+    sLabels.forEach(l=>html+=`<th>${l}</th>`);
+    html += '</tr></thead><tbody>';
+    grid.forEach((row,vi)=>{
+      html += `<tr><td class="rlbl stbl">${vLabels[vi]}</td>`;
+      row.forEach((val,si)=>{
+        const isBase=(vi===2&&si===2);
+        const v = val!=null?fmt(val,product==='snowball'?3:2):'—';
+        html += `<td class="${isBase?'s-base':''}" style="${val!=null?getSensColor(val,grid.flat().filter(x=>x!=null)):''}">${v}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }catch(e){
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Error: ${e.message}</div>`;
+  }
+}
+
+// ========== STRUCTURED PORTFOLIO ==========
+let structPositions = [], structPosId = 1;
+let lastStructResults = {};
+
+function toggleStructPortAdd(prefix){
+  const el = $(prefix+'-port-add-panel');
+  if(el) el.classList.toggle('open');
+}
+
+function addStructPosition(product){
+  let qty, entry, lbl, keyParams, mtm;
+  const sp = lastStructResults[product];
+  if(product==='snowball'){
+    qty = +$('sb-pa-qty').value||1;
+    entry = +$('sb-pa-entry').value||(sp?+sp.mid.replace('%',''):0);
+    lbl = $('sb-pa-label').value || ('SB-'+structPosId);
+    mtm = sp ? parseFloat(sp.mid) : 0;
+    keyParams = sp ? `S=${$('sb-S').value} σ=${$('sb-sig').value}% KO=${$('sb-ko').value}% T=${$('sb-T').value}Y` : '—';
+  } else if(product==='sharkfin'){
+    qty = +$('sf-pa-qty').value||1;
+    entry = +$('sf-pa-entry').value||(sp?sp.mid:0);
+    lbl = $('sf-pa-label').value || ('SF-'+structPosId);
+    mtm = sp ? sp.mid : 0;
+    keyParams = sp ? `S=${$('sf-S').value} K=${$('sf-K').value} H=${$('sf-H').value} T=${$('sf-T').value}Y` : '—';
+  } else if(product==='forward'){
+    qty = +$('fw-pa-qty').value||1;
+    entry = +$('fw-pa-entry').value||(sp?sp.mid:0);
+    lbl = $('fw-pa-label').value || ('FW-'+structPosId);
+    mtm = sp ? sp.mid : 0;
+    keyParams = sp ? `S=${$('fw-S').value} T=${$('fw-T').value}Y r=${$('fw-r').value}%` : '—';
+  } else if(product==='irs'){
+    qty = 1;
+    const dir = $('ir-pa-dir').value;
+    entry = sp ? sp.npv : 0;
+    lbl = $('ir-pa-label').value || ('IRS-'+structPosId);
+    mtm = sp ? sp.npv : 0;
+    keyParams = sp ? `Ntl=${$('ir-notional').value} Fix=${$('ir-fixed').value}% Flt=${$('ir-float').value}% T=${$('ir-T').value}Y [${dir}]` : '—';
+    qty = dir==='receive_fixed' ? -1 : 1;
+  }
+  structPositions.push({id:structPosId++, product, label:lbl, qty, entry, mtm, keyParams});
+  const prefixMap = {snowball:'sb',sharkfin:'sf',forward:'fw',irs:'ir'};
+  const p = $(prefixMap[product]+'-port-add-panel');
+  if(p) p.classList.remove('open');
+  refreshStructPortfolio();
+}
+
+function refreshStructPortfolio(){
+  if(structPositions.length===0){
+    $('struct-port-empty').style.display='block';
+    $('struct-port-container').style.display='none';
+    return;
+  }
+  $('struct-port-empty').style.display='none';
+  $('struct-port-container').style.display='block';
+  $('struct-port-tbody').innerHTML = structPositions.map(p=>{
+    const pnl = (p.mtm-p.entry)*p.qty;
+    return `<tr>
+      <td>${p.id}</td>
+      <td style="color:var(--blu2)">${p.product.toUpperCase()}</td>
+      <td>${p.label}</td>
+      <td style="font-size:10px;color:var(--tx2)">${p.keyParams}</td>
+      <td>${p.qty>=0?'+'+p.qty:p.qty}</td>
+      <td>${fmt(p.entry,2)}</td>
+      <td>${fmt(p.mtm,2)}</td>
+      <td class="${pnl>=0?'pos':'neg'}">${fmt(pnl,2)}</td>
+      <td><button class="xbtn" onclick="removeStructPosition(${p.id})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function removeStructPosition(id){
+  structPositions = structPositions.filter(p=>p.id!==id);
+  refreshStructPortfolio();
+}
+
+// ========== CSV EXPORT ==========
+function downloadCSV(filename, csvContent){
+  const blob = new Blob(['\uFEFF'+csvContent], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportVanillaCSV(){
+  if(!lastResult || !lastParams){showErr('Please calculate first.');return;}
+  const p=lastParams, d=lastResult, g=d.greeks;
+  const ts = new Date().toISOString().slice(0,10);
+  let csv = 'Option Pricing Report,'+ts+'\r\n\r\n';
+  csv += 'Parameters\r\nType,Spot,Strike,T(yr),r,Sigma,q\r\n';
+  csv += `${p.flag==='c'?'Call':'Put'},${p.S},${p.K},${fmt(p.T,4)},${fmt(p.r,4)},${fmt(p.sigma,4)},${fmt(p.q,4)}\r\n\r\n`;
+  csv += 'Pricing Results\r\nBSM Price,MC Price,Intrinsic Value\r\n';
+  csv += `${fmt(d.bsm_price,4)},${fmt(d.mc_price,4)},${fmt(Math.max(0,p.flag==='c'?p.S-p.K:p.K-p.S),4)}\r\n\r\n`;
+  csv += 'Greeks\r\nDelta,Gamma,Vega,Theta,Rho\r\n';
+  csv += `${fmt(g.delta,6)},${fmt(g.gamma,6)},${fmt(g.vega,6)},${fmt(g.theta,6)},${fmt(g.rho,6)}\r\n`;
+  downloadCSV(`option_pricing_${ts}.csv`, csv);
+}
+
+function exportStructCSV(product){
+  const sp = lastStructResults[product];
+  if(!sp){showErr('Please price the product first.');return;}
+  const ts = new Date().toISOString().slice(0,10);
+  let csv = `${product.toUpperCase()} Pricing Report,${ts}\r\n\r\n`;
+  if(product==='snowball'){
+    csv += 'Parameters\r\nS,Sigma%,r%,q%,T(yr),KO%,KI%,Coupon%\r\n';
+    csv += `${$('sb-S').value},${$('sb-sig').value},${$('sb-r').value},${$('sb-q').value},${$('sb-T').value},${$('sb-ko').value},${$('sb-ki').value},${$('sb-cpn').value}\r\n\r\n`;
+    csv += 'Results\r\nBid,Mid,Ask,KO Prob,KI Prob\r\n';
+    csv += `${sp.bid},${sp.mid},${sp.ask},${sp.ko_prob},${sp.ki_prob}\r\n`;
+  } else if(product==='sharkfin'){
+    csv += 'Parameters\r\nType,S,K,H,T(yr),r%,Sigma%,q%\r\n';
+    csv += `${$('sf-flag').value},${$('sf-S').value},${$('sf-K').value},${$('sf-H').value},${$('sf-T').value},${$('sf-r').value},${$('sf-sig').value},${$('sf-q').value}\r\n\r\n`;
+    csv += 'Results\r\nBid,Mid,Ask,Vanilla BSM,Barrier Discount\r\n';
+    csv += `${sp.bid},${sp.mid},${sp.ask},${sp.vanilla_price},${sp.barrier_discount}\r\n`;
+  } else if(product==='forward'){
+    csv += 'Parameters\r\nS,T(yr),r%,q%,Direction,Notional\r\n';
+    csv += `${$('fw-S').value},${$('fw-T').value},${$('fw-r').value},${$('fw-q').value},${$('fw-dir').value},${$('fw-notional').value}\r\n\r\n`;
+    csv += 'Results\r\nBid,Forward Price,Ask,Cost of Carry,MTM\r\n';
+    csv += `${sp.bid},${sp.forward_price},${sp.ask},${sp.cost_of_carry},${sp.mtm_per_unit}\r\n`;
+  } else if(product==='irs'){
+    csv += 'Parameters\r\nNotional,Fixed%,Float%,T(yr),Freq\r\n';
+    csv += `${$('ir-notional').value},${$('ir-fixed').value},${$('ir-float').value},${$('ir-T').value},${$('ir-freq').value}\r\n\r\n`;
+    csv += 'Results\r\nBid NPV,Mid NPV,Ask NPV,PV Fixed,PV Float,DV01\r\n';
+    csv += `${sp.bid},${sp.npv},${sp.ask},${sp.pv_fixed},${sp.pv_float},${sp.dv01}\r\n\r\n`;
+    if(sp.cashflows && sp.cashflows.length){
+      csv += 'Cash Flow Schedule\r\nPeriod,Date(yr),DF,Fixed Pmt,Float Pmt,Net Pmt,PV Fixed,PV Float\r\n';
+      sp.cashflows.forEach(cf=>{
+        csv += `${cf.period},${cf.t},${cf.df},${cf.fixed_pmt},${cf.float_pmt},${cf.net_pmt},${cf.pv_fixed},${cf.pv_float}\r\n`;
+      });
+    }
+  }
+  downloadCSV(`${product}_${ts}.csv`, csv);
 }
 </script>
 </body>
