@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from bs_pricing import bs_price, monte_carlo_price, calc_implied_volatility, validate_params
 from greeks_calc import calc_delta, calc_gamma, calc_vega, calc_theta, calc_rho
+from cn_fdm import CN_FDM
 
 app = Flask(__name__)
 
@@ -920,6 +921,99 @@ def irs():
     })
 
 
+
+
+
+
+# ─────────────────────────────────────────────────────────
+# API: CN-FDM 结构化产品定价（雪球 / 鲨鱼鳍）
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/cn_fdm", methods=["POST"])
+def cn_fdm_price_api():
+    """
+    通用 Crank-Nicolson 有限差分法定价接口。
+    支持 product_type = 'snowball' | 'shark_fin'
+
+    请求体（JSON）：
+        product_type (str)  : 'snowball' 或 'shark_fin'
+        S0      (float): 标的当前价格
+        T       (float): 期限（年）
+        r       (float): 无风险利率（小数）
+        sigma   (float): 年化波动率（小数）
+        q       (float): 连续股息率（小数），默认 0
+        KO_pct  (float): 敲出价 / S0，如 1.05
+        KI_pct  (float): 敲入价 / S0，如 0.75（仅雪球）
+        coupon_pa (float): 年化票息（小数），如 0.15
+        obs_freq  (int) : 敲出观察频率（每年），默认 12
+        rebate    (float): 敲出补偿（鲨鱼鳍），默认 0
+        K_strike  (float): 行权价（鲨鱼鳍），默认 = S0
+        N       (int)  : 空间网格节点数，默认 400
+        calc_greeks (bool): 是否计算希腊字母，默认 True
+
+    返回：
+        price, greeks, method, params
+    """
+    try:
+        d            = request.get_json(force=True)
+        product_type = str(d.get("product_type", "snowball")).lower()
+        S0           = float(d["S0"])
+        T            = float(d["T"])
+        r            = float(d["r"])
+        sigma        = float(d["sigma"])
+        q            = float(d.get("q", 0.0))
+        KO_pct       = float(d.get("KO_pct", 1.05))
+        KI_pct       = float(d.get("KI_pct", 0.75))
+        coupon_pa    = float(d.get("coupon_pa", 0.15))
+        obs_freq     = int(d.get("obs_freq", 12))
+        rebate       = float(d.get("rebate", 0.0))
+        K_strike     = float(d.get("K_strike", S0))
+        N            = min(int(d.get("N", 400)), 600)
+        calc_g       = bool(d.get("calc_greeks", True))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    if product_type not in ("snowball", "shark_fin"):
+        return jsonify({"error": "product_type must be 'snowball' or 'shark_fin'"}), 400
+    if T <= 0 or sigma <= 0 or S0 <= 0:
+        return jsonify({"error": "S0, T and sigma must be positive"}), 400
+
+    try:
+        cn = CN_FDM(
+            product_type = product_type,
+            S0           = S0,
+            T            = T,
+            r            = r,
+            sigma        = sigma,
+            q            = q,
+            KO_pct       = KO_pct,
+            KI_pct       = KI_pct,
+            coupon_pa    = coupon_pa,
+            obs_freq     = obs_freq,
+            rebate       = rebate,
+            K_strike     = K_strike,
+            N            = N,
+            M_per_year   = 252,
+        )
+        price = cn.price()
+        greeks = cn.greeks() if calc_g else {}
+    except Exception as e:
+        return jsonify({"error": f"CN-FDM solver error: {e}"}), 500
+
+    return jsonify({
+        "price":    round(float(price), 6),
+        "greeks":   {k: round(float(v), 6) for k, v in greeks.items()},
+        "method":   "Crank-Nicolson FDM",
+        "product_type": product_type,
+        "params": {
+            "S0": S0, "T": T, "r": r, "sigma": sigma, "q": q,
+            "KO": round(S0 * KO_pct, 4),
+            "KI": round(S0 * KI_pct, 4) if product_type == "snowball" else None,
+            "KO_pct": KO_pct, "KI_pct": KI_pct,
+            "coupon_pa": coupon_pa, "obs_freq": obs_freq,
+            "rebate": rebate, "K_strike": K_strike,
+        }
+    })
 
 
 if __name__ == "__main__":

@@ -736,6 +736,26 @@ python app.py
           <div class="metric-card"><div class="metric-label" id="lbl-sb-ki-lv">KI Level</div><div class="metric-val" id="sb-ki-lv">—</div></div>
         </div>
       </div>
+      <!-- Snowball CN-FDM Reprice -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-cnfdm-hdr">🔢 CN-FDM Reprice (Crank-Nicolson PDE)</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-cnfdm-hint">Re-price the Snowball using Crank-Nicolson finite difference method (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('snowball')" id="btn-sb-cnfdm">▶ Run CN-FDM</button>
+          <div id="sb-cnfdm-results" style="display:none">
+            <div class="metric-grid" style="margin-top:8px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sb-cnfdm-price">—</div></div>
+              <div class="metric-card"><div class="metric-label">Delta (Δ)</div><div class="metric-val" id="sb-cnfdm-delta">—</div></div>
+              <div class="metric-card"><div class="metric-label">Gamma (Γ)</div><div class="metric-val" id="sb-cnfdm-gamma">—</div></div>
+              <div class="metric-card"><div class="metric-label">Vega (ν)</div><div class="metric-val" id="sb-cnfdm-vega">—</div></div>
+              <div class="metric-card"><div class="metric-label">Theta (Θ)</div><div class="metric-val" id="sb-cnfdm-theta">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-method">Method</div><div class="metric-val" style="font-size:10px" id="sb-cnfdm-method">—</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- Snowball Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
@@ -764,6 +784,26 @@ python app.py
           <div class="metric-card"><div class="metric-label" id="lbl-sf-vanilla">Vanilla BSM Price</div><div class="metric-val" id="sf-vanilla">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-sf-disc">Barrier Discount</div><div class="metric-val" id="sf-disc">—</div></div>
           <div class="metric-card"><div class="metric-label" id="lbl-sf-rebate-pv">Rebate PV</div><div class="metric-val" id="sf-rebate-pv">—</div></div>
+        </div>
+      </div>
+      <!-- Shark Fin CN-FDM Reprice -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sf-cnfdm-hdr">🔢 CN-FDM Reprice (Crank-Nicolson PDE)</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sf-cnfdm-hint">Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. Provides independent PDE-based validation and full Greeks for the barrier option.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('sharkfin')" id="btn-sf-cnfdm">▶ Run CN-FDM</button>
+          <div id="sf-cnfdm-results" style="display:none">
+            <div class="metric-grid" style="margin-top:8px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sf-cnfdm-price">—</div></div>
+              <div class="metric-card"><div class="metric-label">Delta (Δ)</div><div class="metric-val" id="sf-cnfdm-delta">—</div></div>
+              <div class="metric-card"><div class="metric-label">Gamma (Γ)</div><div class="metric-val" id="sf-cnfdm-gamma">—</div></div>
+              <div class="metric-card"><div class="metric-label">Vega (ν)</div><div class="metric-val" id="sf-cnfdm-vega">—</div></div>
+              <div class="metric-card"><div class="metric-label">Theta (Θ)</div><div class="metric-val" id="sf-cnfdm-theta">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-vs">vs. Closed-Form</div><div class="metric-val" style="font-size:10px" id="sf-cnfdm-vs">—</div></div>
+            </div>
+          </div>
         </div>
       </div>
       <!-- Shark Fin Sensitivity -->
@@ -1518,6 +1558,12 @@ const I18N = {
     /* Result metric labels */
     lbl_sb_kop:'KO Probability', lbl_sb_kip:'KI Probability', lbl_sb_n:'MC Paths',
     lbl_sb_ci:'95% CI ±', lbl_sb_ko_lv:'KO Level', lbl_sb_ki_lv:'KI Level',
+    lbl_sb_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
+    lbl_sb_cnfdm_hint:'Re-price the Snowball using Crank-Nicolson FDM (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.',
+    lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
+    lbl_sf_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
+    lbl_sf_cnfdm_hint:'Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. PDE-based validation and full Greeks.',
+    lbl_sf_cnfdm_price:'CN-FDM Price', lbl_sf_cnfdm_vs:'vs. Closed-Form',
     lbl_sf_vanilla:'Vanilla BSM Price', lbl_sf_disc:'Barrier Discount', lbl_sf_rebate_pv:'Rebate PV',
     lbl_fw_coc:'Cost of Carry', lbl_fw_fund:'Funding Cost', lbl_fw_div:'Dividend Income',
     lbl_fw_mtm:'MTM per Unit', lbl_fw_ntl_mtm:'Notional MTM', lbl_fw_fwd:'Forward Price',
@@ -1579,6 +1625,12 @@ const I18N = {
     /* Result metric labels */
     lbl_sb_kop:'敲出概率', lbl_sb_kip:'敲入概率', lbl_sb_n:'蒙特卡洛路径数',
     lbl_sb_ci:'95%置信区间 ±', lbl_sb_ko_lv:'敲出价格', lbl_sb_ki_lv:'敲入价格',
+    lbl_sb_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
+    lbl_sb_cnfdm_hint:'使用Crank-Nicolson有限差分法（BS偏微分方程+Rannacher平滑）重新定价雪球，提供独立验证及完整希腊字母。',
+    lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
+    lbl_sf_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
+    lbl_sf_cnfdm_hint:'使用Crank-Nicolson有限差分法重新定价鲨鱼鳍（向上敲出看涨期权），提供PDE独立验证及完整希腊字母。',
+    lbl_sf_cnfdm_price:'CN-FDM理论价格', lbl_sf_cnfdm_vs:'对比解析公式',
     lbl_sf_vanilla:'香草期权价格', lbl_sf_disc:'障碍折价', lbl_sf_rebate_pv:'返还金现值',
     lbl_fw_coc:'持有成本', lbl_fw_fund:'融资成本', lbl_fw_div:'股息收益',
     lbl_fw_mtm:'每单位盯市价值', lbl_fw_ntl_mtm:'名义本金盯市价值', lbl_fw_fwd:'远期价格',
@@ -1639,6 +1691,10 @@ function switchLang(lang) {
     // Struct result metric labels
     'lbl-sb-kop':'lbl_sb_kop','lbl-sb-kip':'lbl_sb_kip','lbl-sb-n':'lbl_sb_n',
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
+    'lbl-sb-cnfdm-hdr':'lbl_sb_cnfdm_hdr','lbl-sb-cnfdm-hint':'lbl_sb_cnfdm_hint',
+    'lbl-sb-cnfdm-price':'lbl_sb_cnfdm_price','lbl-sb-cnfdm-method':'lbl_sb_cnfdm_method',
+    'lbl-sf-cnfdm-hdr':'lbl_sf_cnfdm_hdr','lbl-sf-cnfdm-hint':'lbl_sf_cnfdm_hint',
+    'lbl-sf-cnfdm-price':'lbl_sf_cnfdm_price','lbl-sf-cnfdm-vs':'lbl_sf_cnfdm_vs',
     'lbl-sf-vanilla':'lbl_sf_vanilla','lbl-sf-disc':'lbl_sf_disc','lbl-sf-rebate-pv':'lbl_sf_rebate_pv',
     'lbl-fw-coc':'lbl_fw_coc','lbl-fw-fund':'lbl_fw_fund','lbl-fw-div':'lbl_fw_div',
     'lbl-fw-mtm':'lbl_fw_mtm','lbl-fw-ntl-mtm':'lbl_fw_ntl_mtm','lbl-fw-fwd':'lbl_fw_fwd',
@@ -1817,6 +1873,76 @@ function toggleAnalysis(hdr){
     if(chartSmile) chartSmile.resize();
     if(chartMC) chartMC.resize();
   }, 100);
+}
+
+// ========== CN-FDM REPRICE ==========
+async function calcCnFdm(productType){
+  const isSb = productType === 'snowball';
+  const prefix = isSb ? 'sb' : 'sf';
+  const btnEl = $(`btn-${prefix}-cnfdm`);
+  const resEl = $(`${prefix}-cnfdm-results`);
+  if(btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Computing…'; }
+
+  try{
+    let payload;
+    if(isSb){
+      const S   = +$('sb-S').value;
+      const sig = +$('sb-sig').value / 100;
+      const r   = +$('sb-r').value / 100;
+      const q   = +$('sb-q').value / 100;
+      const T   = +$('sb-T').value;               // already in years
+      const ko  = +$('sb-ko').value / 100;         // % → decimal (KO_pct)
+      const ki  = +$('sb-ki').value / 100;         // % → decimal (KI_pct)
+      const cpn = +$('sb-cpn').value / 100;
+      const freq = +$('sb-freq').value;
+      payload = { product_type:'snowball', S0:S, sigma:sig, r, q, T,
+                  KO_pct: ko, KI_pct: ki,
+                  coupon_pa: cpn, obs_freq: freq };
+    } else {
+      const S      = +$('sf-S').value;
+      const K      = +$('sf-K').value;
+      const H      = +$('sf-H').value;             // absolute price
+      const T      = +$('sf-T').value;             // already in years
+      const r      = +$('sf-r').value / 100;
+      const sig    = +$('sf-sig').value / 100;
+      const q      = +$('sf-q').value / 100;
+      const rebate = +$('sf-rebate').value;
+      const H_pct  = S > 0 ? H / S : 1.05;        // convert to KO_pct
+      payload = { product_type:'shark_fin', S0:S, K_strike:K, KO_pct:H_pct, T, r, sigma:sig, q, rebate };
+    }
+
+    const resp = await fetch('/api/cn_fdm', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if(data.error){ showErr('CN-FDM: ' + data.error); return; }
+
+    $(`${prefix}-cnfdm-price`).textContent = fmt(data.price, 4);
+    const g = data.greeks || {};
+    $(`${prefix}-cnfdm-delta`).textContent = fmt(g.delta, 4);
+    $(`${prefix}-cnfdm-gamma`).textContent = fmt(g.gamma, 6);
+    $(`${prefix}-cnfdm-vega`).textContent  = fmt(g.vega, 4);
+    $(`${prefix}-cnfdm-theta`).textContent = fmt(g.theta, 4);
+
+    if(isSb){
+      $('sb-cnfdm-method').textContent = data.method || 'Rannacher CN-FDM';
+    } else {
+      // Compare with analytical price
+      const anPrice = parseFloat($('sf-mid').textContent);
+      if(!isNaN(anPrice) && anPrice > 0){
+        const err = Math.abs((data.price - anPrice)/anPrice*100).toFixed(2);
+        $('sf-cnfdm-vs').textContent = `Analytical: ${fmt(anPrice,4)} | Err: ${err}%`;
+      } else {
+        $('sf-cnfdm-vs').textContent = data.method || 'Rannacher CN-FDM';
+      }
+    }
+    if(resEl) resEl.style.display = '';
+  } catch(e){
+    showErr('CN-FDM request failed: ' + e.message);
+  } finally {
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '▶ Run CN-FDM'; }
+  }
 }
 
 // ========== STRUCTURED SENSITIVITY ==========
