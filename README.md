@@ -33,15 +33,29 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
 - **Interactive charts**: ECharts price curve + 5 Greeks curves
 - **Unit auto-conversion**: input T in days or years, σ/r in % or decimal
 
+### 🔬 Structured Products Greeks (v2.0 — Glasserman & Broadie)
+- **3-Method MC Greeks** engine for Snowball & Shark Fin barrier options
+- **Resimulation FD**: Central difference with common random numbers — most robust
+- **Pathwise Differentiation**: SDE path derivative + conditional MC barrier smoothing
+- **Likelihood Ratio**: Score Function method — naturally handles discontinuous payoffs
+- Single-run parallel output → grouped dicts for cross-validation & risk control
+- CN-FDM PDE (Crank-Nicolson + Rannacher damping) for independent price validation
+
 ### 💰 Structured Products Quoting
-| Product | Pricing Model |
-|---|---|
-| **Snowball / Autocallable (雪球)** | Monte Carlo path simulation with knock-out/knock-in observation |
-| **Shark Fin / Barrier Option (鲨鱼鳍)** | Rubinstein-Reiner closed-form (UOC / DOP) |
-| **OTC Equity Forward (场外远期)** | Cost-of-carry: F = S·e^((r−q)T) with funding/dividend decomposition |
-| **Interest Rate Swap (利率互换)** | Flat-curve DCF; full cash flow schedule + DV01 sensitivity |
+| Product | Pricing Model | Greeks |
+|---|---|---|
+| **Snowball / Autocallable (雪球)** | Monte Carlo path simulation + CN-FDM PDE (Crank-Nicolson) | 3-Method MC Greeks (Resimulation FD / Pathwise / Likelihood Ratio) |
+| **Shark Fin / Barrier Option (鲨鱼鳍)** | Rubinstein-Reiner closed-form (UOC/DOP) + CN-FDM PDE validation | 3-Method MC Greeks |
+| **OTC Equity Forward (场外远期)** | Cost-of-carry: F = S·e^((r−q)T) with funding/dividend decomposition | Analytical Δ = ±e^(−qT) |
+| **Interest Rate Swap (利率互换)** | Flat-curve DCF; full cash flow schedule + DV01 sensitivity | DV01 per +1bp |
 
 All products output **Bid / Mid / Ask** with configurable spread (bps).
+
+> 🆕 **v2.0 Upgrade**: CN-FDM now outputs **3 parallel Greeks** per Glasserman & Broadie (2004):
+> ① **Resimulation FD** — central difference + common random numbers for variance reduction
+> ② **Pathwise Differentiation** — SDE path derivative with conditional MC barrier smoothing
+> ③ **Likelihood Ratio** — Score Function method, naturally handles discontinuous barrier payoffs
+> All three sets computed in a single run, returned as grouped dicts for cross-validation.
 
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
@@ -94,7 +108,7 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 | `/api/shark_fin` | POST | Shark fin barrier option pricing (UOC/DOP/UIC/DIC) |
 | `/api/forward` | POST | OTC equity forward pricing |
 | `/api/irs` | POST | Interest rate swap NPV + cash flows |
-| `/api/cn_fdm` | POST | Crank-Nicolson FDM reprice (snowball/shark_fin) + full Greeks |
+| `/api/cn_fdm` | POST | CN-FDM PDE pricing + **3-method MC Greeks** (Resimulation FD/Pathwise/Likelihood) — independently validated |
 
 ---
 

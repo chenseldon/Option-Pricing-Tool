@@ -740,19 +740,35 @@ python app.py
       <!-- Snowball CN-FDM Reprice -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span id="lbl-sb-cnfdm-hdr">🔢 CN-FDM Reprice (Crank-Nicolson PDE)</span><span>▼</span>
+          <span id="lbl-sb-cnfdm-hdr">🔢 CN-FDM + 3-Method Greeks (Glasserman&Broadie)</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint" id="lbl-sb-cnfdm-hint">Re-price the Snowball using Crank-Nicolson finite difference method (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('snowball')" id="btn-sb-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM</button>
+          <p class="hint" id="lbl-sb-cnfdm-hint">Re-price the Snowball using CN-FDM PDE (Rannacher smoothing) and compute 3 sets of Greeks via Glasserman &amp; Broadie Monte Carlo methods: Resimulation FD, Pathwise Differentiation, and Likelihood Ratio.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('snowball')" id="btn-sb-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM + 3 Greeks</button>
           <div id="sb-cnfdm-results" style="display:none">
-            <div class="metric-grid" style="margin-top:8px">
-              <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sb-cnfdm-price">—</div></div>
-              <div class="metric-card"><div class="metric-label">Delta (Δ)</div><div class="metric-val" id="sb-cnfdm-delta">—</div></div>
-              <div class="metric-card"><div class="metric-label">Gamma (Γ)</div><div class="metric-val" id="sb-cnfdm-gamma">—</div></div>
-              <div class="metric-card"><div class="metric-label">Vega (ν)</div><div class="metric-val" id="sb-cnfdm-vega">—</div></div>
-              <div class="metric-card"><div class="metric-label">Theta (Θ)</div><div class="metric-val" id="sb-cnfdm-theta">—</div></div>
+            <!-- PDE Price -->
+            <div class="metric-grid" style="margin-top:8px;margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-price">CN-FDM PDE Price</div><div class="metric-val" id="sb-cnfdm-price">—</div></div>
               <div class="metric-card"><div class="metric-label" id="lbl-sb-cnfdm-method">Method</div><div class="metric-val" style="font-size:10px" id="sb-cnfdm-method">—</div></div>
+            </div>
+            <!-- Three-Method Greeks Table -->
+            <div class="panel-title" style="margin-top:6px;margin-bottom:6px" data-i18n="lbl_3greeks">📐 Three-Method Greeks Comparison</div>
+            <div class="tscroll">
+              <table class="dtable" style="font-size:11px">
+                <thead><tr>
+                  <th style="text-align:left">Greek</th>
+                  <th>① Resimulation FD</th>
+                  <th>② Pathwise</th>
+                  <th>③ Likelihood Ratio</th>
+                </tr></thead>
+                <tbody>
+                  <tr id="sb-cnfdm-row-delta"><td style="text-align:left;font-weight:600">Δ Delta</td><td id="sb-cnfdm-rd-delta">—</td><td id="sb-cnfdm-pw-delta">—</td><td id="sb-cnfdm-lr-delta">—</td></tr>
+                  <tr id="sb-cnfdm-row-gamma"><td style="text-align:left;font-weight:600">Γ Gamma</td><td id="sb-cnfdm-rd-gamma">—</td><td id="sb-cnfdm-pw-gamma">—</td><td id="sb-cnfdm-lr-gamma">—</td></tr>
+                  <tr id="sb-cnfdm-row-vega"><td style="text-align:left;font-weight:600">ν Vega</td><td id="sb-cnfdm-rd-vega">—</td><td id="sb-cnfdm-pw-vega">—</td><td id="sb-cnfdm-lr-vega">—</td></tr>
+                  <tr id="sb-cnfdm-row-theta"><td style="text-align:left;font-weight:600">Θ Theta</td><td id="sb-cnfdm-rd-theta">—</td><td id="sb-cnfdm-pw-theta">—</td><td id="sb-cnfdm-lr-theta">—</td></tr>
+                  <tr id="sb-cnfdm-row-rho"><td style="text-align:left;font-weight:600">ρ Rho</td><td id="sb-cnfdm-rd-rho">—</td><td id="sb-cnfdm-pw-rho">—</td><td id="sb-cnfdm-lr-rho">—</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -790,19 +806,33 @@ python app.py
       <!-- Shark Fin CN-FDM Reprice -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
-          <span id="lbl-sf-cnfdm-hdr">🔢 CN-FDM Reprice (Crank-Nicolson PDE)</span><span>▼</span>
+          <span id="lbl-sf-cnfdm-hdr">🔢 CN-FDM + 3-Method Greeks (Glasserman&Broadie)</span><span>▼</span>
         </div>
         <div class="analysis-body">
-          <p class="hint" id="lbl-sf-cnfdm-hint">Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. Provides independent PDE-based validation and full Greeks for the barrier option.</p>
-          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('sharkfin')" id="btn-sf-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM</button>
+          <p class="hint" id="lbl-sf-cnfdm-hint">Re-price the Shark Fin (Up-and-Out Call) using CN-FDM PDE and compute 3 sets of Greeks via Glasserman &amp; Broadie MC methods. Compare with analytical closed-form price for validation.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcCnFdm('sharkfin')" id="btn-sf-cnfdm" data-i18n="btn_run_cnfdm">▶ Run CN-FDM + 3 Greeks</button>
           <div id="sf-cnfdm-results" style="display:none">
-            <div class="metric-grid" style="margin-top:8px">
-              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-price">CN-FDM Price</div><div class="metric-val" id="sf-cnfdm-price">—</div></div>
-              <div class="metric-card"><div class="metric-label">Delta (Δ)</div><div class="metric-val" id="sf-cnfdm-delta">—</div></div>
-              <div class="metric-card"><div class="metric-label">Gamma (Γ)</div><div class="metric-val" id="sf-cnfdm-gamma">—</div></div>
-              <div class="metric-card"><div class="metric-label">Vega (ν)</div><div class="metric-val" id="sf-cnfdm-vega">—</div></div>
-              <div class="metric-card"><div class="metric-label">Theta (Θ)</div><div class="metric-val" id="sf-cnfdm-theta">—</div></div>
+            <div class="metric-grid" style="margin-top:8px;margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-price">CN-FDM PDE Price</div><div class="metric-val" id="sf-cnfdm-price">—</div></div>
               <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-vs">vs. Closed-Form</div><div class="metric-val" style="font-size:10px" id="sf-cnfdm-vs">—</div></div>
+            </div>
+            <div class="panel-title" style="margin-top:6px;margin-bottom:6px" data-i18n="lbl_3greeks">📐 Three-Method Greeks Comparison</div>
+            <div class="tscroll">
+              <table class="dtable" style="font-size:11px">
+                <thead><tr>
+                  <th style="text-align:left">Greek</th>
+                  <th>① Resimulation FD</th>
+                  <th>② Pathwise</th>
+                  <th>③ Likelihood Ratio</th>
+                </tr></thead>
+                <tbody>
+                  <tr><td style="text-align:left;font-weight:600">Δ Delta</td><td id="sf-cnfdm-rd-delta">—</td><td id="sf-cnfdm-pw-delta">—</td><td id="sf-cnfdm-lr-delta">—</td></tr>
+                  <tr><td style="text-align:left;font-weight:600">Γ Gamma</td><td id="sf-cnfdm-rd-gamma">—</td><td id="sf-cnfdm-pw-gamma">—</td><td id="sf-cnfdm-lr-gamma">—</td></tr>
+                  <tr><td style="text-align:left;font-weight:600">ν Vega</td><td id="sf-cnfdm-rd-vega">—</td><td id="sf-cnfdm-pw-vega">—</td><td id="sf-cnfdm-lr-vega">—</td></tr>
+                  <tr><td style="text-align:left;font-weight:600">Θ Theta</td><td id="sf-cnfdm-rd-theta">—</td><td id="sf-cnfdm-pw-theta">—</td><td id="sf-cnfdm-lr-theta">—</td></tr>
+                  <tr><td style="text-align:left;font-weight:600">ρ Rho</td><td id="sf-cnfdm-rd-rho">—</td><td id="sf-cnfdm-pw-rho">—</td><td id="sf-cnfdm-lr-rho">—</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1965,25 +1995,25 @@ async function calcCnFdm(productType){
       const sig = +$('sb-sig').value / 100;
       const r   = +$('sb-r').value / 100;
       const q   = +$('sb-q').value / 100;
-      const T   = +$('sb-T').value;               // already in years
-      const ko  = +$('sb-ko').value / 100;         // % → decimal (KO_pct)
-      const ki  = +$('sb-ki').value / 100;         // % → decimal (KI_pct)
+      const T   = +$('sb-T').value;
+      const ko  = +$('sb-ko').value / 100;
+      const ki  = +$('sb-ki').value / 100;
       const cpn = +$('sb-cpn').value / 100;
       const freq = +$('sb-freq').value;
       payload = { product_type:'snowball', S0:S, sigma:sig, r, q, T,
                   KO_pct: ko, KI_pct: ki,
-                  coupon_pa: cpn, obs_freq: freq };
+                  coupon_pa: cpn, obs_freq: freq, mc_paths: 50000 };
     } else {
       const S      = +$('sf-S').value;
       const K      = +$('sf-K').value;
-      const H      = +$('sf-H').value;             // absolute price
-      const T      = +$('sf-T').value;             // already in years
+      const H      = +$('sf-H').value;
+      const T      = +$('sf-T').value;
       const r      = +$('sf-r').value / 100;
       const sig    = +$('sf-sig').value / 100;
       const q      = +$('sf-q').value / 100;
       const rebate = +$('sf-rebate').value;
-      const H_pct  = S > 0 ? H / S : 1.05;        // convert to KO_pct
-      payload = { product_type:'shark_fin', S0:S, K_strike:K, KO_pct:H_pct, T, r, sigma:sig, q, rebate };
+      const H_pct  = S > 0 ? H / S : 1.05;
+      payload = { product_type:'shark_fin', S0:S, K_strike:K, KO_pct:H_pct, T, r, sigma:sig, q, rebate, mc_paths: 50000 };
     }
 
     const resp = await fetch('/api/cn_fdm', {
@@ -1993,30 +2023,48 @@ async function calcCnFdm(productType){
     const data = await resp.json();
     if(data.error){ showErr('CN-FDM: ' + data.error); return; }
 
+    // ── PDE Price ──────────────────────────────────────────
     $(`${prefix}-cnfdm-price`).textContent = fmt(data.price, 6);
-    const g = data.greeks || {};
-    $(`${prefix}-cnfdm-delta`).textContent = fmt(g.delta, 6);
-    $(`${prefix}-cnfdm-gamma`).textContent = fmt(g.gamma, 8);
-    $(`${prefix}-cnfdm-vega`).textContent  = fmt(g.vega, 6);
-    $(`${prefix}-cnfdm-theta`).textContent = fmt(g.theta, 6);
+    $(`${prefix}-cnfdm-method`).textContent = data.method || 'Rannacher CN-FDM';
 
-    if(isSb){
-      $('sb-cnfdm-method').textContent = data.method || 'Rannacher CN-FDM';
-    } else {
-      // Compare with analytical price
+    // ── Three-Method Greeks Table ─────────────────────────
+    const greeksKeys = ['delta','gamma','vega','theta','rho'];
+    const methodKeys = [
+      {api:'resimulation_fd', dom:'rd', label:'Resimulation FD'},
+      {api:'pathwise',        dom:'pw', label:'Pathwise'},
+      {api:'likelihood',      dom:'lr', label:'Likelihood'},
+    ];
+
+    for(const g of greeksKeys){
+      for(const m of methodKeys){
+        const cellId = `${prefix}-cnfdm-${m.dom}-${g}`;
+        const cellEl = $(cellId);
+        if(cellEl){
+          const val = (data[m.api] && data[m.api][g]) || 0;
+          const decimals = g === 'gamma' ? 8 : 6;
+          cellEl.textContent = fmt(val, decimals);
+          // Colorize
+          cellEl.className = val >= 0 ? 'pos' : 'neg';
+        }
+      }
+    }
+
+    // ── Shark Fin: vs closed-form ──────────────────────────
+    if(!isSb){
       const anPrice = parseFloat($('sf-mid').textContent);
       if(!isNaN(anPrice) && anPrice > 0){
         const err = Math.abs((data.price - anPrice)/anPrice*100).toFixed(2);
-        $('sf-cnfdm-vs').textContent = `Analytical: ${fmt(anPrice,4)} | Err: ${err}%`;
+        $('sf-cnfdm-vs').textContent = `Analytical: ${fmt(anPrice,4)} | PDE err: ${err}%`;
       } else {
         $('sf-cnfdm-vs').textContent = data.method || 'Rannacher CN-FDM';
       }
     }
+
     if(resEl) resEl.style.display = '';
   } catch(e){
     showErr('CN-FDM request failed: ' + e.message);
   } finally {
-    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '▶ Run CN-FDM'; }
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '▶ Run CN-FDM + 3 Greeks'; }
   }
 }
 
@@ -2149,18 +2197,22 @@ async function addStructPosition(product){
     keyRisk = sp ? `KO:${sp.ko_prob} / KI:${sp.ki_prob}` : '—';
     // Fetch full Greeks via CN-FDM (async, with loading state)
     try {
-      const fdmRes = await fetch('/api/cn_fdm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      const payload = {
         product_type:'snowball', S0:underlying, T:tenor,
         r:+$('sb-r').value/100, sigma:+$('sb-sig').value/100, q:+$('sb-q').value/100,
         KO_pct:+$('sb-ko').value/100, KI_pct:+$('sb-ki').value/100,
-        coupon_pa:+$('sb-cpn').value/100, obs_freq:+$('sb-freq').value
-      })});
+        coupon_pa:+$('sb-cpn').value/100, obs_freq:+$('sb-freq').value,
+        mc_paths: 30000, calc_greeks: true
+      };
+      const fdmRes = await fetch('/api/cn_fdm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const fd = await fdmRes.json();
-      if(!fd.error && fd.greeks){
-        delta = fmt(fd.greeks.delta * qty, 4);
-        gamma = fd.greeks.gamma * qty;
-        vega  = fd.greeks.vega  * qty;
-        theta = fd.greeks.theta * qty;
+      if(!fd.error){
+        // 使用 Resimulation FD 作为主 Greeks（最通用稳健）
+        const g = fd.resimulation_fd || fd.greeks || {};
+        delta = fmt((g.delta || 0) * qty, 4);
+        gamma = (g.gamma || 0) * qty;
+        vega  = (g.vega  || 0) * qty;
+        theta = (g.theta || 0) * qty;
       }
     } catch(e){ /* fallback: leave as '—' */ }
   } else if(product==='sharkfin'){
@@ -2180,14 +2232,16 @@ async function addStructPosition(product){
       const fdmRes = await fetch('/api/cn_fdm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         product_type:'shark_fin', S0, T:tenor,
         r:+$('sf-r').value/100, sigma:+$('sf-sig').value/100, q:+$('sf-q').value/100,
-        KO_pct: H/S0, K_strike:+$('sf-K').value
+        KO_pct: H/S0, K_strike:+$('sf-K').value,
+        mc_paths: 30000, calc_greeks: true
       })});
       const fd = await fdmRes.json();
-      if(!fd.error && fd.greeks){
-        delta = fmt(fd.greeks.delta * qty, 4);
-        gamma = fd.greeks.gamma * qty;
-        vega  = fd.greeks.vega  * qty;
-        theta = fd.greeks.theta * qty;
+      if(!fd.error){
+        const g = fd.resimulation_fd || fd.greeks || {};
+        delta = fmt((g.delta || 0) * qty, 4);
+        gamma = (g.gamma || 0) * qty;
+        vega  = (g.vega  || 0) * qty;
+        theta = (g.theta || 0) * qty;
       }
     } catch(e){ /* fallback */ }
   } else if(product==='forward'){

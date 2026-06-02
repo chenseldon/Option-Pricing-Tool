@@ -945,7 +945,7 @@ def irs():
 @app.route("/api/cn_fdm", methods=["POST"])
 def cn_fdm_price_api():
     """
-    通用 Crank-Nicolson 有限差分法定价接口。
+    通用 Crank-Nicolson 有限差分法定价接口 + Glasserman&Broadie 三套 Greeks。
     支持 product_type = 'snowball' | 'shark_fin'
 
     请求体（JSON）：
@@ -959,13 +959,15 @@ def cn_fdm_price_api():
         KI_pct  (float): 敲入价 / S0，如 0.75（仅雪球）
         coupon_pa (float): 年化票息（小数），如 0.15
         obs_freq  (int) : 敲出观察频率（每年），默认 12
+        ki_obs_freq(int): 敲入观察频率（每年），默认 252（日频）
         rebate    (float): 敲出补偿（鲨鱼鳍），默认 0
         K_strike  (float): 行权价（鲨鱼鳍），默认 = S0
         N       (int)  : 空间网格节点数，默认 400
-        calc_greeks (bool): 是否计算希腊字母，默认 True
+        mc_paths  (int) : MC仿真路径数，默认 50000
+        calc_greeks (bool): 是否计算三套希腊字母，默认 True
 
     返回：
-        price, greeks, method, params
+        price, resimulation_fd, pathwise, likelihood, method, params
     """
     try:
         d            = request.get_json(force=True)
@@ -979,9 +981,11 @@ def cn_fdm_price_api():
         KI_pct       = float(d.get("KI_pct", 0.75))
         coupon_pa    = float(d.get("coupon_pa", 0.15))
         obs_freq     = int(d.get("obs_freq", 12))
+        ki_obs_freq  = int(d.get("ki_obs_freq", 252))
         rebate       = float(d.get("rebate", 0.0))
         K_strike     = float(d.get("K_strike", S0))
         N            = min(int(d.get("N", 400)), 600)
+        mc_paths     = min(int(d.get("mc_paths", 50000)), 200000)
         calc_g       = bool(d.get("calc_greeks", True))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
@@ -1003,28 +1007,47 @@ def cn_fdm_price_api():
             KI_pct       = KI_pct,
             coupon_pa    = coupon_pa,
             obs_freq     = obs_freq,
+            ki_obs_freq  = ki_obs_freq,
             rebate       = rebate,
             K_strike     = K_strike,
             N            = N,
             M_per_year   = 252,
+            mc_paths     = mc_paths,
+            seed          = 42,
         )
-        price = cn.price()
-        greeks = cn.greeks() if calc_g else {}
+
+        if calc_g:
+            full_result = cn.greeks()
+            price  = full_result["price"]
+            # 完整三套 Greeks 返回
+            greeks_out = {
+                "resimulation_fd": full_result["resimulation_fd"],
+                "pathwise":        full_result["pathwise"],
+                "likelihood":      full_result["likelihood"],
+            }
+        else:
+            price = cn.price()
+            greeks_out = {}
+
     except Exception as e:
         return jsonify({"error": f"CN-FDM solver error: {e}"}), 500
 
     return jsonify({
-        "price":    round(float(price), 6),
-        "greeks":   {k: round(float(v), 6) for k, v in greeks.items()},
-        "method":   "Crank-Nicolson FDM",
-        "product_type": product_type,
+        "price":           round(float(price), 6),
+        "resimulation_fd": greeks_out.get("resimulation_fd", {}),
+        "pathwise":        greeks_out.get("pathwise", {}),
+        "likelihood":      greeks_out.get("likelihood", {}),
+        "method":          "Crank-Nicolson FDM + Glasserman&Broadie MC Greeks",
+        "product_type":    product_type,
         "params": {
             "S0": S0, "T": T, "r": r, "sigma": sigma, "q": q,
             "KO": round(S0 * KO_pct, 4),
             "KI": round(S0 * KI_pct, 4) if product_type == "snowball" else None,
             "KO_pct": KO_pct, "KI_pct": KI_pct,
             "coupon_pa": coupon_pa, "obs_freq": obs_freq,
+            "ki_obs_freq": ki_obs_freq,
             "rebate": rebate, "K_strike": K_strike,
+            "mc_paths": mc_paths,
         }
     })
 
