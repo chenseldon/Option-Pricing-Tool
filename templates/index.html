@@ -111,9 +111,43 @@ input:focus{border-color:var(--blue)}
 .badge{padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--blu2)}
 .code-blk{display:block;background:#04090f;border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
 /* ── Language toggle ── */
-.lang-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;margin-left:auto;flex-shrink:0}
+.lang-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;flex-shrink:0}
 .lang-btn{padding:3px 10px;background:var(--bgi);border:none;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s}
 .lang-btn.on{background:var(--blue);color:#fff}
+/* ── Font size toggle ── */
+.font-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;flex-shrink:0;gap:0}
+.font-btn{padding:3px 9px;background:var(--bgi);border:none;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s}
+.font-btn.on{background:var(--blue);color:#fff}
+/* Font presets: A- = original default, A = +15%, A+ = +30% */
+body{font-size:12px}
+body.font-s{font-size:12px} body.font-s .card-val{font-size:22px} body.font-s .total-val{font-size:15px}
+body.font-s .g-val{font-size:13px} body.font-s .quote-val{font-size:20px} body.font-s .metric-val{font-size:13px}
+body.font-s .stat-val{font-size:14px}
+body.font-m{font-size:14px} body.font-m .card-val{font-size:26px} body.font-m .total-val{font-size:18px}
+body.font-m .g-val{font-size:15px} body.font-m .quote-val{font-size:24px} body.font-m .metric-val{font-size:15px}
+body.font-m .stat-val{font-size:16px}
+body.font-l{font-size:16px} body.font-l .card-val{font-size:31px} body.font-l .total-val{font-size:21px}
+body.font-l .g-val{font-size:18px} body.font-l .quote-val{font-size:28px} body.font-l .metric-val{font-size:18px}
+body.font-l .stat-val{font-size:19px}
+/* A+ tweaks */
+body.font-l .btn,body.font-l .btn-s,body.font-l .btn-ok,body.font-l .btn-exp{font-size:14px;padding:8px 14px}
+body.font-l .sidebar{width:330px;min-width:330px}
+body.font-l input[type=number],body.font-l input[type=text]{font-size:14px;padding:6px 8px}
+body.font-l .hint,body.font-l .struct-hint{font-size:13px}
+body.font-l .dtable,body.font-l .gtable{font-size:13px}
+body.font-l .dtable th,body.font-l .gtable th{font-size:11px}
+/* A medium tweaks */
+body.font-m .btn,body.font-m .btn-s,body.font-m .btn-ok,body.font-m .btn-exp{font-size:12.5px}
+body.font-m .sidebar{width:295px;min-width:295px}
+body.font-m input[type=number],body.font-m input[type=text]{font-size:13px}
+body.font-m .hint,body.font-m .struct-hint{font-size:12px}
+body.font-m .dtable,body.font-m .gtable{font-size:12px}
+/* A- tweaks (same as original) */
+body.font-s .btn,body.font-s .btn-s,body.font-s .btn-ok,body.font-s .btn-exp{font-size:11.5px}
+body.font-s .sidebar{width:276px;min-width:276px}
+body.font-s input[type=number],body.font-s input[type=text]{font-size:12px}
+body.font-s .hint,body.font-s .struct-hint{font-size:11px}
+body.font-s .dtable,body.font-s .gtable{font-size:11px}
 /* ── Structured products ── */
 .struct-layout{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
 .struct-inputs{min-width:260px;max-width:320px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:13px}
@@ -168,6 +202,11 @@ input:focus{border-color:var(--blue)}
   <div class="lang-toggle">
     <button class="lang-btn on" id="lang-en" onclick="switchLang('en')">EN</button>
     <button class="lang-btn" id="lang-cn" onclick="switchLang('cn')">中文</button>
+  </div>
+  <div class="font-toggle">
+    <button class="font-btn" id="font-s" onclick="switchFont('s')" title="Small font">A-</button>
+    <button class="font-btn on" id="font-m" onclick="switchFont('m')" title="Medium font">A</button>
+    <button class="font-btn" id="font-l" onclick="switchFont('l')" title="Large font">A+</button>
   </div></header>
 <div class="body-layout">
 <aside class="sidebar">
@@ -814,7 +853,7 @@ python app.py
           <div id="sf-cnfdm-results" style="display:none">
             <div class="metric-grid" style="margin-top:8px;margin-bottom:10px">
               <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-price">CN-FDM PDE Price</div><div class="metric-val" id="sf-cnfdm-price">—</div></div>
-              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-vs">vs. Closed-Form</div><div class="metric-val" style="font-size:10px" id="sf-cnfdm-vs">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sf-cnfdm-vs">vs. Haug Analytical</div><div class="metric-val" style="font-size:10px" id="sf-cnfdm-vs">—</div></div>
             </div>
             <div class="panel-title" style="margin-top:6px;margin-bottom:6px" data-i18n="lbl_3greeks">📐 Three-Method Greeks Comparison</div>
             <div class="tscroll">
@@ -1597,7 +1636,7 @@ const I18N = {
     lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
     lbl_sf_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
     lbl_sf_cnfdm_hint:'Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. PDE-based validation and full Greeks.',
-    lbl_sf_cnfdm_price:'CN-FDM Price', lbl_sf_cnfdm_vs:'vs. Closed-Form',
+    lbl_sf_cnfdm_price:'CN-FDM Price', lbl_sf_cnfdm_vs:'vs. Haug Analytical',
     lbl_sf_vanilla:'Vanilla BSM Price', lbl_sf_disc:'Barrier Discount', lbl_sf_rebate_pv:'Rebate PV',
     lbl_fw_coc:'Cost of Carry', lbl_fw_fund:'Funding Cost', lbl_fw_div:'Dividend Income',
     lbl_fw_mtm:'MTM per Unit', lbl_fw_ntl_mtm:'Notional MTM', lbl_fw_fwd:'Forward Price',
@@ -1692,7 +1731,7 @@ const I18N = {
     lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
     lbl_sf_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
     lbl_sf_cnfdm_hint:'使用Crank-Nicolson有限差分法重新定价鲨鱼鳍（向上敲出看涨期权），提供PDE独立验证及完整希腊字母。',
-    lbl_sf_cnfdm_price:'CN-FDM理论价格', lbl_sf_cnfdm_vs:'对比解析公式',
+    lbl_sf_cnfdm_price:'CN-FDM理论价格', lbl_sf_cnfdm_vs:'对比Haug解析公式',
     lbl_sf_vanilla:'香草期权价格', lbl_sf_disc:'障碍折价', lbl_sf_rebate_pv:'返还金现值',
     lbl_fw_coc:'持有成本', lbl_fw_fund:'融资成本', lbl_fw_div:'股息收益',
     lbl_fw_mtm:'每单位盯市价值', lbl_fw_ntl_mtm:'名义本金盯市价值', lbl_fw_fwd:'远期价格',
@@ -1835,6 +1874,33 @@ function switchLang(lang) {
   // Re-render combined portfolio for language-sensitive content (Call/Put, labels)
   if(positions.length>0||structPositions.length>0) refreshAllPortfolio();
 }
+
+// ========== FONT SIZE TOGGLE ==========
+const FONT_SIZES = ['s','m','l'];
+let currentFont = localStorage.getItem('optool_font') || 'm';
+function switchFont(size){
+  currentFont = size;
+  localStorage.setItem('optool_font', size);
+  // Remove all font classes
+  document.body.classList.remove('font-s','font-m','font-l');
+  document.body.classList.add('font-'+size);
+  // Highlight active button
+  FONT_SIZES.forEach(s => {
+    const btn = document.getElementById('font-'+s);
+    if(btn) btn.classList.toggle('on', s===size);
+  });
+  // Resize ECharts
+  setTimeout(()=>{
+    if(chartPrice) chartPrice.resize();
+    if(chartSmile) chartSmile.resize();
+    if(chartMC) chartMC.resize();
+    Object.values(gcCharts).forEach(c=>c&&c.resize());
+  }, 100);
+}
+// Apply saved font size on load
+(function(){
+  switchFont(currentFont);
+})();
 
 // ========== STRUCTURED PRODUCTS: SUB-TAB SWITCH ==========
 function switchStruct(key){
@@ -2025,7 +2091,11 @@ async function calcCnFdm(productType){
 
     // ── PDE Price ──────────────────────────────────────────
     $(`${prefix}-cnfdm-price`).textContent = fmt(data.price, 6);
-    $(`${prefix}-cnfdm-method`).textContent = data.method || 'Rannacher CN-FDM';
+    // method label only exists for snowball (sb-cnfdm-method)
+    if(isSb){
+      const methodEl = $(`${prefix}-cnfdm-method`);
+      if(methodEl) methodEl.textContent = data.method || 'Rannacher CN-FDM';
+    }
 
     // ── Three-Method Greeks Table ─────────────────────────
     const greeksKeys = ['delta','gamma','vega','theta','rho'];
@@ -2049,14 +2119,19 @@ async function calcCnFdm(productType){
       }
     }
 
-    // ── Shark Fin: vs closed-form ──────────────────────────
+    // ── Shark Fin: vs Haug analytical ──────────────────────
     if(!isSb){
-      const anPrice = parseFloat($('sf-mid').textContent);
-      if(!isNaN(anPrice) && anPrice > 0){
-        const err = Math.abs((data.price - anPrice)/anPrice*100).toFixed(2);
-        $('sf-cnfdm-vs').textContent = `Analytical: ${fmt(anPrice,4)} | PDE err: ${err}%`;
-      } else {
-        $('sf-cnfdm-vs').textContent = data.method || 'Rannacher CN-FDM';
+      const haugPrice = data.haug_price;
+      const vsEl = $('sf-cnfdm-vs');
+      if(vsEl){
+        if(haugPrice !== null && haugPrice !== undefined){
+          const err = Math.abs((data.price - haugPrice) / Math.max(Math.abs(haugPrice), 1e-9) * 100).toFixed(3);
+          vsEl.textContent = `Haug: ${fmt(haugPrice,4)} | PDE err: ${err}%`;
+          vsEl.style.color = err < 2 ? 'var(--green)' : 'var(--red)';
+        } else {
+          vsEl.textContent = data.method || 'Rannacher CN-FDM';
+          vsEl.style.color = '';
+        }
       }
     }
 
