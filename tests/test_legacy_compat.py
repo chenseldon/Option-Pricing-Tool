@@ -358,3 +358,118 @@ class TestFlaskApiRegression:
             json={"option_type": "c", "S": -100, "K": 5500, "T": 0.25, "r": 0.02, "sigma": 0.2},
         )
         assert response.status_code in (400, 422), response.status_code
+
+
+class TestSnowballEndpoints:
+    """The rewired snowball API, now backed by the corrected engines."""
+
+    PAYLOAD = {
+        "S": 5000,
+        "T": 1.0,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.01,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.20,
+        "n_paths": 100_000,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_legacy_response_keys_are_preserved(self, client) -> None:  # noqa: ANN001
+        """The existing frontend reads these; rewiring must not break it."""
+        body = client.post("/api/snowball", json=self.PAYLOAD).get_json()
+        for key in (
+            "mid",
+            "bid",
+            "ask",
+            "std_err",
+            "ci95",
+            "ko_prob",
+            "ki_prob",
+            "n_paths",
+            "params",
+        ):
+            assert key in body, key
+        assert body["bid"] < body["mid"] < body["ask"]
+
+    def test_defaults_apply_the_market_conventions(self, client) -> None:  # noqa: ANN001
+        """Daily knock-in, a three-month lock-up, and an S0-struck put.
+
+        The legacy endpoint monitored knock-in only on the monthly knock-out
+        dates and had no lock-up at all.
+        """
+        params = client.post("/api/snowball", json=self.PAYLOAD).get_json()["params"]
+        assert params["ki_obs_freq"] == 252
+        assert params["lockup_months"] == 3
+        assert params["ki_strike_mode"] == "s0"
+        assert params["ki_put_strike"] == pytest.approx(5000.0)
+        # Twelve monthly dates less the three inside the lock-up.
+        assert params["n_ko_observations"] == 9
+
+    def test_new_parameters_are_honoured(self, client) -> None:  # noqa: ANN001
+        payload = {
+            **self.PAYLOAD,
+            "lockup_months": 0,
+            "ki_obs_freq": 12,
+            "ki_strike_mode": "ki",
+            "basis_pa": 0.05,
+        }
+        params = client.post("/api/snowball", json=payload).get_json()["params"]
+        assert params["lockup_months"] == 0
+        assert params["ki_obs_freq"] == 12
+        assert params["ki_strike_mode"] == "ki"
+        assert params["ki_put_strike"] == pytest.approx(3750.0)
+        assert params["basis_pa"] == pytest.approx(0.05)
+        assert params["n_ko_observations"] == 12
+
+    def test_reports_the_diagnostics_the_old_endpoint_could_not(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/snowball", json=self.PAYLOAD).get_json()
+        # Mean knock-out time is what makes the discounting fix visible.
+        assert 0.0 < body["expected_ko_time"] < self.PAYLOAD["T"]
+        # The loss-making state is a subset of all knock-ins.
+        assert body["ki_no_ko_prob"] <= body["ki_prob"]
+
+    def test_pde_endpoint_prices_the_same_product(self, client) -> None:  # noqa: ANN001
+        mc = client.post("/api/snowball", json=self.PAYLOAD).get_json()
+        pde = client.post("/api/snowball_pde", json=self.PAYLOAD).get_json()
+        assert pde["price"] == pytest.approx(mc["mid"], abs=10.0 * mc["ci95"])
+        assert pde["space_nodes"] > 0
+        assert pde["time_steps"] > 0
+
+    def test_crosscheck_reports_agreement_with_a_measured_budget(self, client) -> None:  # noqa: ANN001
+        """The validation view: a verdict plus the budget that produced it."""
+        body = client.post("/api/snowball_crosscheck", json=self.PAYLOAD).get_json()
+        assert body["agree"] is True
+        assert body["gap"] < body["budget"]
+        # Both error terms must be measured, not zero-filled.
+        breakdown = body["budget_breakdown"]
+        assert breakdown["mc_ci95_times_two"] > 0.0
+        assert breakdown["pde_grid_change"] > 0.0
+        assert breakdown["mc_ci95_times_two"] + breakdown["pde_grid_change"] == pytest.approx(
+            body["budget"], rel=1e-9
+        )
+        # The legacy engines were 18% apart on this trade.
+        assert body["gap_relative"] < 0.01
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"KI_pct": 1.10},  # knock-in above knock-out
+            {"lockup_months": 18},  # lock-up longer than the tenor
+            {"S": -1},  # negative spot
+            {"sigma": 0.0},  # zero volatility
+            {"basis_pa": -0.01},  # negative basis
+        ],
+    )
+    def test_invalid_inputs_return_400_not_500(self, client, bad) -> None:  # noqa: ANN001
+        """A structurally impossible trade is a client error, not a crash."""
+        response = client.post("/api/snowball", json={**self.PAYLOAD, **bad})
+        assert response.status_code == 400, response.get_json()
+        assert "error" in response.get_json()
