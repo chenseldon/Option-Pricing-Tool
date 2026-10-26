@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          # The full dev extras can fail to resolve on a new Python (numba caps
+          # numpy<2.3 and lags new releases), so install the tools the pipeline
+          # actually needs separately and let the suite skip what is absent.
+          pip install pytest ruff mypy pydantic
+          pip install QuantLib || echo "QuantLib unavailable; cross-validation tests will skip"
+          pip install numba || echo "numba unavailable; JIT paths will fall back to numpy"
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+      - name: Format check
+        run: ruff format --check src/ tests/
+
+      - name: Type check
+        run: mypy src/otcpricer
+
+      - name: Test
+        # Network-marked tests are excluded: market data pulls must never gate CI.
+        run: pytest -v -m "not network"

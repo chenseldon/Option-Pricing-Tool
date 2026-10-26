@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "otcpricer"
+version = "8.0.0.dev0"
+description = "OTC derivatives pricing and risk analytics -- vanilla, barrier, autocallable, forward, IRS"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "chenseldon" }]
+keywords = ["derivatives", "option-pricing", "volatility-surface", "snowball", "autocallable"]
+
+# Runtime deps only. The pricing models are self-contained: QuantLib is a
+# test-time benchmark (see requirements-dev.txt), never a runtime dependency.
+dependencies = [
+    "numpy>=2.0,<2.3",
+    "scipy>=1.14",
+    "pandas>=2.2",
+    "flask>=3.0",
+    "openpyxl>=3.1",
+    "matplotlib>=3.9",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.11", "ruff", "pre-commit", "QuantLib>=1.38", "numba>=0.60"]
+data = ["akshare>=1.18"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: tests that take more than a couple of seconds (MC convergence, calibration)",
+    "quantlib: tests that cross-validate against QuantLib",
+    "network: tests that hit a live market data feed (skipped by default)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "NPY"]
+# E501 is covered by the formatter; math-heavy code legitimately uses short names
+# like S, K, T, r, q which N803/N806 would otherwise flag.
+ignore = ["E501", "N803", "N806", "N815"]
+
+[tool.mypy]
+python_version = "3.12"
+# pydantic ships a mypy plugin; without it mypy treats every Field(default)
+# as a required argument and reports spurious call-arg errors.
+plugins = ["pydantic.mypy"]
+packages = ["otcpricer"]
+mypy_path = "src"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["scipy.*", "matplotlib.*", "akshare.*", "QuantLib.*", "numba.*"]
+ignore_missing_imports = true
