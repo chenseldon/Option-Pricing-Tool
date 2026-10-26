@@ -18,7 +18,7 @@ py_vollib==1.0.7
 py_lets_be_rational==1.0.1
 
 # Numerics - Monte Carlo GBM, CN-FDM PDE solver
-numpy==2.4.6
+numpy==2.2.6          # capped <2.3 by numba (see requirements-dev.txt)
 scipy==1.17.1
 pandas==2.3.3
 
