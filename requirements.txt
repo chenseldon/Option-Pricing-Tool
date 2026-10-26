@@ -1,7 +1,30 @@
-py_vollib
-numpy
-pandas
-matplotlib
-flask
-openpyxl
-scipy
+# ============================================================
+#  Option Pricing Tool - pinned dependencies
+#
+#  Target: Python 3.12  (py_vollib has no working wheel on 3.13)
+#  Verified working env on this machine: conda "Quant1.0"
+#      E:\anaconda\envs\Quant1.0\python.exe   (Python 3.12.13)
+#
+#  Rebuild from scratch:
+#      conda create -n Quant1.0 python=3.12
+#      conda activate Quant1.0
+#      pip install -r requirements.txt
+#
+#  Run:  run_app.bat   (Windows)   /   .\run_app.ps1   (PowerShell)
+# ============================================================
+
+# Pricing core - BSM analytical price, Greeks, IV solver
+py_vollib==1.0.7
+py_lets_be_rational==1.0.1
+
+# Numerics - Monte Carlo GBM, CN-FDM PDE solver
+numpy==2.4.6
+scipy==1.17.1
+pandas==2.3.3
+
+# Web backend
+Flask==3.0.3
+
+# Excel export (/api/export) and CLI chart output (main.py)
+openpyxl==3.1.5
+matplotlib==3.10.9

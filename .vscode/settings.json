@@ -1,4 +1,11 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+
+    // Pin the interpreter: this project only runs on conda "Quant1.0"
+    // (Python 3.12 + py_vollib). Without this, new terminals fall back to
+    // Anaconda base 3.13 and `python app.py` fails on `import py_vollib`.
+    "python.defaultInterpreterPath": "E:/anaconda/envs/Quant1.0/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "files.encoding": "utf8"
 }
