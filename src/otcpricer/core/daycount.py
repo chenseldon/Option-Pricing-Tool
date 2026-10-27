@@ -128,7 +128,7 @@ def parse_tenor(tenor: str | float | int) -> float:
     Raises:
         ParameterError: if the string is not a recognisable tenor.
     """
-    if isinstance(tenor, (int, float)):
+    if isinstance(tenor, int | float):
         return float(tenor)
 
     match = _TENOR_RE.match(str(tenor))

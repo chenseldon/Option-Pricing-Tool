@@ -50,7 +50,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import CubicHermiteSpline, PchipInterpolator
 
 from otcpricer.core.exceptions import ParameterError
 from otcpricer.core.validation import check_in_range, check_positive
@@ -274,24 +274,45 @@ class SSVISurface:
         # Anchor at the origin: no time, no variance.
         knots_t = np.concatenate(([0.0], maturities))
         knots_theta = np.concatenate(([0.0], thetas))
-        self._theta_curve = PchipInterpolator(knots_t, knots_theta, extrapolate=True)
-        self._theta_slope = self._theta_curve.derivative()
         self._last_maturity = float(maturities[-1])
 
         # Beyond the last quoted expiry, extend theta linearly rather than
-        # letting a cubic wander off. The slope is the interpolant's own slope
-        # at that final knot, *not* the average rate theta/T, so that theta is
-        # continuously differentiable across the boundary.
+        # letting a cubic wander off, at the rate variance actually accumulated
+        # over the last quoted interval.
         #
-        # This matters because dw/dT is Dupire's numerator. With the average
-        # rate there is a kink at the last maturity, and the analytic
-        # derivative disagreed with a central finite difference by 1.04e-03
-        # exactly there while matching to 1e-9 everywhere else -- a jump in
-        # local volatility at the edge of the quoted surface. Matching the
-        # slope removes it, and since a monotone interpolant has a
-        # non-negative slope, the extension stays monotone and so stays free
-        # of calendar arbitrage.
-        self._tail_rate = float(self._theta_slope(self._last_maturity))
+        # The rate has to be chosen carefully, because dw/dT is Dupire's
+        # numerator and two obvious choices are both wrong.
+        #
+        # The average rate theta/T leaves a kink: the analytic derivative
+        # disagreed with a central finite difference by 1.04e-03 exactly at the
+        # last maturity while matching to 1e-9 everywhere else -- a jump in
+        # local volatility at the edge of the quoted surface.
+        #
+        # PCHIP's own slope at that knot is continuous but can be *zero*.
+        # PCHIP computes an endpoint derivative from a one-sided three-point
+        # formula and clamps it to zero whenever its sign disagrees with the
+        # adjacent secant, which happens whenever the variance term structure
+        # is concave enough at the end -- a downward-sloping volatility term
+        # structure, which is ordinary in a stressed market. Measured on
+        # maturities (0.25, 1.0) with thetas (0.05, 0.10): PCHIP gives exactly
+        # 0.000000 where the realised rate is 0.066667. Total variance then
+        # goes flat forever past the last expiry, so implied vol decays as
+        # 1/sqrt(T) and local variance is identically zero out there. Nothing
+        # flags it, because flat total variance is calendar-arbitrage-*free*.
+        # For a snowball running one to three years off a surface whose last
+        # expiry is five months, that is the entire pricing range.
+        #
+        # So the rate is the last quoted secant, and the interpolant's final
+        # derivative is overridden to match it, which keeps theta continuously
+        # differentiable across the boundary. The segment stays monotone -- and
+        # so stays free of calendar arbitrage -- because a cubic Hermite
+        # segment is monotone when both end derivatives lie in [0, 3s], and
+        # here one of them *is* s while PCHIP guarantees the other.
+        slopes = PchipInterpolator(knots_t, knots_theta).derivative()(knots_t)
+        self._tail_rate = float((knots_theta[-1] - knots_theta[-2]) / (knots_t[-1] - knots_t[-2]))
+        slopes[-1] = self._tail_rate
+        self._theta_curve = CubicHermiteSpline(knots_t, knots_theta, slopes, extrapolate=True)
+        self._theta_slope = self._theta_curve.derivative()
 
     # -- term structure ---------------------------------------------------
 
