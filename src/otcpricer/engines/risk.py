@@ -412,20 +412,31 @@ def compare_snowball_risk(
             "within_budget": gap <= budget,
         }
 
+    # Gamma is judged against the Monte Carlo's own sampling error, exactly as
+    # the others are. Requiring the *signs* to match would be incoherent: the
+    # estimator is declared unreliable here, and when the true gamma is small
+    # relative to its sampling error the sign is simply not determined. On a
+    # trade with a remote knock-in, gamma is around -2.9e-08 against a Monte
+    # Carlo standard error near 2e-07, so the simulated sign is a coin toss
+    # while the two values are entirely consistent.
     pde_gamma = float(pde.greeks.gamma)
     mc_gamma = float(mc.greeks.gamma)
-    relative = abs(pde_gamma - mc_gamma) / max(abs(pde_gamma), 1e-30)
+    gamma_sampling = float((mc.std_error or {}).get("gamma", 0.0))
+    gamma_gap = abs(pde_gamma - mc_gamma)
+    gamma_budget = max(3.0 * gamma_sampling, 0.5 * abs(pde_gamma))
     verdicts["gamma"] = {
         "pde": pde_gamma,
         "mc": mc_gamma,
-        "relative_gap": relative,
-        "budget": 0.5,
+        "gap": gamma_gap,
+        "budget": gamma_budget,
+        "mc_std_error": gamma_sampling,
         "signs_agree": (pde_gamma > 0) == (mc_gamma > 0),
-        "within_budget": relative <= 0.5 and (pde_gamma > 0) == (mc_gamma > 0),
+        "within_budget": gamma_gap <= gamma_budget,
         "note": (
             "Monte Carlo gamma divides a second difference of a discontinuous "
-            "estimator by h^2 and is intrinsically noisy; compared on sign and "
-            "magnitude only. Use the PDE value."
+            "estimator by h^2, so its sampling error is large and can exceed "
+            "the value itself. Judged against that error, not on sign. Use the "
+            "PDE value."
         ),
     }
 
