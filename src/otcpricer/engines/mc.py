@@ -147,7 +147,7 @@ def normal_draws(n_steps: int, n_paths: int, seed: int, antithetic: bool) -> np.
 
     half = n_paths // 2
     base = rng.standard_normal((n_steps, half))
-    draws = np.concatenate([base, -base], axis=1)
+    draws: np.ndarray = np.concatenate([base, -base], axis=1)
     if draws.shape[1] < n_paths:  # odd path count: top up with one extra draw
         extra = rng.standard_normal((n_steps, n_paths - draws.shape[1]))
         draws = np.concatenate([draws, extra], axis=1)
