@@ -58,6 +58,41 @@ one-month expiry, whose worst case sits six times inside the limit -- so it
 separates on the strength of the quote rather than on a threshold tuned to the
 sample.
 
+A sixth filter runs afterwards, once the slice's own at-the-money level is
+known: **moneyness within a few standard deviations**.
+
+Why the far wing has to go
+--------------------------
+Beyond roughly three standard deviations an option's vega is negligible against
+quote noise, and its price stops being a volatility and becomes the market
+maker's floor. The captured 300ETF 0.156-year slice shows it plainly: across
+``k`` from +0.249 to +0.382 -- a 14% move in strike -- the price barely moves,
+0.0022, 0.0020, 0.0019, 0.0018. A real smile would fall far faster. Because the
+price is nearly flat while the strike rises, the implied volatility is forced
+upward, reaching 0.395.
+
+Those quotes pass the tick screen (18-22 ticks) and violate no arbitrage bound,
+so nothing else catches them. But they were distorting the fit, and not only
+locally: measured against the cap,
+
+======  ======  =========  =========  ======
+cap     points  rms (vp)   max (vp)   gamma
+======  ======  =========  =========  ======
+none    52      1.779      7.906      0.486
+4.0     50      1.194      4.003      0.500
+3.5     49      1.061      2.974      0.500
+3.0     42      0.654      1.977      0.216
+======  ======  =========  =========  ======
+
+``gamma`` sits pinned against its upper bound until the far wing is removed and
+then falls to 0.216, which says those quotes were bending the *global* shape
+parameters rather than just fitting badly in place.
+
+Three standard deviations is the default, and is generous rather than
+aggressive: desks commonly fit the 5-delta to 95-delta range, around 1.65
+standard deviations. It is configurable, and the sensitivity above is recorded
+so the choice can be re-examined rather than taken on trust.
+
 Every rejection is recorded with its reason and reported. A pipeline that
 silently discards half its inputs is worse than one that fails.
 """
@@ -77,6 +112,7 @@ from otcpricer.marketdata.quotes import OptionChain, OptionSlice
 from otcpricer.models import bsm
 
 __all__ = [
+    "MAX_MONEYNESS_SD",
     "MAX_TICK_VOL_UNCERTAINTY",
     "MAX_VOL_UNCERTAINTY",
     "MIN_POINTS_PER_SLICE",
@@ -96,6 +132,12 @@ MAX_VOL_UNCERTAINTY = 1e-2
 #: and is reporting the tick rather than the market. See the module docstring
 #: for the measured separation this achieves.
 MAX_TICK_VOL_UNCERTAINTY = 2e-2
+
+#: Largest |log-moneyness| to accept, in units of the slice's own standard
+#: deviation ``sigma * sqrt(T)``. Beyond this an option's vega is negligible
+#: against quote noise and its price reflects a market maker's floor rather
+#: than a volatility. See the module docstring for the measured effect.
+MAX_MONEYNESS_SD = 3.0
 
 #: Fewest surviving points for a slice to be worth fitting. Below this the
 #: smile is not determined and including the slice only adds noise.
@@ -223,6 +265,7 @@ def _extract_slice(
     rate: float,
     max_vol_uncertainty: float,
     max_tick_vol_uncertainty: float,
+    max_moneyness_sd: float,
     min_points: int,
 ) -> SliceInput:
     """Screen one expiry's quotes and solve for implied volatilities."""
@@ -326,6 +369,22 @@ def _extract_slice(
         )
 
     points.sort(key=lambda p: p.log_moneyness)
+
+    # Moneyness cap, applied last because it needs the slice's own at-the-money
+    # level, which is only known once the implied vols exist. Total variance at
+    # the money is interpolated from the points just collected, and its square
+    # root is this expiry's standard deviation of log-return.
+    if points and np.isfinite(max_moneyness_sd):
+        variance = np.array([p.total_variance for p in points])
+        moneyness = np.array([p.log_moneyness for p in points])
+        atm_variance = float(np.interp(0.0, moneyness, variance))
+        sigma_sqrt_t = float(np.sqrt(max(atm_variance, 1e-12)))
+        kept = [p for p in points if abs(p.log_moneyness) <= max_moneyness_sd * sigma_sqrt_t]
+        rejections["beyond moneyness cap"] = len(points) - len(kept)
+        if not rejections["beyond moneyness cap"]:
+            del rejections["beyond moneyness cap"]
+        points = kept
+
     usable = len(points) >= min_points
     reason = (
         "" if usable else f"only {len(points)} usable quotes survived screening, need {min_points}"
@@ -347,6 +406,7 @@ def extract_surface_input(
     rate: float = DEFAULT_RATE,
     max_vol_uncertainty: float = MAX_VOL_UNCERTAINTY,
     max_tick_vol_uncertainty: float = MAX_TICK_VOL_UNCERTAINTY,
+    max_moneyness_sd: float = MAX_MONEYNESS_SD,
     min_points: int = MIN_POINTS_PER_SLICE,
 ) -> SurfaceInput:
     """Extract implied-volatility points from a chain, with screening.
@@ -358,6 +418,8 @@ def extract_surface_input(
         max_vol_uncertainty: Identifiability limit for accepting a quote.
         max_tick_vol_uncertainty: Limit on the volatility one tick of price is
             worth. Quotes above it are reporting the tick, not the market.
+        max_moneyness_sd: Largest |log-moneyness| to accept, in slice standard
+            deviations. Pass ``float('inf')`` to keep the whole wing.
         min_points: Fewest surviving points for a slice to be usable.
 
     Returns:
@@ -370,6 +432,7 @@ def extract_surface_input(
             rate=rate,
             max_vol_uncertainty=max_vol_uncertainty,
             max_tick_vol_uncertainty=max_tick_vol_uncertainty,
+            max_moneyness_sd=max_moneyness_sd,
             min_points=min_points,
         )
         for option_slice in chain.slices
