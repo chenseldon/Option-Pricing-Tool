@@ -40,6 +40,10 @@ class Underlying:
         strike_scale: Divisor converting the strike embedded in a contract code
             to a price. ETF option codes carry the strike multiplied by 1000.
         contract_multiplier: Shares per contract, for notional calculations.
+        tick_size: Minimum price increment. This matters more than it looks:
+            a quote sitting at one tick is a *floor*, not a price, and
+            inverting it yields a meaningless implied volatility. See
+            :mod:`otcpricer.marketdata.surface_input`.
     """
 
     code: str
@@ -47,6 +51,7 @@ class Underlying:
     feed_symbol: str
     strike_scale: float = 1000.0
     contract_multiplier: int = 10_000
+    tick_size: float = 1e-4
 
 
 #: The underlyings this project supports, keyed by exchange ticker.
