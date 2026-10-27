@@ -55,6 +55,7 @@ from otcpricer.models.svi import SSVISurface
 
 __all__ = [
     "DEFAULT_DEGENERACY_FLOOR",
+    "DEFAULT_MAX_MATURITY",
     "ArbitrageReport",
     "Violation",
     "check_surface",
@@ -71,6 +72,13 @@ DEFAULT_MONEYNESS_RANGE = 0.8
 #: Tolerance for treating a condition as satisfied. Small negative values at the
 #: very edge are numerical, not economic.
 DEFAULT_TOLERANCE = -1e-10
+
+#: Longest maturity the default grid reaches, in years. Not derived from the
+#: quoted expiries, deliberately: the listed ETF options stop at roughly five
+#: months while the structured products priced off this surface run one to
+#: three years, so a grid bounded by the data would leave the entire region of
+#: use unchecked. That region is where the flat-tail defect lived.
+DEFAULT_MAX_MATURITY = 3.0
 
 #: Smallest ``dw/dT``, as a fraction of the surface's own average variance rate
 #: ``theta(T) / T``, that still yields a usable local volatility. Satisfying the
@@ -211,10 +219,10 @@ def check_surface(
         moneyness_range: Half-width in log-moneyness to span.
         n_moneyness: Grid points across moneyness.
         maturities: Maturities to check. Defaults to a grid spanning from well
-            inside the first quoted expiry to beyond the last, because the
-            surface gets used at maturities between and past the quoted ones --
-            which is exactly where the interpolated term structure, rather than
-            the fitted constraints, decides the answer.
+            inside the first quoted expiry out to :data:`DEFAULT_MAX_MATURITY`,
+            because the surface gets used at maturities between and far past
+            the quoted ones -- which is exactly where the interpolated term
+            structure, rather than the fitted constraints, decides the answer.
         n_maturities: Grid points across maturity when defaulted.
         tolerance: Threshold below which a value counts as a violation.
         max_violations: Cap on *retained* violations, applied after sorting, so
@@ -225,7 +233,11 @@ def check_surface(
     """
     if maturities is None:
         quoted = np.asarray(surface.params.maturities, dtype=float)
-        maturities = np.linspace(max(quoted[0] * 0.5, 1e-4), quoted[-1] * 1.5, n_maturities)
+        maturities = np.linspace(
+            max(quoted[0] * 0.5, 1e-4),
+            max(quoted[-1] * 1.5, DEFAULT_MAX_MATURITY),
+            n_maturities,
+        )
     maturity_grid = np.asarray(maturities, dtype=float)
     moneyness_grid = np.linspace(-moneyness_range, moneyness_range, n_moneyness)
 

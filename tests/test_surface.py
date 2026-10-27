@@ -27,10 +27,11 @@ from otcpricer.marketdata.snapshots import load_snapshot
 from otcpricer.models import bsm
 from otcpricer.models.arbitrage import (
     DEFAULT_DEGENERACY_FLOOR,
+    DEFAULT_MAX_MATURITY,
     check_surface,
     local_variance_is_well_defined,
 )
-from otcpricer.models.surface import fit_surface, fit_surface_from_chain
+from otcpricer.models.surface import FittedSurface, fit_surface, fit_surface_from_chain
 from otcpricer.models.svi import (
     SSVIParams,
     SSVISurface,
@@ -41,6 +42,7 @@ from otcpricer.models.svi import (
     raw_svi_total_variance,
 )
 from otcpricer.models.svi_calibration import calibrate_ssvi
+from otcpricer.reports.surface_report import surface_report
 from tests.test_marketdata import SNAPSHOT_DIR
 
 # ---------------------------------------------------------------------------
@@ -851,3 +853,116 @@ class TestSurfaceOrchestration:
         assert direct.calibration.params.rho == pytest.approx(
             viaSource.calibration.params.rho, rel=1e-9
         )
+
+
+# ---------------------------------------------------------------------------
+# The validation report
+# ---------------------------------------------------------------------------
+
+
+class TestSurfaceReport:
+    @pytest.fixture
+    def report_text(self) -> str:
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        return surface_report(fit_surface("510300", source_kind="snapshot"))
+
+    def test_states_its_provenance(self, report_text: str) -> None:
+        """A number whose source is unstated is not reviewable."""
+        assert "510300" in report_text
+        assert "2026-10-27" in report_text
+        assert "snapshot:" in report_text
+        assert "2.000%" in report_text
+
+    def test_carries_every_required_section(self, report_text: str) -> None:
+        for heading in (
+            "FITTED PARAMETERS",
+            "CALIBRATION ERROR, IN VOLATILITY POINTS",
+            "FORWARDS AND PUT-CALL PARITY RESIDUALS",
+            "DISCARDED QUOTES",
+            "STATIC ARBITRAGE CHECK",
+            "LOCAL VOLATILITY PRECONDITION",
+        ):
+            assert heading in report_text, heading
+
+    def test_reports_a_row_per_fitted_expiry(self, report_text: str) -> None:
+        fitted = fit_surface("510300", source_kind="snapshot")
+        for slice_input in fitted.surface_input.usable_slices:
+            assert slice_input.expiry_tag in report_text
+
+    def test_names_the_excluded_expiry_and_why(self, report_text: str) -> None:
+        """An expiry dropped without explanation looks like a bug."""
+        assert "EXPIRIES EXCLUDED FROM THE FIT" in report_text
+        assert "survived screening" in report_text
+
+    def test_rejection_counts_reconcile_in_the_text(self, report_text: str) -> None:
+        fitted = fit_surface("510300", source_kind="snapshot")
+        assert f"{fitted.surface_input.n_rejected:5d}  total discarded" in report_text
+        assert f"{fitted.surface_input.n_points:5d}  retained and fitted" in report_text
+
+    def test_states_the_arbitrage_verdict(self, report_text: str) -> None:
+        assert "PASS" in report_text
+        assert "verdict: USABLE" in report_text
+        assert "arbitrage-free" in report_text
+
+    def test_a_failing_surface_reads_as_failing(self) -> None:
+        """The report has to be able to say no.
+
+        Built by hand from an arbitraged surface, because a report that only
+        renders healthy cases is untested where it matters most.
+        """
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        healthy_fit = fit_surface("510300", source_kind="snapshot")
+        broken = SSVISurface(
+            SSVIParams(rho=-0.7, eta=8.0, gamma=0.5, maturities=(0.25, 1.0), thetas=(0.05, 0.10))
+        )
+        broken_report = check_surface(broken)
+        fitted = FittedSurface(
+            underlying_code=healthy_fit.underlying_code,
+            as_of=healthy_fit.as_of,
+            source=healthy_fit.source,
+            surface_input=healthy_fit.surface_input,
+            calibration=healthy_fit.calibration,
+            arbitrage=broken_report,
+            forwards=healthy_fit.forwards,
+        )
+
+        text = surface_report(fitted)
+
+        assert "FAIL" in text
+        assert "verdict: NOT USABLE" in text
+        assert "ARBITRAGE:" in text
+        assert "worst violations" in text
+        assert "butterfly" in text
+
+    def test_lines_stay_terminal_width(self, report_text: str) -> None:
+        """It has to be readable where it is read."""
+        overlong = [line for line in report_text.splitlines() if len(line) > 110]
+        assert not overlong, overlong
+
+
+class TestArbitrageGridHorizon:
+    def test_default_grid_reaches_the_products_horizon(self) -> None:
+        """The grid has to cover where the surface is used.
+
+        The listed options stop at roughly five months; the snowballs priced
+        off this surface run one to three years. A grid bounded by the quoted
+        expiries would leave that entire range unchecked -- and that range is
+        where the flat-tail defect lived.
+        """
+        surface = SSVISurface(
+            SSVIParams(rho=-0.2, eta=1.2, gamma=0.4, maturities=(0.08, 0.41), thetas=(0.003, 0.016))
+        )
+        report = check_surface(surface)
+
+        assert report.maturity_range[1] >= DEFAULT_MAX_MATURITY
+
+    def test_a_longer_dated_surface_is_not_truncated(self) -> None:
+        """The horizon is a floor, not a cap."""
+        surface = SSVISurface(
+            SSVIParams(rho=-0.2, eta=1.2, gamma=0.4, maturities=(1.0, 5.0), thetas=(0.04, 0.20))
+        )
+        report = check_surface(surface)
+
+        assert report.maturity_range[1] == pytest.approx(7.5)
