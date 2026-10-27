@@ -17,7 +17,12 @@ Endpoints:
     POST /api/shark_fin         : Shark fin barrier option (UOC/DOP/UIC/DIC) pricing
     POST /api/forward           : OTC equity forward pricing
     POST /api/irs               : Interest rate swap NPV + cash flow schedule
-    POST /api/snowball_risk     : Snowball Greeks from the PDE solution surface\n    POST /api/snowball_risk_crosscheck : PDE vs Monte Carlo risk, with a verdict\n    POST /api/cn_fdm            : CN-FDM structured product reprice (snowball/shark_fin)
+    POST /api/snowball_risk     : Snowball Greeks from the PDE solution surface
+    POST /api/snowball_risk_crosscheck : PDE vs Monte Carlo risk, with a verdict
+    POST /api/cn_fdm            : CN-FDM structured product reprice (snowball/shark_fin)
+    POST /api/vol_surface/fit   : Fit an SSVI surface to a real option chain
+    POST /api/vol_surface/query : Sample the fitted surface on a (K, T) grid
+    GET  /api/vol_surface/snapshots : List the offline chains available
 
 Usage:
     python app.py
@@ -58,6 +63,15 @@ from otcpricer.engines.risk import (
     snowball_risk_pde,
 )
 from otcpricer.products.snowball import SnowballTerms
+
+# Volatility surface (Phase 2a). Offline by default: core.config ships with
+# source="snapshot", so these endpoints answer from data/snapshots unless a
+# request explicitly asks for the live feed.
+from otcpricer.marketdata.contracts import SUPPORTED_UNDERLYINGS
+from otcpricer.marketdata.forward import DEFAULT_RATE
+from otcpricer.marketdata.snapshots import list_snapshots
+from otcpricer.models.surface import fit_surface
+from otcpricer.reports.surface_report import surface_report
 
 app = Flask(__name__)
 
@@ -310,7 +324,231 @@ def vol_smile():
         except Exception as e:
             points.append({"K": float(item.get("K", 0)), "iv": None, "error": str(e)})
 
-    return jsonify({"results": points})
+    return jsonify({
+        "results": points,
+        "note": (
+            "This inverts hand-entered prices one expiry at a time and fits "
+            "nothing. For a surface built from a real option chain -- forwards "
+            "implied from parity, quotes screened, SSVI calibrated under the "
+            "no-arbitrage constraints -- use /api/vol_surface/fit."
+        ),
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# API: Volatility Surface (SSVI, real option chains)
+# ─────────────────────────────────────────────────────────
+
+#: Fitting a surface takes a few hundred milliseconds, and the query endpoint
+#: gets called repeatedly while a user drags a chart around. Keyed on
+#: everything that changes the answer, so a different source or rate cannot be
+#: served a stale fit.
+_SURFACE_CACHE = {}
+
+
+def _cached_surface(underlying, source_kind, snapshot, rate):
+    key = (underlying, source_kind, snapshot, round(float(rate), 10))
+    if key not in _SURFACE_CACHE:
+        _SURFACE_CACHE[key] = fit_surface(
+            underlying, source_kind=source_kind, snapshot=snapshot, rate=rate
+        )
+    return _SURFACE_CACHE[key]
+
+
+def _surface_request(data):
+    """Pull the common surface arguments out of a request body."""
+    underlying = str(data.get("underlying", "510050")).strip()
+    if underlying not in SUPPORTED_UNDERLYINGS:
+        raise ValueError(
+            f"underlying {underlying!r} is not supported; available: "
+            f"{', '.join(sorted(SUPPORTED_UNDERLYINGS))}"
+        )
+    source_kind = data.get("source")
+    snapshot = data.get("snapshot")
+    rate = float(data.get("r", data.get("rate", DEFAULT_RATE)))
+    return underlying, source_kind, snapshot, rate
+
+
+@app.route("/api/vol_surface/fit", methods=["POST"])
+def vol_surface_fit():
+    """
+    Fit an SSVI volatility surface to a real listed option chain.
+
+    Runs the whole chain in one call: fetch quotes, imply a forward per expiry
+    from put-call parity, solve and screen implied volatilities, calibrate SSVI
+    with the no-arbitrage conditions imposed as constraints, then verify the
+    result independently on a dense grid.
+
+    The response carries the evidence, not just the parameters. A surface built
+    from non-synchronous last-trade prices with no bid/ask is an estimate, so
+    the fit error per expiry, the parity residuals, every discarded quote with
+    its reason, and the arbitrage margins all travel with it.
+
+    Request JSON: {underlying, source, snapshot, r, report}
+      underlying  "510050" or "510300" (default "510050")
+      source      "snapshot" (default), "akshare" for the live feed, or "csv"
+      snapshot    snapshot name, when replaying a specific date
+      r           continuously compounded rate. Only the forward uses it, and
+                  barely: 100bp moves the forward by 0.003%
+      report      when true, also return the full validation report as text
+
+    Response JSON: the surface, its inputs, its fit quality and its arbitrage
+    conclusion, plus whether a Dupire local volatility can be derived from it.
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        underlying, source_kind, snapshot, rate = _surface_request(data)
+        want_report = bool(data.get("report", False))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    payload = fitted.as_dict()
+    if want_report:
+        payload["report"] = surface_report(fitted)
+    return jsonify(payload)
+
+
+@app.route("/api/vol_surface/query", methods=["POST"])
+def vol_surface_query():
+    """
+    Sample a fitted surface on a (strike, maturity) grid, for a heat map.
+
+    The default grid spans the range the surface is actually used over rather
+    than only the range it was fitted on: out to three years, because the
+    structured products priced off it run one to three while the listed options
+    stop at roughly five months. The arbitrage conditions are returned
+    alongside, since the extrapolated region is where they are least
+    guaranteed.
+
+    Request JSON: {underlying, source, snapshot, r, moneyness, strikes,
+                   maturities, n_moneyness, n_maturities, t_max}
+      moneyness    explicit log-moneyness values, or
+      strikes      explicit strikes, converted with the nearest expiry's
+                   forward, or neither, for an automatic grid
+      maturities   explicit maturities in years, or neither for an auto grid
+      t_min        start of the auto maturity grid; defaults to one week, for
+                   the reason given at the grid construction below
+
+    Response JSON: {moneyness, strikes, maturities, implied_vol, total_variance,
+                    butterfly, dw_dT}, where implied_vol[i][j] sits at
+                    maturities[i] and moneyness[j].
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        underlying, source_kind, snapshot, rate = _surface_request(data)
+        n_moneyness = max(3, min(int(data.get("n_moneyness", 41)), 401))
+        n_maturities = max(2, min(int(data.get("n_maturities", 25)), 201))
+        t_max = float(data.get("t_max", 3.0))
+        if t_max <= 0:
+            raise ValueError("t_max must be positive")
+        t_min = data.get("t_min")
+        t_min = None if t_min is None else float(t_min)
+        if t_min is not None and not 0.0 < t_min < t_max:
+            raise ValueError("t_min must be positive and below t_max")
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    usable = fitted.surface_input.usable_slices
+    reference_forward = float(usable[0].forward.forward)
+
+    try:
+        if data.get("moneyness"):
+            moneyness = np.asarray([float(k) for k in data["moneyness"]], dtype=float)
+        elif data.get("strikes"):
+            strikes = np.asarray([float(k) for k in data["strikes"]], dtype=float)
+            if np.any(strikes <= 0):
+                raise ValueError("strikes must be positive")
+            moneyness = np.log(strikes / reference_forward)
+        else:
+            # Three standard deviations of the longest fitted expiry, the same
+            # reach the quote screen admits.
+            longest = float(usable[-1].year_fraction)
+            atm = float(fitted.surface.implied_vol(0.0, longest))
+            reach = max(3.0 * atm * np.sqrt(longest), 0.2)
+            moneyness = np.linspace(-reach, reach, n_moneyness)
+
+        if data.get("maturities"):
+            maturities = np.asarray([float(t) for t in data["maturities"]], dtype=float)
+            if np.any(maturities <= 0):
+                raise ValueError("maturities must be positive")
+        else:
+            # The moneyness reach is set from the longest expiry, so starting
+            # the maturity grid at the shortest one puts the near rows many
+            # standard deviations out: 510050's one-day expiry reaches 18, and
+            # SSVI dutifully returns 84% vol there. That is not a wrong number,
+            # it is a meaningless one, and on a heat map it owns the colour
+            # scale. So the default floor is a week, which an explicit t_min or
+            # an explicit maturities list overrides.
+            floor = t_min if t_min is not None else 1.0 / 52.0
+            start = max(float(usable[0].year_fraction), min(floor, t_max * 0.5))
+            maturities = np.linspace(start, t_max, n_maturities)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid grid: {e}"}), 400
+
+    surface = fitted.surface
+    implied, variance, butterfly, calendar = [], [], [], []
+    for maturity in maturities:
+        implied.append([round(float(v), 6) for v in surface.implied_vol(moneyness, maturity)])
+        variance.append([round(float(v), 8) for v in surface.total_variance(moneyness, maturity)])
+        butterfly.append([round(float(v), 6) for v in surface.butterfly(moneyness, maturity)])
+        calendar.append([round(float(v), 8) for v in surface.dw_dT(moneyness, maturity)])
+
+    return jsonify({
+        "underlying": underlying,
+        "as_of": fitted.as_of,
+        "source": fitted.source,
+        "reference_forward": round(reference_forward, 6),
+        "moneyness": [round(float(k), 6) for k in moneyness],
+        "strikes": [round(float(reference_forward * np.exp(k)), 6) for k in moneyness],
+        "maturities": [round(float(t), 6) for t in maturities],
+        "implied_vol": implied,
+        "total_variance": variance,
+        "butterfly": butterfly,
+        "dw_dT": calendar,
+        "quoted_maturities": [round(float(sl.year_fraction), 6) for sl in usable],
+        "arbitrage": fitted.arbitrage.as_dict(),
+        "note": (
+            "implied_vol[i][j] is at maturities[i], moneyness[j]. Maturities "
+            "past the last quoted expiry are extrapolated: total variance "
+            "continues at the last quoted secant rate."
+        ),
+    })
+
+
+@app.route("/api/vol_surface/snapshots", methods=["GET", "POST"])
+def vol_surface_snapshots():
+    """
+    List the offline option chains available, per underlying.
+
+    Snapshots are the default data source, so this is what /api/vol_surface/fit
+    will read unless a request asks for the live feed.
+    """
+    from otcpricer.core.config import get_settings
+
+    settings = get_settings()
+    directory = settings.data.snapshot_dir
+    return jsonify({
+        "snapshot_dir": str(directory),
+        "default_source": settings.data.source,
+        "underlyings": {
+            code: {
+                "name": underlying.name,
+                "feed_symbol": underlying.feed_symbol,
+                "snapshots": list_snapshots(directory, code),
+            }
+            for code, underlying in sorted(SUPPORTED_UNDERLYINGS.items())
+        },
+    })
 
 
 # ─────────────────────────────────────────────────────────
