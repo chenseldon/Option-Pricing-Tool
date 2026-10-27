@@ -34,7 +34,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -m \"not network\""
 markers = [
     "slow: tests that take more than a couple of seconds (MC convergence, calibration)",
     "quantlib: tests that cross-validate against QuantLib",

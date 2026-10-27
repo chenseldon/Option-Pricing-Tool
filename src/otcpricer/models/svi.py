@@ -101,7 +101,11 @@ class SVISliceParams:
     sigma: float
 
     def __post_init__(self) -> None:
-        check_in_range(self.rho, "rho", -1.0, 1.0)
+        # Open interval, deliberately. At |rho| = 1 the square root collapses
+        # to a bare absolute value, which vanishes at one point in k: total
+        # variance goes to zero there, both derivatives return NaN, and the
+        # slice loses its convexity entirely (d2w/dk2 is identically zero).
+        check_in_range(self.rho, "rho", -1.0, 1.0, include_high=False)
         if self.b < 0.0:
             raise ParameterError(f"SVI b must be non-negative, got {self.b}")
         if self.sigma <= 0.0:
@@ -200,7 +204,11 @@ class SSVIParams:
     thetas: tuple[float, ...]
 
     def __post_init__(self) -> None:
-        check_in_range(self.rho, "rho", -1.0, 1.0)
+        # Open interval, deliberately. At |rho| = 1 the square root collapses
+        # to a bare absolute value, which vanishes at one point in k: total
+        # variance goes to zero there, both derivatives return NaN, and the
+        # slice loses its convexity entirely (d2w/dk2 is identically zero).
+        check_in_range(self.rho, "rho", -1.0, 1.0, include_high=False)
         check_positive(self.eta, "eta")
         check_in_range(self.gamma, "gamma", 0.0, 0.5)
         if len(self.maturities) != len(self.thetas):

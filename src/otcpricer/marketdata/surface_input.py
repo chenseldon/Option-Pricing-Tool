@@ -246,6 +246,25 @@ class SurfaceInput:
     def n_points(self) -> int:
         return sum(len(s.points) for s in self.usable_slices)
 
+    @property
+    def rejections(self) -> dict[str, int]:
+        """Discarded quotes by reason, pooled across expiries, worst first.
+
+        Every quote in the chain is either kept or counted here exactly once,
+        so this and :attr:`n_points` reconcile against the raw quote count.
+        That identity is what makes the screening auditable instead of merely
+        documented, and it is asserted in the test suite.
+        """
+        pooled: Counter[str] = Counter()
+        for slice_input in self.slices:
+            pooled.update(slice_input.rejections)
+        return dict(pooled.most_common())
+
+    @property
+    def n_rejected(self) -> int:
+        """How many quotes were discarded in total."""
+        return sum(self.rejections.values())
+
     def as_dict(self) -> dict[str, object]:
         """Flat summary for reports and API responses."""
         return {
@@ -255,6 +274,8 @@ class SurfaceInput:
             "rate": self.rate,
             "n_usable_slices": len(self.usable_slices),
             "n_points": self.n_points,
+            "n_rejected": self.n_rejected,
+            "rejections": self.rejections,
             "slices": [s.as_dict() for s in self.slices],
         }
 

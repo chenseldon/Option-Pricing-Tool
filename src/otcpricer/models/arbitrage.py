@@ -115,6 +115,8 @@ class ArbitrageReport:
             ``theta(T) / T``. Near zero means local variance collapses even
             though no arbitrage is present.
         violations: Worst offending points, for locating the problem.
+            Capped, so this can be shorter than :attr:`n_violations`.
+        n_violations: How many grid points violated a condition in total.
         n_checked: Grid points evaluated.
         moneyness_range: Half-width of the log-moneyness range checked.
         maturity_range: ``(min, max)`` maturities checked.
@@ -124,6 +126,7 @@ class ArbitrageReport:
     min_calendar: float
     min_calendar_relative: float
     violations: tuple[Violation, ...]
+    n_violations: int
     n_checked: int
     moneyness_range: float
     maturity_range: tuple[float, float]
@@ -164,7 +167,8 @@ class ArbitrageReport:
             "n_checked": self.n_checked,
             "moneyness_range": self.moneyness_range,
             "maturity_range": [round(t, 6) for t in self.maturity_range],
-            "n_violations": len(self.violations),
+            "n_violations": self.n_violations,
+            "n_violations_retained": len(self.violations),
             "worst_violations": [v.as_dict() for v in self.violations[:10]],
         }
 
@@ -187,7 +191,7 @@ class ArbitrageReport:
             failed.append(f"butterfly (min g={self.min_butterfly:.3e})")
         if not self.calendar_free:
             failed.append(f"calendar (min dw/dT={self.min_calendar:.3e})")
-        return f"ARBITRAGE: {', '.join(failed)}, {len(self.violations)} points"
+        return f"ARBITRAGE: {', '.join(failed)}, {self.n_violations} points"
 
 
 def check_surface(
@@ -213,7 +217,8 @@ def check_surface(
             the fitted constraints, decides the answer.
         n_maturities: Grid points across maturity when defaulted.
         tolerance: Threshold below which a value counts as a violation.
-        max_violations: Cap on recorded violations.
+        max_violations: Cap on *retained* violations, applied after sorting, so
+            what survives is the worst points rather than the first found.
 
     Returns:
         An :class:`ArbitrageReport`.
@@ -249,10 +254,7 @@ def check_surface(
             ("butterfly", butterfly, 0.0),
             ("calendar", calendar, tolerance),
         ):
-            bad = np.flatnonzero(values < limit)
-            for index in bad:
-                if len(violations) >= max_violations:
-                    break
+            for index in np.flatnonzero(values < limit):
                 violations.append(
                     Violation(
                         condition=name,
@@ -262,14 +264,22 @@ def check_surface(
                     )
                 )
 
-    # Worst first, so a truncated list is still the informative one.
+    # Sort first, then truncate. Capping during collection keeps whichever
+    # maturity was scanned first, which is not the same as keeping the worst:
+    # on a badly arbitraged surface the retained worst was -0.939 while the
+    # true minimum was -5.360, five times larger and at a maturity the cap had
+    # already excluded. This list is what a reader uses to locate the problem,
+    # so it has to hold the worst points, not the earliest ones.
     violations.sort(key=lambda v: v.value)
+    n_violations = len(violations)
+    violations = violations[:max_violations]
 
     report = ArbitrageReport(
         min_butterfly=float(min_butterfly),
         min_calendar=float(min_calendar),
         min_calendar_relative=float(min_calendar_relative),
         violations=tuple(violations),
+        n_violations=n_violations,
         n_checked=int(maturity_grid.size * moneyness_grid.size),
         moneyness_range=moneyness_range,
         maturity_range=(float(maturity_grid[0]), float(maturity_grid[-1])),
