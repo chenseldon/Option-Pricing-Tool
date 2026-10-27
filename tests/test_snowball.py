@@ -605,9 +605,9 @@ class TestMonteCarloMachinery:
         assert float(paths[-1, :].mean()) == pytest.approx(market.forward(1.0), rel=5e-3)
 
     def test_antithetic_noise_sums_to_zero(self) -> None:
-        from otcpricer.engines.mc import _normal_draws
+        from otcpricer.engines.mc import normal_draws
 
-        draws = _normal_draws(10, 1000, seed=1, antithetic=True)
+        draws = normal_draws(10, 1000, seed=1, antithetic=True)
         np.testing.assert_allclose(draws.sum(axis=1), 0.0, atol=1e-10)
 
     def test_antithetic_does_not_bias_the_price(self) -> None:

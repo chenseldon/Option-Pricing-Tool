@@ -37,7 +37,13 @@ from otcpricer.core.market import EquityMarket
 from otcpricer.core.validation import check_positive
 from otcpricer.products.snowball import SnowballTerms
 
-__all__ = ["MonteCarloConfig", "SnowballMCResult", "price_snowball_mc", "simulate_log_paths"]
+__all__ = [
+    "MonteCarloConfig",
+    "SnowballMCResult",
+    "normal_draws",
+    "price_snowball_mc",
+    "simulate_log_paths",
+]
 
 _log = get_logger(__name__)
 
@@ -129,7 +135,7 @@ class SnowballMCResult:
         }
 
 
-def _normal_draws(n_steps: int, n_paths: int, seed: int, antithetic: bool) -> np.ndarray:
+def normal_draws(n_steps: int, n_paths: int, seed: int, antithetic: bool) -> np.ndarray:
     """Standard normal increments shaped ``(n_steps, n_paths)``.
 
     With ``antithetic`` the second half of the columns is the negation of the
@@ -180,7 +186,7 @@ def simulate_log_paths(
     dt = T / n_steps
 
     if draws is None:
-        draws = _normal_draws(n_steps, config.paths, config.seed, config.antithetic)
+        draws = normal_draws(n_steps, config.paths, config.seed, config.antithetic)
     elif draws.shape != (n_steps, config.paths):
         raise ValueError(f"draws must have shape {(n_steps, config.paths)}, got {draws.shape}")
 

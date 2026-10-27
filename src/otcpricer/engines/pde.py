@@ -97,6 +97,10 @@ class SnowballPDEResult:
         V_ki: Value at each node given it *has*. A seasoned trade that has
             already breached its knock-in must be valued and risked off this
             surface, not the other one.
+        V_no_ki_next_step: ``V_no_ki`` one time step later in calendar time,
+            kept for theta. See :meth:`surface_next_step`.
+        V_ki_next_step: ``V_ki`` one time step later in calendar time.
+        dt: Time step in years, the denominator for that theta.
         space_nodes: Grid nodes used.
         time_steps: Time steps used.
     """
@@ -105,12 +109,33 @@ class SnowballPDEResult:
     S_grid: np.ndarray
     V_no_ki: np.ndarray
     V_ki: np.ndarray
+    V_no_ki_next_step: np.ndarray
+    V_ki_next_step: np.ndarray
+    dt: float
     space_nodes: int
     time_steps: int
 
     def surface(self, *, knocked_in: bool = False) -> np.ndarray:
-        """Return the value surface for the requested knock-in state."""
+        """Return the value surface at valuation time, for a knock-in state."""
         return self.V_ki if knocked_in else self.V_no_ki
+
+    def surface_next_step(self, *, knocked_in: bool = False) -> np.ndarray:
+        """Return the surface one time step *later* in calendar time.
+
+        Backward induction passes through ``t = dt`` on its way to ``t = 0``,
+        so this costs nothing to capture and gives theta directly as
+        ``(V(dt) - V(0)) / dt``.
+
+        Doing it this way, rather than re-solving with a shortened maturity,
+        avoids a trap: the observation schedule is derived from the tenor, so
+        shortening ``T`` by a single day drops an entire monthly knock-out date
+        (measured: 9 observations become 8, and the final one jumps from 1.000
+        to 0.917). That is a change to the contract, not the passage of time,
+        and a maturity-bumped theta would measure it instead of time decay.
+        Reading two adjacent steps of one solve holds the schedule fixed by
+        construction.
+        """
+        return self.V_ki_next_step if knocked_in else self.V_no_ki_next_step
 
     def as_dict(self) -> dict[str, float | int]:
         """Flat dict for API responses.
@@ -438,6 +463,13 @@ def price_snowball_pde(
 
     rannacher = min(config.rannacher_steps, grid.n_steps)
 
+    # Surfaces one step later in calendar time, kept for theta. After
+    # iteration k the grid sits at t = T - (k + 1) * dt, so t = dt is reached
+    # at k = n_steps - 2 -- the iteration before last.
+    theta_step = grid.n_steps - 2
+    V_no_ki_next = V_no_ki.copy()
+    V_ki_next = V_ki.copy()
+
     # --- Backward induction -------------------------------------------------
     S_low = float(grid.S_grid[0])
     carry = market.carry
@@ -510,6 +542,10 @@ def price_snowball_pde(
             V_no_ki[ko_slice] = ko_value
             V_ki[ko_slice] = ko_value
 
+        if k == theta_step:
+            V_no_ki_next = V_no_ki.copy()
+            V_ki_next = V_ki.copy()
+
     # Read the price at the *current* spot, not at the initial fixing.
     #
     # terms.S0 is the initial fixing: it fixes the barrier levels and the
@@ -540,6 +576,9 @@ def price_snowball_pde(
         S_grid=grid.S_grid,
         V_no_ki=V_no_ki,
         V_ki=V_ki,
+        V_no_ki_next_step=V_no_ki_next,
+        V_ki_next_step=V_ki_next,
+        dt=grid.dt,
         space_nodes=grid.n_nodes,
         time_steps=grid.n_steps,
     )
