@@ -473,3 +473,196 @@ class TestSnowballEndpoints:
         response = client.post("/api/snowball", json={**self.PAYLOAD, **bad})
         assert response.status_code == 400, response.get_json()
         assert "error" in response.get_json()
+
+
+class TestSnowballRiskEndpoints:
+    """The snowball Greeks API, backed by PDE grid differentiation."""
+
+    PAYLOAD = {
+        "S": 5000,
+        "T": 1.0,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.01,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.20,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_returns_all_five_greeks_with_units(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/snowball_risk", json=self.PAYLOAD).get_json()
+        for greek in ("delta", "gamma", "vega", "theta", "rho"):
+            assert greek in body, greek
+            assert body[greek] is not None
+        # Units stated explicitly: these conventions are not self-evident, and
+        # a Greek read in the wrong one is worse than no Greek.
+        assert body["units"]["vega"].startswith("per 1 percentage point")
+        assert body["units"]["theta"] == "per calendar day"
+        assert body["method"] == "pde-grid"
+
+    def test_gamma_keeps_its_significant_figures(self, client) -> None:
+        """Gamma is around 1e-07 as a fraction of notional, so the 8 decimals
+        used for prices would leave it with two significant figures."""
+        body = client.post("/api/snowball_risk", json=self.PAYLOAD).get_json()
+        assert abs(body["gamma"]) > 1e-10
+        assert f"{body['gamma']:.12f}".rstrip("0") != f"{body['gamma']:.2e}"
+
+    def test_signs_match_the_economics(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/snowball_risk", json=self.PAYLOAD).get_json()
+        assert body["delta"] > 0.0  # net long the underlying on this trade
+        assert body["vega"] < 0.0  # short volatility
+        assert body["theta"] > 0.0  # accrues coupon carry
+
+    def test_spot_only_and_fixing_only_agree_at_inception(self, client) -> None:  # noqa: ANN001
+        """``S`` and ``S0`` are interchangeable for a newly struck trade.
+
+        /api/snowball sends S and the legacy /api/cn_fdm sends S0, so both
+        spellings have to work.
+        """
+        base = {k: v for k, v in self.PAYLOAD.items() if k != "S"}
+        with_spot = client.post("/api/snowball_risk", json={**base, "S": 5000}).get_json()
+        with_fixing = client.post("/api/snowball_risk", json={**base, "S0": 5000}).get_json()
+        assert with_spot["price"] == pytest.approx(with_fixing["price"], rel=1e-12)
+        assert with_spot["delta"] == pytest.approx(with_fixing["delta"], rel=1e-12)
+
+    def test_seasoned_trade_is_valued_at_current_spot(self, client) -> None:  # noqa: ANN001
+        """Barriers stay where they were struck while the market moves.
+
+        This is the gate on the defect where the PDE read its price at the
+        initial fixing and so returned the same value at every spot.
+        """
+        base = {k: v for k, v in self.PAYLOAD.items() if k != "S"}
+        prices = [
+            client.post("/api/snowball_risk", json={**base, "S0": 5000, "S": spot}).get_json()[
+                "price"
+            ]
+            for spot in (4500, 5000, 5500)
+        ]
+        assert len(set(prices)) == 3, f"price insensitive to spot: {prices}"
+        assert prices[0] < prices[1] < prices[2]
+
+    def test_knocked_in_flag_selects_the_other_surface(self, client) -> None:  # noqa: ANN001
+        clean = client.post("/api/snowball_risk", json=self.PAYLOAD).get_json()
+        breached = client.post(
+            "/api/snowball_risk", json={**self.PAYLOAD, "knocked_in": True}
+        ).get_json()
+        assert breached["knocked_in"] is True
+        assert breached["price"] < clean["price"]
+        assert breached["delta"] > clean["delta"]
+
+    def test_crosscheck_agrees_with_a_measured_budget(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_risk_crosscheck", json={**self.PAYLOAD, "n_paths": 100_000}
+        ).get_json()
+        assert body["agree"] is True
+        for name in ("delta", "gamma", "vega", "rho"):
+            verdict = body["verdicts"][name]
+            assert verdict["gap"] <= verdict["budget"]
+            # Both error terms must be measured, not zero-filled.
+            assert verdict["mc_std_error"] > 0.0
+        assert body["pde"]["method"] == "pde-grid"
+        assert body["mc"]["method"] == "mc-resimulation-crn"
+
+    def test_crosscheck_notes_why_gamma_is_judged_loosely(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_risk_crosscheck", json={**self.PAYLOAD, "n_paths": 100_000}
+        ).get_json()
+        assert "note" in body["verdicts"]["gamma"]
+
+    @pytest.mark.parametrize(
+        "bad", [{"KI_pct": 1.2}, {"sigma": 0.0}, {"S": -1}, {"lockup_months": 24}]
+    )
+    def test_invalid_inputs_return_400(self, client, bad) -> None:  # noqa: ANN001
+        response = client.post("/api/snowball_risk", json={**self.PAYLOAD, **bad})
+        assert response.status_code == 400, response.get_json()
+
+
+class TestCnFdmGreeksRouting:
+    """/api/cn_fdm: snowball Greeks rerouted, shark fin left on the legacy path."""
+
+    SNOWBALL = {
+        "product_type": "snowball",
+        "S0": 5000,
+        "T": 1.0,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.01,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.20,
+        "mc_paths": 50_000,
+        "calc_greeks": True,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_snowball_greeks_come_from_the_new_engine(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/cn_fdm", json=self.SNOWBALL).get_json()
+        assert body["pde_grid"] is not None
+        assert body["pde_grid"]["delta"] > 0.0
+
+    def test_snowball_pde_grid_matches_the_risk_endpoint(self, client) -> None:  # noqa: ANN001
+        """Same contract, same answer, whichever door it comes through."""
+        from_cn_fdm = client.post("/api/cn_fdm", json=self.SNOWBALL).get_json()["pde_grid"]
+        from_risk = client.post(
+            "/api/snowball_risk",
+            json={
+                "S0": 5000,
+                "T": 1.0,
+                "r": 0.02,
+                "sigma": 0.20,
+                "q": 0.01,
+                "KO_pct": 1.03,
+                "KI_pct": 0.75,
+                "coupon_pa": 0.20,
+            },
+        ).get_json()
+        assert from_cn_fdm["delta"] == pytest.approx(from_risk["delta"], rel=1e-9)
+
+    def test_pathwise_and_likelihood_are_null_with_reasons(self, client) -> None:  # noqa: ANN001
+        """Withdrawn rather than quietly left wrong.
+
+        Pathwise needs a Lipschitz payoff, which a snowball's is not. The
+        likelihood ratio implementation carried a sign error, a terminal score
+        used for a path-dependent payoff, and a missing discount term in rho.
+        """
+        body = client.post("/api/cn_fdm", json=self.SNOWBALL).get_json()
+        assert body["pathwise"] is None
+        assert body["likelihood"] is None
+        notes = body["greek_notes"]
+        assert "Lipschitz" in notes["pathwise"]
+        assert notes["likelihood"]
+
+    def test_shark_fin_still_uses_the_legacy_engine(self, client) -> None:  # noqa: ANN001
+        """Not migrated, and the response says so rather than implying parity."""
+        response = client.post(
+            "/api/cn_fdm",
+            json={
+                "product_type": "shark_fin",
+                "S0": 5500,
+                "T": 0.25,
+                "r": 0.02,
+                "sigma": 0.2,
+                "q": 0.01,
+                "KO_pct": 1.1,
+                "K_strike": 5500,
+                "mc_paths": 20_000,
+                "calc_greeks": True,
+            },
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["pathwise"] is not None  # legacy path still returns all three
+        assert "Legacy" in body["greek_notes"]["engine"]

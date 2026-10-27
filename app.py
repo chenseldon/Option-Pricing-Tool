@@ -17,7 +17,7 @@ Endpoints:
     POST /api/shark_fin         : Shark fin barrier option (UOC/DOP/UIC/DIC) pricing
     POST /api/forward           : OTC equity forward pricing
     POST /api/irs               : Interest rate swap NPV + cash flow schedule
-    POST /api/cn_fdm            : CN-FDM structured product reprice (snowball/shark_fin)
+    POST /api/snowball_risk     : Snowball Greeks from the PDE solution surface\n    POST /api/snowball_risk_crosscheck : PDE vs Monte Carlo risk, with a verdict\n    POST /api/cn_fdm            : CN-FDM structured product reprice (snowball/shark_fin)
 
 Usage:
     python app.py
@@ -51,6 +51,12 @@ from otcpricer.core.types import KIStrikeMode
 from otcpricer.core.exceptions import OtcPricerError
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
 from otcpricer.engines.pde import PDEConfig, price_snowball_pde
+from otcpricer.engines.risk import (
+    SnowballRisk,
+    compare_snowball_risk,
+    snowball_risk_mc,
+    snowball_risk_pde,
+)
 from otcpricer.products.snowball import SnowballTerms
 
 app = Flask(__name__)
@@ -593,6 +599,20 @@ def export_excel():
 def _parse_snowball_request(d, spot_key="S"):
     """Build (SnowballTerms, EquityMarket) from a request payload.
 
+    Two spot levels are read, not one:
+
+    ``S0`` -- the **initial fixing**, which sets the barrier levels and the
+    knock-in put strike for the life of the trade.
+
+    ``S`` -- the **current spot**, where the note is valued.
+
+    Either key alone is accepted and used for both, which is correct for a
+    trade at inception and keeps every existing caller working: /api/snowball
+    sends ``S``, /api/cn_fdm sends ``S0``. Supplying both values a *seasoned*
+    trade: barriers stay where they were struck while the market has moved.
+    That separation is also what makes delta a hedge ratio rather than the
+    derivative of a re-struck contract.
+
     Accepts the legacy field names so the existing frontend keeps working, and
     exposes the parameters the corrected model added:
 
@@ -610,9 +630,19 @@ def _parse_snowball_request(d, spot_key="S"):
         Annualised index futures discount. Enters the drift, not the discount
         factor.
     """
-    S0 = float(d[spot_key])
+    if spot_key in d:
+        spot = float(d[spot_key])
+    elif "S" in d:
+        spot = float(d["S"])
+    elif "S0" in d:
+        spot = float(d["S0"])
+    else:
+        raise KeyError("S")
+    # The fixing defaults to spot, which is the at-inception case.
+    fixing = float(d.get("S0", spot))
+
     terms = SnowballTerms(
-        S0=S0,
+        S0=fixing,
         T=float(d["T"]),
         ko_pct=float(d.get("KO_pct", 1.03)),
         ki_pct=float(d.get("KI_pct", 0.75)),
@@ -623,7 +653,7 @@ def _parse_snowball_request(d, spot_key="S"):
         ki_strike_mode=KIStrikeMode(str(d.get("ki_strike_mode", "s0")).lower()),
     )
     market = EquityMarket(
-        S=S0,
+        S=spot,
         r=float(d["r"]),
         sigma=float(d["sigma"]),
         q=float(d.get("q", 0.0)),
@@ -823,6 +853,105 @@ def snowball_crosscheck():
             "fine": {"space_nodes": fine.space_nodes, "time_steps": fine.time_steps},
         },
     })
+
+
+# ─────────────────────────────────────────────────────────
+# API: Snowball Greeks
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/snowball_risk", methods=["POST"])
+def snowball_risk():
+    """
+    Snowball Greeks: Delta, Gamma, Vega, Theta, Rho.
+
+    Computed by differencing the Crank-Nicolson solution surface. The solver
+    already evaluates the value at every grid node on its way to the price, so
+    delta and gamma are read straight off it -- no bumping, and none of the
+    sampling noise that makes a simulated gamma unusable on a discontinuous
+    payoff. Vega and rho are central differences over re-solves; theta comes
+    from two adjacent time steps of the same solve, which keeps the observation
+    schedule fixed.
+
+    Units follow the vanilla Greeks: delta per index point, gamma per point
+    squared, vega per percentage point of volatility, theta per calendar day,
+    rho per percentage point of rate. All as a fraction of notional.
+
+    Accepts the /api/snowball payload, plus:
+        knocked_in     — true for a seasoned note that has already breached its
+                         knock-in barrier; it must be risked off the other
+                         surface, and the two differ materially
+        space_nodes, steps_per_year — discretisation overrides
+
+    Note that market spot and the initial fixing are separate: ``S`` is the
+    current level, while the barriers stay pinned to where the trade was struck.
+    That is what makes delta a hedge ratio rather than the derivative of a
+    re-struck contract.
+    """
+    try:
+        d = request.get_json(force=True)
+        terms, market = _parse_snowball_request(d)
+        knocked_in = bool(d.get("knocked_in", False))
+        config = PDEConfig(
+            space_nodes=int(d.get("space_nodes", 1600)),
+            steps_per_year=int(d.get("steps_per_year", 1008)),
+        )
+    except (KeyError, TypeError, ValueError, OtcPricerError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        risk = snowball_risk_pde(terms, market, config, knocked_in=knocked_in)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    payload = risk.as_dict()
+    payload["knocked_in"] = knocked_in
+    payload["units"] = {
+        "delta": "per index point",
+        "gamma": "per index point squared",
+        "vega": "per 1 percentage point of volatility",
+        "theta": "per calendar day",
+        "rho": "per 1 percentage point of rate",
+        "basis": "fraction of notional",
+    }
+    return jsonify(payload)
+
+
+@app.route("/api/snowball_risk_crosscheck", methods=["POST"])
+def snowball_risk_crosscheck():
+    """
+    Run both risk methods and report whether they agree, Greek by Greek.
+
+    The PDE is the production method; Monte Carlo resimulation with common
+    random numbers is an independent check -- a different formulation, sampled
+    rather than solved. Each Greek gets a budget built from the simulation's own
+    measured standard error rather than a chosen tolerance, and the breakdown is
+    returned alongside the verdict: a pass carried by a wide sampling error is
+    weaker evidence than one with both methods tight, and the caller should be
+    able to tell them apart.
+
+    Gamma is judged against its sampling error rather than on sign. The
+    simulated estimator divides a second difference of a discontinuous payoff by
+    h^2, so where the true gamma is small its error can exceed the value and the
+    sign is undetermined.
+
+    This replaces the previous "three parallel Greeks" output, which reported
+    three sets that disagreed in sign and so could not all be right.
+    """
+    try:
+        d = request.get_json(force=True)
+        terms, market = _parse_snowball_request(d)
+        mc_paths = min(int(d.get("n_paths", 200000)), 500000)
+    except (KeyError, TypeError, ValueError, OtcPricerError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        comparison = compare_snowball_risk(
+            terms, market, mc_config=MonteCarloConfig(paths=mc_paths, seed=42)
+        )
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify(comparison.as_dict())
 
 
 # ─────────────────────────────────────────────────────────
@@ -1174,14 +1303,68 @@ def cn_fdm_price_api():
             seed          = 42,
         )
 
-        if calc_g:
+        if calc_g and product_type == "snowball":
+            # Snowball Greeks now come from the corrected engines. The legacy
+            # three-method output reported Resimulation FD, Pathwise and
+            # Likelihood Ratio deltas of -8.4e-05, +1.0e-05 and +9.0e-06 on the
+            # reference trade against a correct +4.9e-05: all three wrong, and
+            # disagreeing in sign, so at most one could have been right.
+            #
+            # The response keys are kept so the existing frontend does not
+            # break. "pathwise" is deliberately null: the method requires a
+            # Lipschitz payoff and a snowball's jumps at both barriers, so it
+            # does not apply here. Reporting null with a reason is more useful
+            # than a number that looks like the other two.
+            risk_terms, risk_market = _parse_snowball_request(d)
+            pde_risk = snowball_risk_pde(
+                risk_terms,
+                risk_market,
+                PDEConfig(space_nodes=1600, steps_per_year=1008),
+            )
+            mc_risk = snowball_risk_mc(
+                risk_terms, risk_market, MonteCarloConfig(paths=min(mc_paths, 200000), seed=42)
+            )
+            price = pde_risk.price
+            greeks_out = {
+                "pde_grid": pde_risk.greeks.as_dict(SnowballRisk.DECIMALS),
+                "resimulation_fd": mc_risk.greeks.as_dict(SnowballRisk.DECIMALS),
+                "pathwise": None,
+                "likelihood": None,
+                "notes": {
+                    "pde_grid": "Production method: differencing the PDE solution surface.",
+                    "resimulation_fd": (
+                        "Monte Carlo with common random numbers, as an independent "
+                        "check. Theta is null: bumping the tenor deletes a knock-out "
+                        "observation, so a simulated theta would measure a contract "
+                        "change rather than time decay."
+                    ),
+                    "pathwise": (
+                        "Not applicable. Pathwise differentiation needs the payoff to "
+                        "be Lipschitz in the parameter so the derivative and the "
+                        "expectation can be exchanged; a snowball's jumps to coupon*t "
+                        "on a knock-out and switches legs on a knock-in."
+                    ),
+                    "likelihood": (
+                        "Withdrawn. The previous implementation took its delta score "
+                        "from the terminal distribution for a path-dependent payoff, "
+                        "carried a sign error in the volatility score, and omitted "
+                        "rho's discount-factor term."
+                    ),
+                },
+            }
+        elif calc_g:
+            # Shark fin still runs on the legacy engine; it has not been
+            # through the review the snowball has, and its Greeks carry the
+            # same caveats they always did.
             full_result = cn.greeks()
-            price  = full_result["price"]
-            # 完整三套 Greeks 返回
+            price = full_result["price"]
             greeks_out = {
                 "resimulation_fd": full_result["resimulation_fd"],
-                "pathwise":        full_result["pathwise"],
-                "likelihood":      full_result["likelihood"],
+                "pathwise": full_result["pathwise"],
+                "likelihood": full_result["likelihood"],
+                "notes": {
+                    "engine": "Legacy cn_fdm.py -- not yet migrated or validated.",
+                },
             }
         else:
             price = cn.price()
@@ -1213,9 +1396,11 @@ def cn_fdm_price_api():
     return jsonify({
         "price":           round(float(price), 6),
         "haug_price":      haug_price,
+        "pde_grid":        greeks_out.get("pde_grid"),
         "resimulation_fd": greeks_out.get("resimulation_fd", {}),
-        "pathwise":        greeks_out.get("pathwise", {}),
-        "likelihood":      greeks_out.get("likelihood", {}),
+        "pathwise":        greeks_out.get("pathwise"),
+        "likelihood":      greeks_out.get("likelihood"),
+        "greek_notes":     greeks_out.get("notes"),
         "method":          "Crank-Nicolson FDM + Glasserman&Broadie MC Greeks",
         "product_type":    product_type,
         "params": {

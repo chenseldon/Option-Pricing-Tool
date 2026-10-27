@@ -122,12 +122,17 @@ class SnowballRisk:
     price: float
     std_error: dict[str, float] | None = None
 
+    #: Decimal places for serialisation. Generous on purpose: these are
+    #: fractions of notional, so gamma lands around 1e-07 and the 8 places
+    #: used for prices would leave it with two significant figures.
+    DECIMALS = 12
+
     def as_dict(self) -> dict[str, object]:
         """Flat dict for API responses."""
         payload: dict[str, object] = {
             "method": self.method,
             "price": round(self.price, 8),
-            **self.greeks.as_dict(8),
+            **self.greeks.as_dict(self.DECIMALS),
         }
         if self.std_error:
             payload["std_error"] = {k: round(v, 10) for k, v in self.std_error.items()}
