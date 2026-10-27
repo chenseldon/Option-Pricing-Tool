@@ -81,14 +81,43 @@ class PDEConfig:
 
 @dataclass(frozen=True, slots=True)
 class SnowballPDEResult:
-    """Outcome of a snowball PDE valuation, as a fraction of notional."""
+    """Outcome of a snowball PDE valuation, as a fraction of notional.
+
+    Carries the whole solution surface, not just the price at spot. A finite
+    difference solver computes ``V`` at every grid node on its way to the
+    answer, so delta and gamma are already present in the result and can be
+    read off by differencing -- no extra solves, and none of the Monte Carlo
+    noise that makes a simulated gamma unusable for a barrier product.
+    Discarding the surface and returning only a scalar threw that away.
+
+    Attributes:
+        price: Value at the current spot, in the relevant state.
+        S_grid: Spot levels of the grid nodes, increasing.
+        V_no_ki: Value at each node given the note has *not* knocked in.
+        V_ki: Value at each node given it *has*. A seasoned trade that has
+            already breached its knock-in must be valued and risked off this
+            surface, not the other one.
+        space_nodes: Grid nodes used.
+        time_steps: Time steps used.
+    """
 
     price: float
+    S_grid: np.ndarray
+    V_no_ki: np.ndarray
+    V_ki: np.ndarray
     space_nodes: int
     time_steps: int
 
+    def surface(self, *, knocked_in: bool = False) -> np.ndarray:
+        """Return the value surface for the requested knock-in state."""
+        return self.V_ki if knocked_in else self.V_no_ki
+
     def as_dict(self) -> dict[str, float | int]:
-        """Flat dict for API responses."""
+        """Flat dict for API responses.
+
+        Deliberately omits the grid arrays: they run to thousands of nodes and
+        belong in a risk calculation, not a quote response.
+        """
         return {
             "price": round(self.price, 8),
             "space_nodes": self.space_nodes,
@@ -284,6 +313,8 @@ def price_snowball_pde(
     terms: SnowballTerms,
     market: EquityMarket,
     config: PDEConfig | None = None,
+    *,
+    knocked_in: bool = False,
 ) -> SnowballPDEResult:
     """Value a snowball note with Crank-Nicolson finite differences.
 
@@ -291,14 +322,30 @@ def price_snowball_pde(
     discretisation of a different formulation -- which is what makes agreement
     between the two meaningful evidence rather than a tautology.
 
+    Two spot levels matter and must not be conflated:
+
+    ``terms.S0``
+        The **initial fixing**. It sets the barrier levels and the knock-in put
+        strike, and is fixed for the life of the trade.
+    ``market.S``
+        The **current spot**, where the price is read.
+
+    They coincide only at inception. Keeping them separate is what lets a
+    seasoned trade be revalued, and what makes a spot delta meaningful.
+
     Args:
         terms: Contract terms, including the lock-up and knock-in strike mode.
         market: Market state; ``basis_pa`` enters the drift if set.
         config: Discretisation controls.
+        knocked_in: Whether the note has already breached its knock-in barrier.
+            A seasoned trade that has must be valued off the knocked-in
+            surface; the two differ at the same spot, which is the whole reason
+            the solver carries both.
 
     Returns:
-        A :class:`SnowballPDEResult` holding the price as a fraction of
-        notional, with the grid dimensions used.
+        A :class:`SnowballPDEResult` with the price as a fraction of notional
+        and the full solution surface, from which delta and gamma can be read
+        without further solves.
     """
     config = config or PDEConfig()
     grid = _SnowballGrid(terms, market, config)
@@ -463,14 +510,36 @@ def price_snowball_pde(
             V_no_ki[ko_slice] = ko_value
             V_ki[ko_slice] = ko_value
 
-    price = grid.interpolate(V_no_ki, terms.S0)
+    # Read the price at the *current* spot, not at the initial fixing.
+    #
+    # terms.S0 is the initial fixing: it fixes the barrier levels and the
+    # knock-in put strike, and never changes over the life of the trade.
+    # market.S is where the underlying is now. For a newly struck note the two
+    # coincide, which is why interpolating at terms.S0 -- as this did -- passed
+    # every test: they all priced trades at inception. For anything seasoned it
+    # was simply wrong, returning the same value at every spot (measured:
+    # 0.063087 at spot 4500, 5000 and 5500 alike, while the Monte Carlo
+    # correctly gave 0.0074, 0.0635 and 0.0719). It also made a spot-bumped
+    # delta identically zero, which is what prompted finding it.
+    surface = V_ki if knocked_in else V_no_ki
+    price = grid.interpolate(surface, market.S)
     _log.debug(
         "snowball PDE priced",
         extra={
             "price": price,
+            "spot": market.S,
+            "fixing": terms.S0,
+            "knocked_in": knocked_in,
             "nodes": grid.n_nodes,
             "steps": grid.n_steps,
             "ko_observations": len(ko_steps),
         },
     )
-    return SnowballPDEResult(price=price, space_nodes=grid.n_nodes, time_steps=grid.n_steps)
+    return SnowballPDEResult(
+        price=price,
+        S_grid=grid.S_grid,
+        V_no_ki=V_no_ki,
+        V_ki=V_ki,
+        space_nodes=grid.n_nodes,
+        time_steps=grid.n_steps,
+    )
