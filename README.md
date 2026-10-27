@@ -33,13 +33,17 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
 - **Interactive charts**: ECharts price curve + 5 Greeks curves
 - **Unit auto-conversion**: input T in days or years, σ/r in % or decimal
 
-### 🔬 Structured Products Greeks (v2.0 — Glasserman & Broadie)
-- **3-Method MC Greeks** engine for Snowball & Shark Fin barrier options
-- **Resimulation FD**: Central difference with common random numbers — most robust
-- **Pathwise Differentiation**: SDE path derivative + conditional MC barrier smoothing
-- **Likelihood Ratio**: Score Function method — naturally handles discontinuous payoffs
-- Single-run parallel output → grouped dicts for cross-validation & risk control
-- CN-FDM PDE (Crank-Nicolson + Rannacher damping) for independent price validation
+### 🔬 Structured Products Greeks
+- **PDE grid differentiation** — delta and gamma read straight off the
+  Crank-Nicolson solution surface. The solver already evaluates the value at
+  every node, so they cost nothing beyond the price and carry no sampling noise
+- **Theta from two adjacent time steps** of the same solve, which keeps the
+  observation schedule fixed (bumping the tenor would delete a knock-out date)
+- **Monte Carlo resimulation with common random numbers** as an independent
+  cross-check, with a per-Greek verdict against a measured error budget
+- **Spot delta, not re-struck delta**: barriers stay where they were struck
+  while the market moves, which is what makes it a hedge ratio
+- **Seasoned trades** can be revalued and risked, including after a knock-in
 
 ### 💰 Structured Products Quoting
 | Product | Pricing Model | Greeks |
@@ -51,12 +55,15 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
 
 All products output **Bid / Mid / Ask** with configurable spread (bps).
 
-> **Structured-product Greeks** are computed three ways per Glasserman &
-> Broadie (2004) — Resimulation FD, Pathwise Differentiation, and Likelihood
-> Ratio — and returned together so they can be compared against one another.
+> **Structured-product Greeks** come from differencing the Crank-Nicolson
+> solution surface, cross-checked against Monte Carlo resimulation with common
+> random numbers and anchored to two closed-form cases. See
+> [*Model Validation*](#-model-validation) and
+> [`docs/models/greeks.md`](docs/models/greeks.md).
 >
-> ⚠️ **They do not currently agree**, and the disagreement is a known open
-> issue rather than a validated cross-check. See *Known limitations* below.
+> Pathwise differentiation is deliberately **not** offered: it requires a
+> Lipschitz payoff, and a snowball's jumps at both barriers. The reasoning is
+> documented rather than papered over.
 
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
@@ -92,8 +99,10 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 │   ├── products/snowball.py    # Snowball terms + observation schedule
 │   └── engines/
 │       ├── mc.py               #   Path Monte Carlo (batched, antithetic)
-│       └── pde.py              #   Crank-Nicolson FDM + Rannacher damping
-├── tests/                      # 335 tests: analytic, QuantLib, convergence
+│       ├── pde.py              #   Crank-Nicolson FDM + Rannacher damping
+│       └── risk.py             #   Greeks: PDE grid differentiation + MC check
+├── tests/                      # 400 tests: analytic, QuantLib, convergence
+├── docs/models/                # Model derivations, assumptions, rejected methods
 ├── app.py                      # Flask backend — pricing API endpoints
 ├── bs_pricing.py               # Compatibility layer over otcpricer.models.bsm
 ├── greeks_calc.py              # Compatibility layer over otcpricer.models.bsm
@@ -120,6 +129,8 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 | `/api/snowball` | POST | Snowball autocallable — path Monte Carlo |
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
 | `/api/snowball_crosscheck` | POST | Runs both snowball engines and reports agreement against a measured error budget |
+| `/api/snowball_risk` | POST | Snowball Greeks from the PDE solution surface |
+| `/api/snowball_risk_crosscheck` | POST | PDE vs Monte Carlo risk, with a per-Greek verdict |
 | `/api/shark_fin` | POST | Shark fin barrier option pricing (UOC/DOP/UIC/DIC) |
 | `/api/forward` | POST | OTC equity forward pricing |
 | `/api/irs` | POST | Interest rate swap NPV + cash flows |
@@ -139,7 +150,7 @@ All products output **Bid / Mid / Ask** with configurable spread (bps).
 | `matplotlib` | ≥ 3.9 | CLI chart output (PNG) |
 | **ECharts 5** | CDN | Interactive web charts (no npm required) |
 | `QuantLib` | ≥ 1.38 | **Test-time only** — independent benchmark, never a runtime dependency |
-| `pytest` | ≥ 8 | 335 tests: analytic identities, convergence, regression |
+| `pytest` | ≥ 8 | 400 tests: analytic identities, convergence, regression |
 
 ---
 
@@ -336,6 +347,12 @@ knock-in.
 grid refinement (measured ratios 1.98, 2.01, 1.97), and its Richardson limit
 agrees with a 12-seed Monte Carlo mean to 0.074%.
 
+**Greeks**: delta and gamma are checked against closed-form anchors rather
+than only against each other, compared with the secant of the price curve they
+came from (which catches a wrong chain rule even when the prices are right),
+and swept across spot through the knock-out barrier to confirm the second
+difference does not oscillate near the kink.
+
 **Mutation testing**: the BSM suite was itself validated by injecting eight
 deliberate bugs one at a time — dropping theta's `/365`, swapping `N(d1)` for
 `N(d2)` in delta, negating the drift in `d1`, omitting vega's rescale, and
@@ -384,30 +401,42 @@ Following A-share market practice:
 
 These are open, measured, and stated here rather than left to be discovered:
 
-**Structured-product Greeks are not yet trustworthy.** The three Monte Carlo
-Greek methods disagree in *sign*, not merely in precision. On the reference
-snowball trade:
+**Structured-product Greeks are validated as of the current version.** This
+entry previously recorded that they were not. The three Monte Carlo methods
+disagreed in *sign*, so at most one could have been right — and none was:
 
-| Method | Delta | Gamma | Vega |
-|---|---|---|---|
-| Resimulation FD | −8.4e-05 | −1.8e-07 | −0.004894 |
-| Pathwise | +1.0e-05 | −3.0e-08 | −0.000889 |
-| Likelihood Ratio | +9.0e-06 | −5.0e-08 | −0.002465 |
+| Method | Was | Correct |
+|---|---|---|
+| Resimulation FD | −8.4e-05 | **+4.9e-05** |
+| Pathwise | +1.0e-05 | **+4.9e-05** |
+| Likelihood Ratio | +9.0e-06 | **+4.9e-05** |
 
-The spread is 4.3× the mean and the signs conflict, so at most one of the three
-can be right. A snowball holder is long the underlying, so a negative delta is
-hard to defend. These Greeks still run on the legacy engine and were built on
-the Monte Carlo payoff that the fixes above corrected, so they need to be
-rebuilt on the new engine and validated against finite differences of the PDE
-before any of them should be relied on. The **prices** are validated; the
-structured-product **Greeks** are not.
+All three were built on the Monte Carlo payoff carrying the knock-in strike and
+discounting defects listed above, and the likelihood ratio carried three
+further errors of its own — a sign error in the volatility score, a terminal
+score used for a path-dependent payoff, and a missing discount term in rho. The
+derivations are in [`docs/models/greeks.md`](docs/models/greeks.md).
+
+Greeks now come from the PDE solution surface, anchored to closed form:
+unreachable barriers give delta, gamma and vega of 1.0e-11, −7.0e-14 and
+−5.2e-09 against an exact zero, and a terminal-only knock-in converges to its
+closed-form delta and gamma at clean first order.
+
+Two methods remain withdrawn on purpose. **Pathwise differentiation** requires
+a Lipschitz payoff and a snowball's jumps at both barriers, so it does not
+apply; the sound alternative is a mixed pathwise/likelihood estimator, which is
+not implemented. The **likelihood ratio** could be rebuilt correctly, and the
+corrected score functions are documented for whoever does, but it would add a
+high-variance third estimate without adding confidence. Both return `null` with
+a stated reason rather than a plausible-looking number.
 
 **Vanilla Greeks are unaffected** — those are closed-form, checked against
 QuantLib and against finite differences, and carry the regression anchors above.
 
-**Shark fin** still runs on the legacy `cn_fdm.py` and has not been through the
-same review as the snowball. Its closed-form and PDE prices have not been
-cross-checked the way the snowball's now are.
+**Shark fin** still runs on the legacy `cn_fdm.py`, including its Greeks. Its
+closed-form and PDE prices have not been cross-checked the way the snowball's
+now are, so giving it Greeks before its prices are validated would be the wrong
+order of work.
 
 **Flat volatility and a flat rate curve.** Everything above assumes a single
 volatility and a single rate. A desk prices a snowball against the whole
