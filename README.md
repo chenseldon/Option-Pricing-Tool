@@ -93,6 +93,31 @@ Supported underlyings: **华夏上证50ETF (510050)** and
 **华泰柏瑞沪深300ETF (510300)**. Offline snapshots are the default source, so
 nothing touches the network unless asked.
 
+### 🌡 Dupire Local Volatility
+
+Turns the fitted surface into a pricing volatility, so a structured product is
+priced against the whole smile rather than one number:
+
+```
+sigma_loc^2(S,t) = (dw/dt) / g(y),   y = log(S / F(t))
+```
+
+The denominator is *identically* Gatheral's butterfly function, so an
+arbitrage-free surface yields a non-negative local variance by construction.
+Both the formula and that identity are verified symbolically.
+
+| What | Result |
+|---|---|
+| **Dupire round trip** (reprice the vanillas the surface was built from) | **0.0064** vol points on 510300, **0.426** on 510050 — against calibration errors of 0.654 and 0.587 |
+| Local vol at an 80% knock-in | Roughly **2x** the at-the-money level |
+| Effect on a 1-year 103/80 snowball | **−32%** (510050), **−48%** (510300) vs a flat quote at the same at-the-money vol |
+
+> **Flat volatility remains the default.** Local volatility is opt-in, and the
+> flat code path is byte-identical — the Phase 1 reference price is still
+> exactly `0.0683263509055402`. Derivations, the five defects found building
+> this, and every measurement are in
+> [`docs/models/local_volatility.md`](docs/models/local_volatility.md).
+
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
 - **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
@@ -123,12 +148,14 @@ nothing touches the network unless asked.
 │   │   ├── market.py           #   EquityMarket (incl. index futures basis)
 │   │   ├── daycount.py         #   ACT/365F, ACT/360, ACT/ACT, 30/360, tenors
 │   │   └── validation.py       #   One source of truth for input checks
+│   │   └── vol.py              #   LocalVolatility protocol (keeps engines off marketdata)
 │   ├── models/
 │   │   ├── bsm.py              #   Self-built BSM: price, Greeks, implied vol
 │   │   ├── svi.py              #   SVI slice + SSVI surface, analytic derivatives
 │   │   ├── svi_calibration.py  #   Constrained SSVI fit (no-arbitrage imposed)
 │   │   ├── arbitrage.py        #   Independent dense-grid arbitrage checker
-│   │   └── surface.py          #   Chain -> fitted surface, in one call
+│   │   ├── surface.py          #   Chain -> fitted surface, in one call
+│   │   └── local_vol.py        #   Dupire local volatility + diagnostics
 │   ├── marketdata/             # Real option chains
 │   │   ├── contracts.py        #   Code parsing + pinned feed-symbol registry
 │   │   ├── sources.py          #   akshare (retry/backoff), snapshot, CSV, cache
@@ -137,12 +164,15 @@ nothing touches the network unless asked.
 │   │   └── surface_input.py    #   Implied vols and the six quote screens
 │   ├── products/snowball.py    # Snowball terms + observation schedule
 │   ├── reports/                # Model validation output
-│   │   └── surface_report.py   #   Calibration/parity/rejection/arbitrage report
+│   │   ├── layout.py           #   Shared plain-text report formatting
+│   │   ├── surface_report.py   #   Calibration/parity/rejection/arbitrage report
+│   │   └── local_vol_report.py #   Extrapolation, forward curve, Dupire round trip
 │   └── engines/
-│       ├── mc.py               #   Path Monte Carlo (batched, antithetic)
-│       ├── pde.py              #   Crank-Nicolson FDM + Rannacher damping
+│       ├── mc.py               #   Path Monte Carlo (batched, antithetic, local vol)
+│       ├── pde.py              #   Crank-Nicolson FDM; constant + variable coefficients
+│       ├── european.py         #   European local-vol PDE/MC -- the validation vehicle
 │       └── risk.py             #   Greeks: PDE grid differentiation + MC check
-├── tests/                      # 583 tests: analytic, QuantLib, convergence
+├── tests/                      # 760 tests: analytic, QuantLib, convergence
 ├── data/snapshots/             # Committed real option chains (test fixtures)
 ├── docs/models/                # Model derivations, assumptions, rejected methods
 ├── app.py                      # Flask backend — pricing API endpoints
@@ -170,6 +200,9 @@ nothing touches the network unless asked.
 | `/api/vol_surface/fit` | POST | Fit SSVI to a real option chain; returns the fit quality, rejected quotes, parity residuals and arbitrage verdict |
 | `/api/vol_surface/query` | POST | Sample the fitted surface on a (K, T) grid for a heat map |
 | `/api/vol_surface/snapshots` | GET | List the offline chains available |
+| `/api/local_vol/surface` | POST | Dupire local volatility on a (spot, time) grid, with implied vol alongside |
+| `/api/local_vol/validate` | POST | The Dupire round trip — the correctness evidence, with a pass/fail verdict |
+| `/api/european` | POST | European option priced on the local volatility (skew-consistent) |
 | `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
 | `/api/snowball` | POST | Snowball autocallable — path Monte Carlo |
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
@@ -495,6 +528,68 @@ Full derivations, the rejected alternatives, and the measurements behind every
 tolerance are in
 [`docs/models/volatility_surface.md`](docs/models/volatility_surface.md).
 
+### Local volatility (Phase 2b)
+
+The decisive test is the **Dupire round trip**: price the vanillas the surface
+was built from and check its own smile comes back. Dupire guarantees that in
+continuous time, so any residual is the engine's discretisation — which makes
+the right budget the surface's own calibration error.
+
+| | worst round trip | calibration rms | share |
+|---|---|---|---|
+| 510050 | 0.426 vp | 0.587 vp | 73% |
+| 510300 | **0.0064 vp** | 0.654 vp | **1.0%** |
+
+Three tests exist purely to *localise* a failure, each seeing something the
+others cannot:
+
+- **Constant local vol** lands on the flat engine's grid node for node (the
+  padding rules reduce exactly), so a discrepancy is indexing, not
+  discretisation. Agrees to **8.3e-17** on price and 2.7e-15 across the
+  surface, and all five Greeks to 1e-17–1e-15.
+- **Smooth time-varying vol** is the only test that can see the theta scheme
+  taking coefficients from the wrong time level — invisible under constant
+  coefficients, and first-order in `dt`, so it reads as slow convergence
+  rather than a wrong answer. Measured order **1.87**.
+- **Two maturities** pin the time direction, because a single European price is
+  invariant to a reversed time axis.
+
+#### Five defects found while building it
+
+| Defect | How it was caught |
+|---|---|
+| `ForwardCurve.drift()` off by one segment | Integrated drift vs the curve's own log-forward, off by a constant 1.62e-03. Inspection did not catch it |
+| **Rho sign error**: +0.0036 → −0.0001, because the drift lives on the surface's forward curve and bumping `market.r` moved only the discounting | Degenerate check on *all five* Greeks, not just the price |
+| **A Phase 2a screening defect**: 510050's 1-day expiry cleared the 4-point screen with exactly 4 quotes, fitted *worse* (0.645 → 0.587 vp), pinned γ at its bound, and kinked θ(T) | Round-trip error 5.82 vp with it, 3.49 without. A one-week minimum maturity now applies |
+| Strike-on-node shift subtracted the remainder, leaving `m·dx + 2·rem` | Its own test |
+| My first round trip inverted implied vol at **spot** instead of the forward, showing 2–5.5 vp of fake error | Running the constant-vol test *first*: it came back clean at 1e-5 and sent me to the test rather than the engine |
+
+That last one is the methodological point: **localising tests first, decisive
+test second.**
+
+#### What had to change, and what did not
+
+Delta, gamma and theta needed nothing — the first two are differenced off the
+solution surface, theta off two adjacent time levels. **Vega** now shifts the
+*surface* (`θ_i → (√(θ_i/T_i) + δ)²T_i`), because bumping `market.sigma` would
+not touch the diffusion but *would* change the flat grid's padding, returning a
+small number produced by discretisation. A plausible, meaningless vega is
+harder to catch than a zero, and there is a test that bumping sigma from 0.05
+to 0.60 leaves the price exactly equal.
+
+The local-vol vega is a **different derivative** from the flat one, not the same
+one measured better: SSVI's curvature scale depends on the variance level, so a
+parallel at-the-money shift also tilts the smile. Hence the method tag
+`pde-grid+ssvi-parallel-vega`.
+
+#### The Monte Carlo is no longer exact
+
+A constant-coefficient log step integrates GBM exactly over any step size; a
+state-dependent one does not. So `steps_per_year` becomes an accuracy
+parameter. **But the bias is not measurable**: averaging six 400,000-path runs
+per configuration, it sits within 1.7 standard errors of zero at 63, 252 and
+1008 steps/year with no trend — bounded below 1.3e-04, or 0.11% of price.
+
 ### Known limitations
 
 These are open, measured, and stated here rather than left to be discovered:
@@ -536,18 +631,34 @@ closed-form and PDE prices have not been cross-checked the way the snowball's
 now are, so giving it Greeks before its prices are validated would be the wrong
 order of work.
 
-**The pricing engines still run on flat volatility.** An arbitrage-free SSVI
-surface is now fitted from real chains and verified to be usable for local
-volatility, but nothing consumes it yet: Dupire itself, and the engine changes
-to carry a variable local volatility through the PDE coefficients and the Monte
-Carlo step loop, are the next piece of work. Flat volatility stays the default
-basis deliberately, so the validated snowball numbers above keep working as
-regression anchors rather than being contaminated by calibration error.
+**86.5% of a three-year horizon is extrapolated.** The chains stop at 0.41
+years, so most of a snowball's life rests on the variance term structure's
+linear extension rather than on quotes. No amount of grid refinement touches
+it, and it is the largest single assumption behind any long-dated number —
+larger than everything else in the validation section combined. Reported as
+`extrapolated_fraction` and led with in the local-volatility report.
 
-**The surface tail is an extrapolation.** `θ` continues past the last quoted
-expiry at the last quoted secant rate. The listed options stop at roughly five
-months while the products run one to three years, so that convention — not
-market information — stands behind any long-dated number.
+**Flat volatility remains the default pricing basis.** Local volatility is
+opt-in, so the validated Phase 1/1.5 numbers keep working as regression anchors
+rather than being contaminated by calibration error. The flat code path is
+byte-identical, not merely close.
+
+**The flat grid budget does not carry over.** At the flat defaults the two
+engines disagreed by 9.4 standard errors on a 510050 one-year snowball;
+refining closed it monotonically to 2.0. `LOCAL_VOL_PDE_CONFIG` is sized at the
+point where the comparison stops being limited by the grid. None of this is
+about local volatility as such — the smoother 510300 surface already agrees at
+the flat defaults.
+
+**Local volatility is calibrated, not dynamic.** Dupire reprices today's
+vanillas by construction but implies a forward smile that flattens, which is
+known to misprice forward-starting and cliquet features. A snowball's knock-out
+is not forward-starting, so this is second-order here, but it is a real
+limitation of the model class. Stochastic volatility is Phase 3's business.
+
+**The forward curve has a kink** at the last quoted expiry, +0.054 to +0.088,
+the acknowledged cost of reverting to the caller's own carry past the quotes
+rather than extrapolating a −5% implied carry out to three years.
 
 **A flat rate curve.** A desk discounts off a bootstrapped curve. Only the
 forward uses the rate at present, and barely: 100bp moves it by 0.003%, which

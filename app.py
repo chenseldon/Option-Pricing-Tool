@@ -608,7 +608,11 @@ def local_vol_surface():
     a snowball's knock-in risk actually lives.
 
     Request JSON: {underlying, source, snapshot, r, q, basis_pa, S,
-                   horizon, n_spots, n_times}
+                   horizon, moneyness, n_spots, n_times}
+      moneyness    half-width of the display range in log-moneyness; defaults
+                   to three at-the-money standard deviations. Deliberately
+                   narrower than the solver's boundary, which is reported
+                   separately as solver_moneyness_range.
 
     Response JSON: {spots, times, local_vol, implied_vol, diagnostics,
                     forward_curve} with local_vol[i][j] at times[i], spots[j].
@@ -629,10 +633,20 @@ def local_vol_surface():
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
-    lower, upper = lv.boundary_moneyness(horizon)
-    moneyness = np.linspace(lower, upper, n_spots)
+    # Display range, not the solver's boundary. boundary_moneyness is sized so
+    # a Dirichlet condition is harmless, which at a three-year horizon reaches
+    # +/-2.65 in log-moneyness -- spot from 7% to 1412% of forward. Correct for
+    # a PDE and useless for a heat map, so this matches the surface query
+    # endpoint's three at-the-money standard deviations instead.
+    reach = max(float(data.get("moneyness", 3.0 * lv.atm_total_vol(horizon))), 1e-3)
+    moneyness = np.linspace(-reach, reach, n_spots)
     spots = lv.spot * np.exp(moneyness)
     times = np.linspace(max(horizon / n_times, 1e-4), horizon, n_times)
+    # The diagnostics still scan the solver's region, which is what they are
+    # about -- clamping and the denominator have to be checked where the engine
+    # actually looks, not where a chart does.
+    scan_lower, scan_upper = lv.boundary_moneyness(horizon)
+    scan_spots = lv.spot * np.exp(np.linspace(scan_lower, scan_upper, 241))
 
     local, implied = [], []
     for t in times:
@@ -650,7 +664,10 @@ def local_vol_surface():
         "local_vol": local,
         "implied_vol": implied,
         "forward_curve": lv.forwards.as_dict(),
-        "diagnostics": lv.scan(spots, times, dx=(upper - lower) / (n_spots - 1)).as_dict(),
+        "diagnostics": lv.scan(
+            scan_spots, times, dx=(scan_upper - scan_lower) / 240
+        ).as_dict(),
+        "solver_moneyness_range": [round(scan_lower, 6), round(scan_upper, 6)],
         "extrapolated_fraction": round(lv.extrapolated_fraction(horizon), 6),
         "note": (
             "local_vol[i][j] is at times[i], spots[j]. Local volatility is not "

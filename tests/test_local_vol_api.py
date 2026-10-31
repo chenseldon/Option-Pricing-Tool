@@ -55,9 +55,9 @@ class TestSurfaceGrid:
         """The standing trap this guards against.
 
         Local volatility and implied volatility are different objects at the
-        same coordinates, and the gap is large: at three years the 30%-down
-        level carries a local volatility well above its implied. Returning only
-        one would invite reading it as the other.
+        same coordinates, and the gap is large. At three years and the bottom
+        of the display range the local volatility is roughly 1.7x its implied;
+        returning only one would invite reading it as the other.
         """
         payload = client.post(
             "/api/local_vol/surface",
