@@ -541,6 +541,33 @@ class LocalVolSurface:
             require_well_defined=require_well_defined,
         )
 
+    def with_rate_shift(self, rate_abs: float) -> LocalVolSurface:
+        """A copy whose tail drift and discount rate are shifted, for rho.
+
+        Only the tail moves. The forwards inside the quoted range were implied
+        from the option chain, so they are observations and do not respond to a
+        hypothetical rate; the extrapolated tail was built from the caller's
+        ``r - q - basis`` and does.
+
+        The implied volatility surface itself is untouched: a rate shift does
+        not re-quote the market.
+        """
+        shifted = ForwardCurve(
+            maturities=self.forwards.maturities,
+            forwards=self.forwards.forwards,
+            tail_drift=self.forwards.tail_drift + float(rate_abs),
+            rate=self.forwards.rate + float(rate_abs),
+        )
+        return LocalVolSurface(
+            self.surface,
+            shifted,
+            self.spot,
+            floor=self.floor,
+            cap=self.cap,
+            precondition=self.precondition,
+            require_well_defined=False,
+        )
+
     # -- diagnostics ------------------------------------------------------
 
     def scan(

@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from otcpricer.core.exceptions import CalibrationError
 from otcpricer.core.market import EquityMarket
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
 from otcpricer.engines.pde import (
@@ -31,6 +32,7 @@ from otcpricer.engines.pde import (
     _SnowballGrid,
     price_snowball_pde,
 )
+from otcpricer.engines.risk import snowball_risk_mc, snowball_risk_pde
 from otcpricer.models.local_vol import local_vol_from_fitted
 from otcpricer.models.surface import fit_surface
 from otcpricer.products.snowball import SnowballTerms
@@ -349,3 +351,143 @@ class TestEngineAgreement:
         # sit at 14.5 standard errors and this grid at 2.0, so the difference
         # is not a refinement nicety -- it is most of the disagreement.
         assert abs(fine - coarse) > 0.003
+
+
+# ---------------------------------------------------------------------------
+# Risk
+# ---------------------------------------------------------------------------
+
+
+class TestRiskUnderLocalVolatility:
+    """Greeks on the local-volatility path, and what had to change for them.
+
+    Two of the five do not care where the volatility came from: delta and gamma
+    are differenced off the solution surface, and theta off two adjacent time
+    levels. The other two had to be rebuilt, because both were bumping a market
+    field that no longer drives anything.
+    """
+
+    CONFIG = PDEConfig(space_nodes=1600, steps_per_year=1008)
+
+    def test_every_greek_matches_the_flat_engine_under_a_constant_surface(self) -> None:
+        """The degenerate check, extended to risk.
+
+        Each Greek agrees to machine precision, which is only possible because
+        the surface shift and the market bump coincide for a constant surface:
+        ``with_atm_shift`` adds to the one volatility, ``with_rate_shift`` adds
+        to the one drift. Anything bumping the wrong quantity shows up here.
+        """
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+        local_vol = ConstantLocalVol(0.20, market.drift)
+
+        flat = snowball_risk_pde(terms, market, self.CONFIG)
+        local = snowball_risk_pde(terms, market, self.CONFIG, local_vol=local_vol)
+
+        for name in ("delta", "gamma", "vega", "theta", "rho"):
+            assert getattr(local.greeks, name) == pytest.approx(
+                getattr(flat.greeks, name), abs=1e-12
+            ), name
+
+    def test_rho_moves_the_drift_and_not_only_the_discounting(self) -> None:
+        """The defect this caught, pinned so it cannot come back.
+
+        On this path the drift lives on the surface's forward curve, so bumping
+        only ``market.r`` leaves rho missing its drift half. Measured on this
+        trade that turned +0.0036 into -0.0001 -- a sign change, not a small
+        distortion. A rho that disagrees in sign with the flat engine under a
+        constant surface is the signature.
+        """
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+        local_vol = ConstantLocalVol(0.20, market.drift)
+
+        flat = snowball_risk_pde(terms, market, self.CONFIG).greeks.rho
+        local = snowball_risk_pde(terms, market, self.CONFIG, local_vol=local_vol).greeks.rho
+
+        assert flat > 0.0
+        assert local == pytest.approx(flat, abs=1e-12)
+
+    def test_the_method_says_how_vega_was_taken(self) -> None:
+        """A number is never read without knowing what produced it.
+
+        The local-volatility vega is a *different derivative* from the flat
+        one -- a parallel shift of the at-the-money level also changes
+        curvature at every maturity, because SSVI's curvature scale depends on
+        the variance level. Comparing the two as if they were the same quantity
+        would be a mistake, so the label makes the difference visible.
+        """
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+
+        assert snowball_risk_pde(terms, market, self.CONFIG).method == "pde-grid"
+        assert (
+            snowball_risk_pde(
+                terms, market, self.CONFIG, local_vol=ConstantLocalVol(0.2, market.drift)
+            ).method
+            == "pde-grid+ssvi-parallel-vega"
+        )
+
+    def test_monte_carlo_risk_agrees_in_the_degenerate_case(self) -> None:
+        config = MonteCarloConfig(paths=40_000, steps_per_year=252, seed=42)
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+
+        flat = snowball_risk_mc(terms, market, config)
+        local = snowball_risk_mc(
+            terms, market, config, local_vol=ConstantLocalVol(0.20, market.drift)
+        )
+        for name in ("delta", "gamma", "vega", "rho"):
+            assert getattr(local.greeks, name) == pytest.approx(
+                getattr(flat.greeks, name), abs=1e-12
+            ), name
+
+    @pytest.mark.slow
+    def test_real_surface_vega_is_finite_and_signed_like_the_flat_one(self) -> None:
+        """A snowball is short volatility, whichever surface it is priced off."""
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        local_vol = local_vol_from_fitted(
+            fit_surface("510050", source_kind="snapshot"), spot=100.0, tail_drift=0.0
+        )
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        atm = local_vol.atm_total_vol(1.0)
+        market = EquityMarket(S=100.0, r=0.03, sigma=atm, q=0.03 - local_vol.drift(0.5))
+
+        risk = snowball_risk_pde(terms, market, LOCAL_VOL_PDE_CONFIG, local_vol=local_vol)
+        assert np.isfinite(risk.greeks.vega)
+        assert risk.greeks.vega < 0.0
+        assert np.isfinite(risk.greeks.delta)
+        assert np.isfinite(risk.greeks.theta)
+
+    def test_a_shift_that_breaks_no_arbitrage_is_refused(self) -> None:
+        """The guard, firing.
+
+        A surface whose variance term structure the shift would tip
+        non-monotone must raise rather than return a vega computed off a
+        calendar-arbitraged surface.
+        """
+        from otcpricer.marketdata.forward import ForwardCurve
+        from otcpricer.models.local_vol import LocalVolSurface
+        from otcpricer.models.svi import SSVIParams, SSVISurface
+
+        inverted = LocalVolSurface(
+            SSVISurface(
+                SSVIParams(
+                    rho=-0.2, eta=1.0, gamma=0.4, maturities=(0.1, 1.0), thetas=(0.025, 0.0256)
+                )
+            ),
+            ForwardCurve(maturities=(1.0,), forwards=(100.0,), tail_drift=0.0, rate=0.0),
+            100.0,
+        )
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+
+        with pytest.raises(CalibrationError, match="non-monotone"):
+            snowball_risk_pde(
+                terms,
+                market,
+                PDEConfig(space_nodes=400, steps_per_year=252),
+                local_vol=inverted,
+                vol_bump=0.10,
+            )

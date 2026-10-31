@@ -89,3 +89,37 @@ class LocalVolatility(Protocol):
         Returns ``(lower, upper)`` with ``lower < 0 < upper``.
         """
         ...
+
+    def with_atm_shift(self, vol_abs: float) -> LocalVolatility:
+        """A copy with every at-the-money *implied* volatility moved by ``vol_abs``.
+
+        Vega lives here rather than on the market object, and that is the whole
+        point. A desk hedges the implied surface, so the sensitivity that
+        matters is "move the quoted volatilities and reprice" -- which moves
+        the local volatility by whatever that implies, roughly twice as much in
+        the wings.
+
+        Bumping ``market.sigma`` instead would do nothing to the diffusion on
+        this path, since the surface supplies it. Worse than nothing: ``sigma``
+        also sets the flat grid's padding, so the bump would change the grid
+        and return a small number produced by discretisation. A plausible,
+        meaningless vega is harder to catch than a zero.
+        """
+        ...
+
+    def with_rate_shift(self, rate_abs: float) -> LocalVolatility:
+        """A copy whose drift reflects a shifted rate, for rho.
+
+        Needed for the same reason as the shift above: on this path the drift
+        comes from the surface's forward curve, not from ``market``, so bumping
+        the market rate alone would move only the discounting and return a
+        rho that is missing its drift half. Measured on a one-year snowball
+        with a constant surface, that omission turned +0.0036 into -0.0001 --
+        not a small distortion but a sign change.
+
+        What moves and what does not is the whole content of the method.
+        Forwards *observed* from the option chain do not move when a
+        hypothetical rate does; they are data. Only the extrapolated tail,
+        which was built from the caller's own ``r - q - basis``, moves with it.
+        """
+        ...

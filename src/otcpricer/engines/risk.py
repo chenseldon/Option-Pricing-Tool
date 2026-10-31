@@ -68,8 +68,14 @@ import numpy as np
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import Greeks
+from otcpricer.core.vol import LocalVolatility
 from otcpricer.engines.mc import MonteCarloConfig, normal_draws, price_snowball_mc
-from otcpricer.engines.pde import PDEConfig, SnowballPDEResult, price_snowball_pde
+from otcpricer.engines.pde import (
+    LOCAL_VOL_PDE_CONFIG,
+    PDEConfig,
+    SnowballPDEResult,
+    price_snowball_pde,
+)
 from otcpricer.products.snowball import SnowballTerms
 
 __all__ = [
@@ -176,9 +182,43 @@ def _pde_value(
     market: EquityMarket,
     config: PDEConfig,
     knocked_in: bool,
+    local_vol: LocalVolatility | None = None,
 ) -> float:
     """Price once with the PDE, for a bumped-parameter re-solve."""
-    return price_snowball_pde(terms, market, config, knocked_in=knocked_in).price
+    return price_snowball_pde(
+        terms, market, config, knocked_in=knocked_in, local_vol=local_vol
+    ).price
+
+
+def _vega(
+    terms: SnowballTerms,
+    market: EquityMarket,
+    config: PDEConfig,
+    knocked_in: bool,
+    local_vol: LocalVolatility | None,
+    vol_bump: float,
+) -> float:
+    """Central-difference vega, per percentage point of volatility.
+
+    Which volatility is bumped depends on where it comes from. On the flat path
+    it is ``market.sigma``. On the local-volatility path ``market.sigma`` is
+    not read at all, so bumping it would return a number produced by the grid
+    changing shape rather than by the market moving -- the surface is shifted
+    instead, at the money, which is the sensitivity a desk hedges.
+
+    The two are *different derivatives* and should not be compared. A parallel
+    shift of the at-the-money level also changes curvature at every maturity,
+    because SSVI's ``phi`` depends on ``theta``; that is what re-calibrating to
+    a shifted at-the-money level would give, and it is the right answer, but it
+    is not the flat path's vega measured more carefully.
+    """
+    if local_vol is None:
+        up = _pde_value(terms, market.with_shift(vol_abs=vol_bump), config, knocked_in)
+        down = _pde_value(terms, market.with_shift(vol_abs=-vol_bump), config, knocked_in)
+    else:
+        up = _pde_value(terms, market, config, knocked_in, local_vol.with_atm_shift(vol_bump))
+        down = _pde_value(terms, market, config, knocked_in, local_vol.with_atm_shift(-vol_bump))
+    return (up - down) / (2.0 * vol_bump) * _PER_PERCENT
 
 
 def snowball_risk_pde(
@@ -189,6 +229,7 @@ def snowball_risk_pde(
     knocked_in: bool = False,
     vol_bump: float = DEFAULT_VOL_BUMP,
     rate_bump: float = DEFAULT_RATE_BUMP,
+    local_vol: LocalVolatility | None = None,
 ) -> SnowballRisk:
     """Greeks from the Crank-Nicolson solver. The production method.
 
@@ -220,7 +261,9 @@ def snowball_risk_pde(
         deterministic.
     """
     config = config or PDEConfig()
-    base: SnowballPDEResult = price_snowball_pde(terms, market, config, knocked_in=knocked_in)
+    base: SnowballPDEResult = price_snowball_pde(
+        terms, market, config, knocked_in=knocked_in, local_vol=local_vol
+    )
 
     # Delta and gamma: already in the solution.
     delta, gamma = _grid_derivatives(base.S_grid, base.surface(knocked_in=knocked_in), market.S)
@@ -235,17 +278,32 @@ def snowball_risk_pde(
     theta = (value_next - value_now) / base.dt / _DAYS_PER_YEAR
 
     # Vega and rho: central differences over re-solves.
-    vol_up = _pde_value(terms, market.with_shift(vol_abs=vol_bump), config, knocked_in)
-    vol_down = _pde_value(terms, market.with_shift(vol_abs=-vol_bump), config, knocked_in)
-    vega = (vol_up - vol_down) / (2.0 * vol_bump) * _PER_PERCENT
+    vega = _vega(terms, market, config, knocked_in, local_vol, vol_bump)
 
-    rate_up = _pde_value(terms, market.with_shift(rate_abs=rate_bump), config, knocked_in)
-    rate_down = _pde_value(terms, market.with_shift(rate_abs=-rate_bump), config, knocked_in)
+    # Rho moves the discounting *and* the drift. On the local-volatility path
+    # the drift lives on the surface's forward curve, so the surface has to be
+    # shifted too -- omitting it leaves a discount-only rho, which on a
+    # one-year snowball turned +0.0036 into -0.0001, a sign change rather than
+    # a small distortion.
+    rate_up = _pde_value(
+        terms,
+        market.with_shift(rate_abs=rate_bump),
+        config,
+        knocked_in,
+        None if local_vol is None else local_vol.with_rate_shift(rate_bump),
+    )
+    rate_down = _pde_value(
+        terms,
+        market.with_shift(rate_abs=-rate_bump),
+        config,
+        knocked_in,
+        None if local_vol is None else local_vol.with_rate_shift(-rate_bump),
+    )
     rho = (rate_up - rate_down) / (2.0 * rate_bump) * _PER_PERCENT
 
     risk = SnowballRisk(
         greeks=Greeks(delta=delta, gamma=gamma, vega=vega, theta=theta, rho=rho),
-        method="pde-grid",
+        method="pde-grid" if local_vol is None else "pde-grid+ssvi-parallel-vega",
         price=base.price,
     )
     _log.debug("snowball PDE risk", extra={"spot": market.S, **risk.greeks.as_dict()})
@@ -260,6 +318,7 @@ def snowball_risk_mc(
     spot_bump_rel: float = DEFAULT_SPOT_BUMP_REL,
     vol_bump: float = DEFAULT_VOL_BUMP,
     rate_bump: float = DEFAULT_RATE_BUMP,
+    local_vol: LocalVolatility | None = None,
 ) -> SnowballRisk:
     """Greeks by Monte Carlo resimulation, as an independent check on the PDE.
 
@@ -298,8 +357,10 @@ def snowball_risk_mc(
     n_steps = max(int(round(terms.T * config.steps_per_year)), 1)
     draws = normal_draws(n_steps, config.paths, config.seed, config.antithetic)
 
-    def value(shifted: EquityMarket) -> tuple[float, float]:
-        result = price_snowball_mc(terms, shifted, config, draws=draws)
+    def value(shifted: EquityMarket, surface: LocalVolatility | None = None) -> tuple[float, float]:
+        result = price_snowball_mc(
+            terms, shifted, config, draws=draws, local_vol=surface or local_vol
+        )
         return result.price, result.std_error
 
     base_price, base_se = value(market)
@@ -311,12 +372,24 @@ def snowball_risk_mc(
     delta = (up_price - down_price) / (2.0 * spot_bump)
     gamma = (up_price - 2.0 * base_price + down_price) / (spot_bump * spot_bump)
 
-    vol_up, vol_up_se = value(market.with_shift(vol_abs=vol_bump))
-    vol_down, vol_down_se = value(market.with_shift(vol_abs=-vol_bump))
+    # Same reasoning as the PDE path: on the local-volatility path the market's
+    # sigma does not drive the diffusion, so the surface is shifted instead.
+    if local_vol is None:
+        vol_up, vol_up_se = value(market.with_shift(vol_abs=vol_bump))
+        vol_down, vol_down_se = value(market.with_shift(vol_abs=-vol_bump))
+    else:
+        vol_up, vol_up_se = value(market, local_vol.with_atm_shift(vol_bump))
+        vol_down, vol_down_se = value(market, local_vol.with_atm_shift(-vol_bump))
     vega = (vol_up - vol_down) / (2.0 * vol_bump) * _PER_PERCENT
 
-    rate_up, rate_up_se = value(market.with_shift(rate_abs=rate_bump))
-    rate_down, rate_down_se = value(market.with_shift(rate_abs=-rate_bump))
+    rate_up, rate_up_se = value(
+        market.with_shift(rate_abs=rate_bump),
+        None if local_vol is None else local_vol.with_rate_shift(rate_bump),
+    )
+    rate_down, rate_down_se = value(
+        market.with_shift(rate_abs=-rate_bump),
+        None if local_vol is None else local_vol.with_rate_shift(-rate_bump),
+    )
     rho = (rate_up - rate_down) / (2.0 * rate_bump) * _PER_PERCENT
 
     # Theta is left to the PDE. Shortening the tenor deletes a knock-out
@@ -340,7 +413,9 @@ def snowball_risk_mc(
 
     risk = SnowballRisk(
         greeks=Greeks(delta=delta, gamma=gamma, vega=vega, theta=theta, rho=rho),
-        method="mc-resimulation-crn",
+        method=(
+            "mc-resimulation-crn" if local_vol is None else "mc-resimulation-crn+ssvi-parallel-vega"
+        ),
         price=base_price,
         std_error=std_error,
     )
@@ -377,6 +452,7 @@ def compare_snowball_risk(
     *,
     pde_config: PDEConfig | None = None,
     mc_config: MonteCarloConfig | None = None,
+    local_vol: LocalVolatility | None = None,
 ) -> RiskComparison:
     """Run both methods and report whether they agree, Greek by Greek.
 
@@ -392,11 +468,18 @@ def compare_snowball_risk(
     a discontinuous payoff, so the useful question is whether the two agree in
     sign and magnitude, not to three digits.
     """
-    pde_config = pde_config or PDEConfig(space_nodes=1600, steps_per_year=1008)
+    # The flat grid's budget does not carry over to a Dupire surface; see
+    # LOCAL_VOL_PDE_CONFIG for the measured convergence behind this.
+    if pde_config is None:
+        pde_config = (
+            PDEConfig(space_nodes=1600, steps_per_year=1008)
+            if local_vol is None
+            else LOCAL_VOL_PDE_CONFIG
+        )
     mc_config = mc_config or MonteCarloConfig(paths=200_000)
 
-    pde = snowball_risk_pde(terms, market, pde_config)
-    mc = snowball_risk_mc(terms, market, mc_config)
+    pde = snowball_risk_pde(terms, market, pde_config, local_vol=local_vol)
+    mc = snowball_risk_mc(terms, market, mc_config, local_vol=local_vol)
 
     verdicts: dict[str, dict[str, object]] = {}
     for name in ("delta", "vega", "rho"):

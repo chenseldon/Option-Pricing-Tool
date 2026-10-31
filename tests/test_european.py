@@ -78,6 +78,12 @@ class ConstantLocalVol:
         pad = n_sigma * self.atm_total_vol(T)
         return -pad, pad
 
+    def with_atm_shift(self, vol_abs: float) -> ConstantLocalVol:
+        return ConstantLocalVol(self.sigma + float(vol_abs), self.mu)
+
+    def with_rate_shift(self, rate_abs: float) -> ConstantLocalVol:
+        return ConstantLocalVol(self.sigma, self.mu + float(rate_abs))
+
 
 class TimeVaryingVol:
     """``sigma^2(t) = s0^2 (1 + beta t)``: smooth, and independent of spot.
@@ -108,6 +114,12 @@ class TimeVaryingVol:
     def boundary_moneyness(self, T: float, n_sigma: float) -> tuple[float, float]:
         pad = n_sigma * self.atm_total_vol(T)
         return -pad, pad
+
+    def with_atm_shift(self, vol_abs: float) -> TimeVaryingVol:
+        return TimeVaryingVol(self.s0 + float(vol_abs), self.beta, self.mu)
+
+    def with_rate_shift(self, rate_abs: float) -> TimeVaryingVol:
+        return TimeVaryingVol(self.s0, self.beta, self.mu + float(rate_abs))
 
 
 # ---------------------------------------------------------------------------
