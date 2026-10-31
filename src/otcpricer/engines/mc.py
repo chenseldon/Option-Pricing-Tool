@@ -35,6 +35,7 @@ import numpy as np
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.validation import check_positive
+from otcpricer.core.vol import LocalVolatility
 from otcpricer.products.snowball import SnowballTerms
 
 __all__ = [
@@ -154,12 +155,59 @@ def normal_draws(n_steps: int, n_paths: int, seed: int, antithetic: bool) -> np.
     return draws
 
 
+def _simulate_local_vol(
+    market: EquityMarket,
+    local_vol: LocalVolatility,
+    dt: float,
+    n_steps: int,
+    draws: np.ndarray,
+) -> np.ndarray:
+    """Step log-spot forward with a state-dependent volatility.
+
+    This is where exactness is given up, and the trade is worth stating
+    plainly because the flat path's docstring advertises the opposite. A
+    constant-coefficient log step integrates geometric Brownian motion
+    *exactly* over any step size, so ``steps_per_year`` there is purely a
+    scheduling parameter for the observation dates. A state-dependent
+    volatility has no closed-form step: the increment over ``[t_k, t_k+1]``
+    depends on ``S_k``, which depends on every increment before it, so the
+    whole increment matrix can no longer be built up front and summed. It
+    becomes a sequential loop, vectorised across paths only, and the scheme --
+    log-Euler, volatility frozen at the start of each step -- carries a genuine
+    discretisation bias. ``steps_per_year`` becomes an accuracy parameter.
+
+    The cost is smaller than it looks. The knock-in barrier is monitored daily,
+    so the step count was already pinned at 252 a year or more; what is added
+    is loop overhead and one volatility evaluation per step, not more steps.
+    And the volatility evaluation is one vectorised call over all paths at a
+    single time, which is why the local-volatility contract is scalar in time:
+    the variance term structure is then evaluated once per step rather than
+    once per path per step.
+    """
+    log_paths = np.empty((n_steps + 1, draws.shape[1]), dtype=float)
+    log_paths[0, :] = np.log(market.S)
+    root_dt = float(np.sqrt(dt))
+
+    for step in range(n_steps):
+        t = step * dt
+        current = log_paths[step]
+        sigma = np.asarray(local_vol.local_vol(np.exp(current), t), dtype=float)
+        log_paths[step + 1] = (
+            current
+            + (local_vol.drift(t) - 0.5 * sigma * sigma) * dt
+            + sigma * root_dt * draws[step]
+        )
+
+    return log_paths
+
+
 def simulate_log_paths(
     market: EquityMarket,
     T: float,
     config: MonteCarloConfig,
     *,
     draws: np.ndarray | None = None,
+    local_vol: LocalVolatility | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Simulate geometric Brownian motion paths under the risk-neutral measure.
 
@@ -176,6 +224,10 @@ def simulate_log_paths(
         config: Simulation controls.
         draws: Pre-generated normals shaped ``(steps, paths)``, for common
             random numbers across perturbed re-runs in finite-difference risk.
+        local_vol: A Dupire local volatility to step against. When omitted the
+            exact closed-form path runs unchanged. When supplied,
+            ``market.sigma`` is not read and the scheme is no longer exact --
+            see :func:`_simulate_local_vol`.
 
     Returns:
         ``(times, paths)`` where ``times`` has length ``steps + 1`` starting at
@@ -190,16 +242,19 @@ def simulate_log_paths(
     elif draws.shape != (n_steps, config.paths):
         raise ValueError(f"draws must have shape {(n_steps, config.paths)}, got {draws.shape}")
 
-    drift_step = (market.drift - 0.5 * market.sigma**2) * dt
-    vol_step = market.sigma * np.sqrt(dt)
+    if local_vol is not None:
+        log_paths = _simulate_local_vol(market, local_vol, dt, n_steps, draws)
+    else:
+        drift_step = (market.drift - 0.5 * market.sigma**2) * dt
+        vol_step = market.sigma * np.sqrt(dt)
 
-    # Cumulative sum rather than a Python loop over time steps: one vectorised
-    # pass instead of n_steps interpreter round-trips.
-    log_increments = drift_step + vol_step * draws
-    log_paths = np.empty((n_steps + 1, draws.shape[1]), dtype=float)
-    log_paths[0, :] = np.log(market.S)
-    np.cumsum(log_increments, axis=0, out=log_paths[1:, :])
-    log_paths[1:, :] += np.log(market.S)
+        # Cumulative sum rather than a Python loop over time steps: one
+        # vectorised pass instead of n_steps interpreter round-trips.
+        log_increments = drift_step + vol_step * draws
+        log_paths = np.empty((n_steps + 1, draws.shape[1]), dtype=float)
+        log_paths[0, :] = np.log(market.S)
+        np.cumsum(log_increments, axis=0, out=log_paths[1:, :])
+        log_paths[1:, :] += np.log(market.S)
 
     times = np.arange(n_steps + 1, dtype=float) * dt
     return times, np.exp(log_paths)
@@ -276,6 +331,7 @@ def price_snowball_mc(
     config: MonteCarloConfig | None = None,
     *,
     draws: np.ndarray | None = None,
+    local_vol: LocalVolatility | None = None,
 ) -> SnowballMCResult:
     """Value a snowball note by path Monte Carlo.
 
@@ -303,6 +359,10 @@ def price_snowball_mc(
         draws: Pre-generated normals for common-random-number risk. Supplying
             them forces a single batch, so the caller owns that memory
             tradeoff deliberately.
+        local_vol: A Dupire local volatility to price against. When omitted the
+            engine is unchanged and unbiased for the diffusion; when supplied,
+            ``steps_per_year`` becomes an accuracy parameter rather than only a
+            scheduling one.
 
     Returns:
         A :class:`SnowballMCResult` with the price, its Monte Carlo error, and
@@ -343,7 +403,9 @@ def price_snowball_mc(
             antithetic=config.antithetic,
             memory_budget_mb=config.memory_budget_mb,
         )
-        times, paths = simulate_log_paths(market, terms.T, batch_config, draws=draws)
+        times, paths = simulate_log_paths(
+            market, terms.T, batch_config, draws=draws, local_vol=local_vol
+        )
 
         if batch == 0:
             ko_idx = _schedule_indices(terms.ko_observation_times(), times)

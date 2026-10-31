@@ -23,7 +23,14 @@ import numpy as np
 import pytest
 
 from otcpricer.core.market import EquityMarket
-from otcpricer.engines.pde import PDEConfig, _LocalVolGrid, _SnowballGrid, price_snowball_pde
+from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
+from otcpricer.engines.pde import (
+    LOCAL_VOL_PDE_CONFIG,
+    PDEConfig,
+    _LocalVolGrid,
+    _SnowballGrid,
+    price_snowball_pde,
+)
 from otcpricer.models.local_vol import local_vol_from_fitted
 from otcpricer.models.surface import fit_surface
 from otcpricer.products.snowball import SnowballTerms
@@ -244,3 +251,101 @@ class TestRealSurface:
         assert abs(local - flat) > 0.05 * abs(flat)
         # The knock-in region really does carry more volatility.
         assert float(local_vol.local_vol(80.0, 0.5)) > 1.5 * float(local_vol.local_vol(100.0, 0.5))
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo
+# ---------------------------------------------------------------------------
+
+
+class TestMonteCarloPath:
+    def test_constant_local_vol_matches_the_exact_scheme(self) -> None:
+        """Validates the loop mechanics, and cannot do more than that.
+
+        For a *constant* volatility the log-Euler step is already exact -- the
+        increment does not depend on the state -- so this agrees to 2.9e-15 and
+        is silent about discretisation bias by construction. It is still worth
+        having: it proves the sequential loop reproduces the cumulative sum,
+        which is the part that was restructured.
+        """
+        config = MonteCarloConfig(paths=50_000, steps_per_year=252, seed=42)
+        exact = price_snowball_mc(TERMS, MARKET, config)
+        looped = price_snowball_mc(
+            TERMS, MARKET, config, local_vol=ConstantLocalVol(MARKET.sigma, MARKET.drift)
+        )
+        assert looped.price == pytest.approx(exact.price, abs=1e-12)
+        assert looped.std_error == pytest.approx(exact.std_error, abs=1e-12)
+
+    def test_does_not_read_market_sigma(self) -> None:
+        config = MonteCarloConfig(paths=20_000, steps_per_year=252, seed=1)
+        local_vol = ConstantLocalVol(0.20, MARKET.drift)
+        base = price_snowball_mc(TERMS, MARKET, config, local_vol=local_vol)
+        bumped = price_snowball_mc(
+            TERMS,
+            EquityMarket(S=5000.0, r=0.03, sigma=0.55, q=0.0),
+            config,
+            local_vol=local_vol,
+        )
+        assert bumped.price == base.price
+
+    def test_rejects_mismatched_draws(self) -> None:
+        with pytest.raises(ValueError, match="draws must have shape"):
+            price_snowball_mc(
+                TERMS,
+                MARKET,
+                MonteCarloConfig(paths=1000, steps_per_year=252),
+                draws=np.zeros((5, 5)),
+                local_vol=ConstantLocalVol(0.2, MARKET.drift),
+            )
+
+
+@pytest.mark.slow
+class TestEngineAgreement:
+    """PDE against Monte Carlo under local volatility.
+
+    A genuine cross-check: different discretisations of different formulations,
+    and under local volatility the Monte Carlo additionally carries a bias the
+    PDE does not.
+    """
+
+    def test_engines_agree_on_a_converged_grid(self) -> None:
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        local_vol = local_vol_from_fitted(
+            fit_surface("510050", source_kind="snapshot"), spot=100.0, tail_drift=0.0
+        )
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+
+        pde = price_snowball_pde(terms, market, LOCAL_VOL_PDE_CONFIG, local_vol=local_vol).price
+        mc = price_snowball_mc(
+            terms,
+            market,
+            MonteCarloConfig(paths=200_000, steps_per_year=504, seed=42),
+            local_vol=local_vol,
+        )
+        # Phase 1's budget for the flat engines was three standard errors.
+        assert abs(pde - mc.price) < 3.0 * mc.std_error
+
+    def test_the_flat_defaults_would_not_have_been_enough(self) -> None:
+        """Why LOCAL_VOL_PDE_CONFIG exists, asserted so it cannot be quietly dropped.
+
+        The flat grid budget was validated for a constant operator. On a Dupire
+        surface it is short by an order of magnitude in the measured gap, which
+        is the kind of thing that would otherwise be discovered as a pricing
+        discrepancy rather than as a discretisation one.
+        """
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        local_vol = local_vol_from_fitted(
+            fit_surface("510050", source_kind="snapshot"), spot=100.0, tail_drift=0.0
+        )
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+
+        coarse = price_snowball_pde(terms, market, CONFIG, local_vol=local_vol).price
+        fine = price_snowball_pde(terms, market, LOCAL_VOL_PDE_CONFIG, local_vol=local_vol).price
+        # Measured 0.00349 on this trade. Against Monte Carlo the flat defaults
+        # sit at 14.5 standard errors and this grid at 2.0, so the difference
+        # is not a refinement nicety -- it is most of the disagreement.
+        assert abs(fine - coarse) > 0.003

@@ -50,6 +50,7 @@ from otcpricer.core.vol import LocalVolatility
 from otcpricer.products.snowball import SnowballTerms
 
 __all__ = [
+    "LOCAL_VOL_PDE_CONFIG",
     "PDEConfig",
     "SnowballPDEResult",
     "local_vol_coefficients",
@@ -85,6 +86,45 @@ class PDEConfig:
             raise ValueError(f"steps_per_year must be at least 1, got {self.steps_per_year}")
         if self.rannacher_steps < 0:
             raise ValueError(f"rannacher_steps must be non-negative, got {self.rannacher_steps}")
+
+
+#: Discretisation adequate for a local-volatility snowball. Not the default,
+#: because the default belongs to the flat path and must not move.
+#:
+#: The flat grid's budget cannot be inherited: a Dupire surface has a rough
+#: variance term structure, and resolving it costs resolution the flat operator
+#: never needed. Measured on a one-year 103/80 snowball off the 510050 fit,
+#: against a 400,000-path Monte Carlo (standard error 2.57e-04), in units of
+#: that standard error:
+#:
+#: ======  =========  =======  ==========
+#: nodes   steps/yr   gap      T=1 cost
+#: ======  =========  =======  ==========
+#: 800     504        -30.9
+#: 1600    1008       -14.5    0.3 s
+#: 1600    2016        -8.0
+#: 3200    2016        -4.5
+#: 3200    4032        -2.3    1.9 s
+#: 4800    8064        -2.0    4.7 s
+#: 6400    8064        -1.9    5.6 s
+#: ======  =========  =======  ==========
+#:
+#: Monotone convergence, so the two engines do agree -- at the flat defaults
+#: they merely had not yet. It plateaus near two standard errors, and that
+#: residual is the Monte Carlo's own draw rather than the grid: a 400,000-path
+#: run put the same comparison at 0.9. Two standard errors also matches what
+#: Phase 1 achieved for the flat engines, 1.94 across twenty parameter sets.
+#:
+#: 4800 x 8064 is chosen as the point where the comparison stops being limited
+#: by the grid, which is what a validation configuration is for. It costs 4.7
+#: seconds at one year and 14 at three. 3200 x 4032 is roughly three times
+#: faster and sits at 2.3 standard errors if that trade is worth making.
+#:
+#: Sized for the harder of the two chains. The smoother 510300 surface already
+#: agrees at the flat defaults -- 0.2 and 0.02 standard errors at one and two
+#: years -- so none of this is about local volatility as such; it is about how
+#: rough a particular fitted variance term structure is.
+LOCAL_VOL_PDE_CONFIG = PDEConfig(space_nodes=4800, steps_per_year=8064)
 
 
 @dataclass(frozen=True, slots=True)
