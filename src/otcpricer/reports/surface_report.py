@@ -18,25 +18,12 @@ not to six decimals that imply a confidence the inputs do not support.
 
 from __future__ import annotations
 
-import textwrap
-
 from otcpricer.models.arbitrage import DEFAULT_DEGENERACY_FLOOR
 from otcpricer.models.surface import FittedSurface
+from otcpricer.reports.layout import rule as _rule
+from otcpricer.reports.layout import wrap as _wrap
 
 __all__ = ["surface_report"]
-
-_WIDTH = 78
-
-
-def _rule(char: str = "-") -> str:
-    return char * _WIDTH
-
-
-def _wrap(text: str, indent: str = "  ") -> list[str]:
-    """Reflow prose to the report width, so it stays readable in a terminal."""
-    return textwrap.wrap(text, width=_WIDTH, initial_indent=indent, subsequent_indent=indent) or [
-        indent.rstrip()
-    ]
 
 
 def _header(fitted: FittedSurface) -> list[str]:
