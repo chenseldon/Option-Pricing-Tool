@@ -348,6 +348,10 @@ class TestExistingRoutesUnchanged:
         "/api/vol_surface/fit",
         "/api/vol_surface/query",
         "/api/vol_surface/snapshots",
+        # Phase 2b
+        "/api/local_vol/surface",
+        "/api/local_vol/validate",
+        "/api/european",
     }
 
     def test_every_prior_route_still_exists(self) -> None:
@@ -356,7 +360,7 @@ class TestExistingRoutesUnchanged:
         registered = {rule.rule for rule in app_module.app.url_map.iter_rules()}
         assert registered >= self.EXPECTED_ROUTES
 
-    def test_exactly_three_routes_were_added(self) -> None:
+    def test_the_route_table_is_exactly_what_is_intended(self) -> None:
         import app as app_module
 
         registered = {

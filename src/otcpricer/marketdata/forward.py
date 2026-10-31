@@ -346,6 +346,11 @@ class ForwardCurve:
         )
 
     @property
+    def segment_drifts(self) -> np.ndarray:
+        """Drift on each quoted segment, for reporting the curve's shape."""
+        return self._segment_drifts
+
+    @property
     def _segment_drifts(self) -> np.ndarray:
         """Drift on each quoted segment; the tail drift when there is only one."""
         T = np.asarray(self.maturities, dtype=float)
