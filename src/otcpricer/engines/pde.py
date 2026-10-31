@@ -332,6 +332,116 @@ def _next_observation(schedule: np.ndarray, t_now: float) -> float | None:
     return float(schedule[idx])
 
 
+@dataclass(frozen=True, slots=True)
+class _GridGeometry:
+    """The grid itself, with no operator on it.
+
+    Extracted so the constant-coefficient and local-volatility grids share one
+    copy of the observation and barrier alignment. That alignment is the most
+    bug-prone code in this module -- two Phase 1 defects lived in it, each
+    producing a price that oscillated under refinement instead of converging --
+    and duplicating it would let a future fix drift between the two paths.
+    """
+
+    steps_per_year: int
+    n_steps: int
+    dt: float
+    dx: float
+    n_nodes: int
+    x_grid: np.ndarray
+    S_grid: np.ndarray
+    ki_index: int
+    ko_index: int
+    inner_intervals: int
+
+
+def _build_geometry(
+    terms: SnowballTerms, config: PDEConfig, pad_below: float, pad_above: float
+) -> _GridGeometry:
+    """Build the observation- and barrier-aligned grid.
+
+    Pure code motion out of :class:`_SnowballGrid`, with the padding passed in
+    rather than derived from a single volatility, so a skewed surface can ask
+    for asymmetric boundaries. Every operation is in the original order, so the
+    constant-coefficient path is unchanged to the last bit.
+    """
+    # --- Observation-aligned time grid --------------------------------------
+    # Every monitoring date must land exactly on a time step. If the grid
+    # is chosen independently, each observation has to be rounded to the
+    # nearest step, which shifts it by up to dt/2 and makes the price jitter
+    # under refinement rather than converge -- measured before this fix,
+    # 252 -> 504 -> 1008 steps/year gave 0.06253, 0.06311, 0.06275, moving
+    # non-monotonically by ~5e-4 with no trend.
+    #
+    # Snapping the step count to a whole multiple of the knock-in frequency
+    # fixes it exactly: the daily dates i/252 then coincide with steps, and
+    # because 252 is divisible by the monthly frequency 12, the knock-out
+    # dates land on steps too.
+    requested = max(int(round(config.steps_per_year)), 1)
+    multiple = max(int(np.ceil(requested / terms.ki_obs_freq)), 1)
+    steps_per_year = multiple * terms.ki_obs_freq
+    n_steps = max(int(round(terms.T * steps_per_year)), 10)
+    dt = terms.T / n_steps
+
+    # --- Barrier-aligned grid -------------------------------------------
+    # Both barriers must fall exactly on grid nodes. A barrier sitting
+    # between nodes has to be represented by whichever node is nearest,
+    # which displaces it by up to dx/2 and degrades the scheme from
+    # second-order to first-order. Worse, as the node count changes the
+    # displacement changes with it, so the price oscillates under
+    # refinement instead of converging -- measured directly on this grid
+    # before the fix: 0.06149, 0.06328, 0.06352, 0.06286, 0.06311 for
+    # 200 to 3200 nodes, with no sign of settling.
+    #
+    # Choosing dx to divide the knock-in/knock-out span exactly, then
+    # extending outward by whole multiples of it, pins both barriers to
+    # nodes at every resolution.
+    x_ki = float(np.log(terms.ki_barrier))
+    x_ko = float(np.log(terms.ko_barrier))
+    barrier_span = x_ko - x_ki
+
+    # Padding outside the barriers, in log space. This must scale with the
+    # width of the terminal distribution: a boundary condition is an
+    # *approximation*, and unlike a discretisation error it does not shrink
+    # when the grid is refined. Placing the boundary too close therefore
+    # converges the scheme neatly to the wrong number -- which is precisely
+    # what the fixed 0.6/0.3 padding inherited from the original code did.
+    #
+    # Measured with the fixed padding: the PDE's own self-convergence error
+    # fell to ~1e-5 while it still disagreed with Monte Carlo by 1.6e-3 at
+    # sigma=0.35 and 9e-4 at T=2 -- cases where 0.6 in log space is barely
+    # one standard deviation. Four standard deviations of total variance,
+    # floored for very short tenors, puts the boundary where its influence
+    # is genuinely negligible.
+    total_span = barrier_span + pad_below + pad_above
+
+    # Apportion the requested nodes across the span, then round the inner
+    # interval count so dx divides the barrier span exactly.
+    inner_intervals = max(int(round(config.space_nodes * barrier_span / total_span)), 10)
+    dx = barrier_span / inner_intervals
+    intervals_below = max(int(np.ceil(pad_below / dx)), 1)
+    intervals_above = max(int(np.ceil(pad_above / dx)), 1)
+
+    n_nodes = intervals_below + inner_intervals + intervals_above + 1
+    x_low = x_ki - intervals_below * dx
+    x_grid = x_low + dx * np.arange(n_nodes, dtype=float)
+
+    return _GridGeometry(
+        steps_per_year=steps_per_year,
+        n_steps=n_steps,
+        dt=dt,
+        dx=dx,
+        n_nodes=n_nodes,
+        x_grid=x_grid,
+        S_grid=np.exp(x_grid),
+        # Exact node indices of the two barriers, so the masks downstream are
+        # expressed as index comparisons rather than floating-point ones.
+        ki_index=intervals_below,
+        ko_index=intervals_below + inner_intervals,
+        inner_intervals=inner_intervals,
+    )
+
+
 class _SnowballGrid:
     """Log-spot grid and the constant-coefficient operator on it."""
 
@@ -340,75 +450,20 @@ class _SnowballGrid:
         self.market = market
         self.config = config
 
-        # --- Observation-aligned time grid ----------------------------------
-        # Every monitoring date must land exactly on a time step. If the grid
-        # is chosen independently, each observation has to be rounded to the
-        # nearest step, which shifts it by up to dt/2 and makes the price jitter
-        # under refinement rather than converge -- measured before this fix,
-        # 252 -> 504 -> 1008 steps/year gave 0.06253, 0.06311, 0.06275, moving
-        # non-monotonically by ~5e-4 with no trend.
-        #
-        # Snapping the step count to a whole multiple of the knock-in frequency
-        # fixes it exactly: the daily dates i/252 then coincide with steps, and
-        # because 252 is divisible by the monthly frequency 12, the knock-out
-        # dates land on steps too.
-        requested = max(int(round(config.steps_per_year)), 1)
-        multiple = max(int(np.ceil(requested / terms.ki_obs_freq)), 1)
-        self.steps_per_year = multiple * terms.ki_obs_freq
-        self.n_steps = max(int(round(terms.T * self.steps_per_year)), 10)
-        self.dt = terms.T / self.n_steps
-
-        # --- Barrier-aligned grid -------------------------------------------
-        # Both barriers must fall exactly on grid nodes. A barrier sitting
-        # between nodes has to be represented by whichever node is nearest,
-        # which displaces it by up to dx/2 and degrades the scheme from
-        # second-order to first-order. Worse, as the node count changes the
-        # displacement changes with it, so the price oscillates under
-        # refinement instead of converging -- measured directly on this grid
-        # before the fix: 0.06149, 0.06328, 0.06352, 0.06286, 0.06311 for
-        # 200 to 3200 nodes, with no sign of settling.
-        #
-        # Choosing dx to divide the knock-in/knock-out span exactly, then
-        # extending outward by whole multiples of it, pins both barriers to
-        # nodes at every resolution.
-        x_ki = float(np.log(terms.ki_barrier))
-        x_ko = float(np.log(terms.ko_barrier))
-        barrier_span = x_ko - x_ki
-
-        # Padding outside the barriers, in log space. This must scale with the
-        # width of the terminal distribution: a boundary condition is an
-        # *approximation*, and unlike a discretisation error it does not shrink
-        # when the grid is refined. Placing the boundary too close therefore
-        # converges the scheme neatly to the wrong number -- which is precisely
-        # what the fixed 0.6/0.3 padding inherited from the original code did.
-        #
-        # Measured with the fixed padding: the PDE's own self-convergence error
-        # fell to ~1e-5 while it still disagreed with Monte Carlo by 1.6e-3 at
-        # sigma=0.35 and 9e-4 at T=2 -- cases where 0.6 in log space is barely
-        # one standard deviation. Four standard deviations of total variance,
-        # floored for very short tenors, puts the boundary where its influence
-        # is genuinely negligible.
         total_vol = market.sigma * np.sqrt(terms.T)
-        pad_below = max(4.0 * total_vol, 0.6)
-        pad_above = max(4.0 * total_vol, 0.3)
-        total_span = barrier_span + pad_below + pad_above
-
-        # Apportion the requested nodes across the span, then round the inner
-        # interval count so dx divides the barrier span exactly.
-        inner_intervals = max(int(round(config.space_nodes * barrier_span / total_span)), 10)
-        self.dx = barrier_span / inner_intervals
-        intervals_below = max(int(np.ceil(pad_below / self.dx)), 1)
-        intervals_above = max(int(np.ceil(pad_above / self.dx)), 1)
-
-        self.n_nodes = intervals_below + inner_intervals + intervals_above + 1
-        x_low = x_ki - intervals_below * self.dx
-        self.x_grid = x_low + self.dx * np.arange(self.n_nodes, dtype=float)
-        self.S_grid = np.exp(self.x_grid)
-
-        # Exact node indices of the two barriers, so the masks below are
-        # expressed as index comparisons rather than floating-point ones.
-        self.ki_index = intervals_below
-        self.ko_index = intervals_below + inner_intervals
+        geometry = _build_geometry(
+            terms, config, max(4.0 * total_vol, 0.6), max(4.0 * total_vol, 0.3)
+        )
+        self.steps_per_year = geometry.steps_per_year
+        self.n_steps = geometry.n_steps
+        self.dt = geometry.dt
+        self.dx = geometry.dx
+        self.n_nodes = geometry.n_nodes
+        self.x_grid = geometry.x_grid
+        self.S_grid = geometry.S_grid
+        self.ki_index = geometry.ki_index
+        self.ko_index = geometry.ko_index
+        self.inner_intervals = geometry.inner_intervals
 
         # Black-Scholes operator in log space: constant coefficients, so the
         # three diagonals are scalars rather than arrays.
@@ -418,14 +473,43 @@ class _SnowballGrid:
         self.b = -2.0 * diffusion / self.dx**2 - market.r
         self.c = diffusion / self.dx**2 + advection / (2.0 * self.dx)
 
-    def step(self, V: np.ndarray, bc_low: float, bc_high: float, theta: float) -> np.ndarray:
+    def discounted_growth(self, tau: float, t_from: float, t_to: float) -> float:
+        """``exp(-r tau) * F(t_to) / F(t_from)`` -- the PV of receiving one unit of spot.
+
+        Written as the single ``exp(-carry tau)`` the constant-carry algebra
+        collapses to, rather than as a product of two exponentials. Identical
+        mathematically; identical *bitwise* only this way, which is what keeps
+        the flat path's results unchanged to the last digit.
+        """
+        del t_from, t_to
+        return float(np.exp(-self.market.carry * tau))
+
+    def step(
+        self,
+        V: np.ndarray,
+        bc_low: float,
+        bc_high: float,
+        theta: float,
+        step_index: int = 0,
+    ) -> np.ndarray:
         """Advance one step backwards in time with the generalised theta scheme.
 
         ``theta = 0.5`` is Crank-Nicolson (second order, unconditionally
         stable); ``theta = 1.0`` is fully implicit (first order, strongly
         damping). Solves
         ``(I - theta * dt * L) V_new = (I + (1 - theta) * dt * L) V_old``.
+
+        Args:
+            V: Values at the old time level.
+            bc_low: Dirichlet value at the lower boundary.
+            bc_high: Dirichlet value at the upper boundary.
+            theta: Scheme weight.
+            step_index: Ignored here -- the operator does not depend on time
+                when the coefficients are constant. Accepted so this and
+                :class:`_LocalVolGrid` present the same interface and the
+                backward loop needs no branch.
         """
+        del step_index
         dt = self.dt
         a, b, c = self.a, self.b, self.c
         n_interior = self.n_nodes - 2
@@ -454,14 +538,120 @@ class _SnowballGrid:
 
     def interpolate(self, V: np.ndarray, S_target: float) -> float:
         """Linearly interpolate ``V`` at a spot level, in log space."""
-        x = float(np.log(S_target))
-        if x <= self.x_grid[0]:
-            return float(V[0])
-        if x >= self.x_grid[-1]:
-            return float(V[-1])
-        idx = int(np.clip(np.searchsorted(self.x_grid, x), 1, self.n_nodes - 1))
-        weight = (x - self.x_grid[idx - 1]) / (self.x_grid[idx] - self.x_grid[idx - 1])
-        return float(V[idx - 1] * (1.0 - weight) + V[idx] * weight)
+        return _interpolate_log(self.x_grid, V, S_target)
+
+
+class _LocalVolGrid:
+    """Log-spot grid and the variable-coefficient operator on it.
+
+    Same geometry machinery as :class:`_SnowballGrid` -- the observation and
+    barrier alignment matter no less here -- with two differences.
+
+    The padding comes from the surface rather than from one volatility, so a
+    skewed surface gets asymmetric boundaries. Four at-the-money standard
+    deviations under-pads the downside badly once there is a skew, because
+    implied volatility at the boundary strike is far above at the money; see
+    :meth:`~otcpricer.models.local_vol.LocalVolSurface.boundary_moneyness`.
+
+    And the coefficients depend on time, so they are rebuilt per step. The
+    theta scheme needs the operator at *both* levels, but the new level of
+    backward iteration ``k`` is the old level of iteration ``k + 1``, so a roll
+    cache evaluates each level exactly once. The cache is correctness-neutral:
+    a miss recomputes from scratch, so it cannot go stale. It also absorbs the
+    two calls per iteration -- the knocked-in state is stepped before the
+    un-knocked one -- which is why it is keyed on the step index rather than on
+    a call counter.
+    """
+
+    def __init__(
+        self,
+        terms: SnowballTerms,
+        market: EquityMarket,
+        config: PDEConfig,
+        local_vol: LocalVolatility,
+        n_sigma: float = 4.0,
+    ) -> None:
+        self.terms = terms
+        self.market = market
+        self.config = config
+        self.local_vol = local_vol
+
+        lower, upper = local_vol.boundary_moneyness(terms.T, n_sigma)
+        geometry = _build_geometry(terms, config, max(-lower, 0.6), max(upper, 0.3))
+        self.steps_per_year = geometry.steps_per_year
+        self.n_steps = geometry.n_steps
+        self.dt = geometry.dt
+        self.dx = geometry.dx
+        self.n_nodes = geometry.n_nodes
+        self.x_grid = geometry.x_grid
+        self.S_grid = geometry.S_grid
+        self.ki_index = geometry.ki_index
+        self.ko_index = geometry.ko_index
+        self.inner_intervals = geometry.inner_intervals
+
+        self._cached_index = -1
+        self._cached_old: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+        self._cached_new: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+
+    def _coefficients(self, t: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return local_vol_coefficients(self.local_vol, self.x_grid, self.dx, t, self.market.r)
+
+    def _levels(
+        self, step_index: int
+    ) -> tuple[
+        tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]
+    ]:
+        """Operator coefficients at the old and new levels of iteration ``step_index``."""
+        if self._cached_index == step_index and self._cached_old is not None:
+            assert self._cached_new is not None
+            return self._cached_old, self._cached_new
+
+        t_old = self.terms.T - step_index * self.dt
+        if self._cached_index == step_index - 1 and self._cached_new is not None:
+            old = self._cached_new
+        else:
+            old = self._coefficients(t_old)
+        new = self._coefficients(max(self.terms.T - (step_index + 1) * self.dt, 0.0))
+
+        self._cached_index = step_index
+        self._cached_old, self._cached_new = old, new
+        return old, new
+
+    def discounted_growth(self, tau: float, t_from: float, t_to: float) -> float:
+        """``exp(-r tau) * F(t_to) / F(t_from)``, following the surface's forward curve.
+
+        A constant carry would be inconsistent with the operator's advection
+        term, and the error would leak inward through the diffusion.
+        """
+        return float(np.exp(-self.market.r * tau)) * self.local_vol.forward_growth(t_from, t_to)
+
+    def step(
+        self,
+        V: np.ndarray,
+        bc_low: float,
+        bc_high: float,
+        theta: float,
+        step_index: int = 0,
+    ) -> np.ndarray:
+        """Advance one step backwards with time-dependent coefficients."""
+        old, new = self._levels(step_index)
+        return theta_step_variable(V, old, new, self.dt, theta, bc_low, bc_high)
+
+    def interpolate(self, V: np.ndarray, S_target: float) -> float:
+        """Linearly interpolate ``V`` at a spot level, in log space."""
+        return _interpolate_log(self.x_grid, V, S_target)
+
+
+def _interpolate_log(x_grid: np.ndarray, V: np.ndarray, S_target: float) -> float:
+    """Linear interpolation of ``V`` at a spot level, in log space."""
+    x = float(np.log(S_target))
+    if x <= x_grid[0]:
+        return float(V[0])
+    if x >= x_grid[-1]:
+        return float(V[-1])
+    idx = int(np.clip(np.searchsorted(x_grid, x), 1, x_grid.size - 1))
+    weight = (x - x_grid[idx - 1]) / (x_grid[idx] - x_grid[idx - 1])
+    return float(V[idx - 1] * (1.0 - weight) + V[idx] * weight)
 
 
 def price_snowball_pde(
@@ -470,6 +660,7 @@ def price_snowball_pde(
     config: PDEConfig | None = None,
     *,
     knocked_in: bool = False,
+    local_vol: LocalVolatility | None = None,
 ) -> SnowballPDEResult:
     """Value a snowball note with Crank-Nicolson finite differences.
 
@@ -496,6 +687,13 @@ def price_snowball_pde(
             A seasoned trade that has must be valued off the knocked-in
             surface; the two differ at the same spot, which is the whole reason
             the solver carries both.
+        local_vol: A Dupire local volatility to price against. When omitted the
+            solver takes the original constant-coefficient path unchanged, so
+            flat-volatility results are identical to the last bit rather than
+            merely close. When supplied, ``market.sigma`` is **not read** --
+            the surface carries both the volatility and the drift -- which is
+            what makes a volatility bump on ``market`` structurally incapable
+            of producing a spurious vega here.
 
     Returns:
         A :class:`SnowballPDEResult` with the price as a fraction of notional
@@ -503,7 +701,11 @@ def price_snowball_pde(
         without further solves.
     """
     config = config or PDEConfig()
-    grid = _SnowballGrid(terms, market, config)
+    grid: _SnowballGrid | _LocalVolGrid = (
+        _SnowballGrid(terms, market, config)
+        if local_vol is None
+        else _LocalVolGrid(terms, market, config, local_vol)
+    )
 
     S_grid = grid.S_grid
     T = terms.T
@@ -602,7 +804,6 @@ def price_snowball_pde(
 
     # --- Backward induction -------------------------------------------------
     S_low = float(grid.S_grid[0])
-    carry = market.carry
 
     for k in range(grid.n_steps):
         theta = 1.0 if k < rannacher else 0.5
@@ -618,7 +819,9 @@ def price_snowball_pde(
         # Using -e^{-r tau} instead -- the S -> 0 limit, as the original code
         # did -- assumes a total loss of notional at a boundary that actually
         # sits at S/S0 ~ 0.41, where the true loss is only ~0.59.
-        bc_ki_low = -(np.exp(-r * tau) - (S_low / ki_strike) * np.exp(-carry * tau))
+        bc_ki_low = -(
+            np.exp(-r * tau) - (S_low / ki_strike) * grid.discounted_growth(tau, t_elapsed, T)
+        )
 
         # Knocked-in *upper* boundary. A knocked-in note still carries the
         # knock-out feature, so this far above the barrier it terminates on its
@@ -629,7 +832,7 @@ def price_snowball_pde(
         else:
             bc_ki_high = coupon * t_next * float(np.exp(-r * (t_next - t_elapsed)))
 
-        V_ki = grid.step(V_ki, bc_ki_low, bc_ki_high, theta)
+        V_ki = grid.step(V_ki, bc_ki_low, bc_ki_high, theta, k)
 
         # Below the knock-in the un-knocked state has already transferred, so
         # its lower boundary is the knocked-in value.
@@ -650,7 +853,7 @@ def price_snowball_pde(
         else:
             bc_no_ki_high = coupon * t_next * float(np.exp(-r * (t_next - t_elapsed)))
 
-        V_no_ki = grid.step(V_no_ki, bc_no_ki_low, bc_no_ki_high, theta)
+        V_no_ki = grid.step(V_no_ki, bc_no_ki_low, bc_no_ki_high, theta, k)
 
         # On a knock-in observation date, transfer value into the knocked-in
         # state wherever spot is at or below the barrier.
