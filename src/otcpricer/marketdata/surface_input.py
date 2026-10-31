@@ -113,6 +113,7 @@ from otcpricer.models import bsm
 
 __all__ = [
     "MAX_MONEYNESS_SD",
+    "MIN_MATURITY_YEARS",
     "MAX_TICK_VOL_UNCERTAINTY",
     "MAX_VOL_UNCERTAINTY",
     "MIN_POINTS_PER_SLICE",
@@ -138,6 +139,32 @@ MAX_TICK_VOL_UNCERTAINTY = 2e-2
 #: against quote noise and its price reflects a market maker's floor rather
 #: than a volatility. See the module docstring for the measured effect.
 MAX_MONEYNESS_SD = 3.0
+
+#: Shortest expiry worth fitting, in years. One week.
+#:
+#: A one-day option's implied volatility is dominated by microstructure, and
+#: the captured 50ETF chain supplies only four usable quotes at that expiry --
+#: enough to clear the point-count screen, not enough to determine a smile.
+#: Keeping it costs twice over, and both costs were measured.
+#:
+#: It fits *worse*: including it moves the pooled 510050 error from 0.587 to
+#: 0.645 volatility points and pins ``gamma`` against its upper bound of 0.5,
+#: where Phase 2a already noted a pinned ``gamma`` means a slice is bending the
+#: global shape parameters rather than fitting in place.
+#:
+#: And it makes the variance term structure rough in a way that propagates.
+#: The at-the-money total variance goes 0, 8.3e-05, 1.73e-03 at 0, 0.0027 and
+#: 0.0795 years, so the accumulation rate drops abruptly from 0.0303 to 0.0215
+#: across the first knot. In local-volatility terms the at-the-money level
+#: becomes non-monotone in time -- 0.138, 0.128, 0.140 -- and
+#: ``max |d sigma_atm / dt|`` rises from 3.18 to 10.61. That roughness is what
+#: a time-stepping scheme has to resolve: with the slice included, the Dupire
+#: round trip errs by 5.82 volatility points at a production grid, and without
+#: it by 3.49.
+#:
+#: The 300ETF chain's one-day expiry was already rejected for having only three
+#: usable quotes, so this screen changes nothing there.
+MIN_MATURITY_YEARS = 7.0 / 365.0
 
 #: Fewest surviving points for a slice to be worth fitting. Below this the
 #: smile is not determined and including the slice only adds noise.
@@ -287,12 +314,32 @@ def _extract_slice(
     max_vol_uncertainty: float,
     max_tick_vol_uncertainty: float,
     max_moneyness_sd: float,
+    min_maturity: float,
     min_points: int,
 ) -> SliceInput:
     """Screen one expiry's quotes and solve for implied volatilities."""
     forward = imply_forward(option_slice, rate=rate)
     year_fraction = option_slice.year_fraction
     rejections: Counter[str] = Counter()
+
+    # Maturity screen first: it needs nothing but the tenor, and running it
+    # before the implied-volatility solve avoids reporting a pile of
+    # per-quote rejections for a slice that was never going to be used.
+    if year_fraction < min_maturity:
+        return SliceInput(
+            expiry_tag=option_slice.expiry_tag,
+            year_fraction=year_fraction,
+            forward=forward,
+            points=(),
+            rejections={"expiry too short": len(option_slice.quotes)},
+            usable=False,
+            reason=(
+                f"expiry is {year_fraction * 365.0:.1f} days away, below the "
+                f"{min_maturity * 365.0:.0f}-day minimum; at that tenor implied "
+                f"volatility is microstructure and the slice destabilises the "
+                f"variance term structure"
+            ),
+        )
 
     if not forward.usable:
         return SliceInput(
@@ -428,6 +475,7 @@ def extract_surface_input(
     max_vol_uncertainty: float = MAX_VOL_UNCERTAINTY,
     max_tick_vol_uncertainty: float = MAX_TICK_VOL_UNCERTAINTY,
     max_moneyness_sd: float = MAX_MONEYNESS_SD,
+    min_maturity: float = MIN_MATURITY_YEARS,
     min_points: int = MIN_POINTS_PER_SLICE,
 ) -> SurfaceInput:
     """Extract implied-volatility points from a chain, with screening.
@@ -441,6 +489,8 @@ def extract_surface_input(
             worth. Quotes above it are reporting the tick, not the market.
         max_moneyness_sd: Largest |log-moneyness| to accept, in slice standard
             deviations. Pass ``float('inf')`` to keep the whole wing.
+        min_maturity: Shortest expiry to accept, in years. Pass ``0.0`` to keep
+            every tenor.
         min_points: Fewest surviving points for a slice to be usable.
 
     Returns:
@@ -454,6 +504,7 @@ def extract_surface_input(
             max_vol_uncertainty=max_vol_uncertainty,
             max_tick_vol_uncertainty=max_tick_vol_uncertainty,
             max_moneyness_sd=max_moneyness_sd,
+            min_maturity=min_maturity,
             min_points=min_points,
         )
         for option_slice in chain.slices

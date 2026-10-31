@@ -836,7 +836,7 @@ class TestForwardCurve:
             )
 
     @pytest.mark.parametrize(
-        ("code", "carry", "kink"), [("510050", 0.0416, 0.0536), ("510300", 0.0592, 0.0882)]
+        ("code", "carry", "kink"), [("510050", 0.0386, 0.0536), ("510300", 0.0592, 0.0882)]
     )
     def test_real_implied_carry_and_kink_are_large(
         self, snapshot_dir: Path, code: str, carry: float, kink: float

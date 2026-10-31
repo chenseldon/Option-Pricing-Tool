@@ -62,7 +62,13 @@ HEALTHY = SSVIParams(
 #: The real fits, pinned as regression anchors. Recorded from the committed
 #: snapshots; a refactor that moves these has changed the model, not the code.
 REAL_ANCHORS = {
-    "510050": {"n_slices": 4, "n_points": 39, "rms_vp": 0.645, "max_vp": 1.350},
+    # Both chains now exclude their one-day expiry on the minimum-maturity
+    # screen. On 510050 that *improved* the pooled fit, from 0.645 to 0.587
+    # volatility points, and unpinned gamma from its 0.5 bound; see
+    # MIN_MATURITY_YEARS for the measurements. 510300's one-day expiry was
+    # already rejected for having too few usable quotes, so its numbers are
+    # unchanged.
+    "510050": {"n_slices": 3, "n_points": 35, "rms_vp": 0.587, "max_vp": 1.895},
     "510300": {"n_slices": 3, "n_points": 42, "rms_vp": 0.654, "max_vp": 1.977},
 }
 
@@ -893,7 +899,7 @@ class TestSurfaceReport:
     def test_names_the_excluded_expiry_and_why(self, report_text: str) -> None:
         """An expiry dropped without explanation looks like a bug."""
         assert "EXPIRIES EXCLUDED FROM THE FIT" in report_text
-        assert "survived screening" in report_text
+        assert "day minimum" in report_text
 
     def test_rejection_counts_reconcile_in_the_text(self, report_text: str) -> None:
         fitted = fit_surface("510300", source_kind="snapshot")

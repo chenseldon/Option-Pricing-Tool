@@ -46,9 +46,17 @@ from scipy.linalg import solve_banded
 
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
+from otcpricer.core.vol import LocalVolatility
 from otcpricer.products.snowball import SnowballTerms
 
-__all__ = ["PDEConfig", "SnowballPDEResult", "price_snowball_pde", "solve_tridiagonal"]
+__all__ = [
+    "PDEConfig",
+    "SnowballPDEResult",
+    "local_vol_coefficients",
+    "price_snowball_pde",
+    "solve_tridiagonal",
+    "theta_step_variable",
+]
 
 _log = get_logger(__name__)
 
@@ -185,6 +193,128 @@ def solve_tridiagonal(
     banded[1, :] = main
     banded[2, :-1] = lower
     return np.asarray(solve_banded((1, 1), banded, rhs), dtype=float)
+
+
+# ---------------------------------------------------------------------------
+# Variable-coefficient operator
+# ---------------------------------------------------------------------------
+#
+# Shared by the snowball solver and the European one. Kept here rather than in
+# a third module because `solve_tridiagonal` is imported by name from this one
+# and moving it would be a gratuitous break.
+
+
+def local_vol_coefficients(
+    local_vol: LocalVolatility,
+    x_grid: np.ndarray,
+    dx: float,
+    t: float,
+    r: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Operator coefficients at the interior nodes, for one time level.
+
+    The log-space operator is
+
+    .. code-block:: text
+
+        L V = 1/2 sigma^2(S,t) V_xx + (mu(t) - 1/2 sigma^2(S,t)) V_x - r V
+
+    which is the constant-coefficient operator with ``sigma`` and ``mu`` now
+    varying. Central differences on a uniform grid stay second-order accurate
+    with coefficients evaluated at the nodes.
+
+    Args:
+        local_vol: Where the volatility and the drift come from.
+        x_grid: Full log-spot grid, including both boundary nodes.
+        dx: Grid spacing.
+        t: Calendar time of this level. **Calendar time since inception**, not
+            time remaining -- the surface's maturity coordinate. Passing the
+            remaining time instead reverses the term structure, and a single
+            European price cannot detect it because the integral of a
+            time-dependent variance is reversal-invariant.
+        r: Discount rate, which enters the main diagonal alone.
+
+    Returns:
+        ``(a, b, c)``, each of length ``len(x_grid) - 2`` and evaluated at the
+        interior nodes, so ``(L V)_i = a_j V_{i-1} + b_j V_i + c_j V_{i+1}``
+        for interior node ``i = j + 1``.
+    """
+    sigma = np.asarray(local_vol.local_vol(np.exp(x_grid[1:-1]), t), dtype=float)
+    diffusion = 0.5 * sigma * sigma
+    advection = local_vol.drift(t) - diffusion
+    return (
+        diffusion / (dx * dx) - advection / (2.0 * dx),
+        -2.0 * diffusion / (dx * dx) - r,
+        diffusion / (dx * dx) + advection / (2.0 * dx),
+    )
+
+
+def theta_step_variable(
+    V: np.ndarray,
+    old: tuple[np.ndarray, np.ndarray, np.ndarray],
+    new: tuple[np.ndarray, np.ndarray, np.ndarray],
+    dt: float,
+    theta: float,
+    bc_low: float,
+    bc_high: float,
+) -> np.ndarray:
+    """One backward theta-scheme step with time-dependent coefficients.
+
+    Solves ``(I - theta dt L_new) V_new = (I + (1 - theta) dt L_old) V_old``.
+
+    Two details here are invisible at flat volatility, so no existing test can
+    catch either, and both are first-order in ``dt`` -- they read as slow
+    convergence rather than as a wrong answer.
+
+    **The explicit stencil takes the old level, the Dirichlet folds take the
+    new one.** The folded terms come from the *implicit* matrix, so they carry
+    ``a_new[0]`` and ``c_new[-1]``. The constant-coefficient version uses one
+    scalar for both and is right only because the two levels coincide there.
+
+    **The sub- and superdiagonals are sliced asymmetrically.** Row ``j`` of the
+    implicit matrix has ``A[j, j-1] = -theta dt a_new[j]``, so the subdiagonal
+    that ``solve_tridiagonal`` wants is ``a_new[1:]``, while the superdiagonal
+    is ``c_new[:-1]``. With scalars, ``np.full`` hid the asymmetry; getting it
+    wrong shifts every off-diagonal coefficient by one node, which is an
+    O(dx) error that looks like a modest mispricing.
+
+    Args:
+        V: Values at the old time level, all nodes.
+        old: ``(a, b, c)`` at the old level, from
+            :func:`local_vol_coefficients`.
+        new: ``(a, b, c)`` at the new level.
+        dt: Step size.
+        theta: ``0.5`` for Crank-Nicolson, ``1.0`` for fully implicit.
+        bc_low: Dirichlet value at the lower boundary, at the new level.
+        bc_high: Dirichlet value at the upper boundary, at the new level.
+
+    Returns:
+        Values at the new time level, all nodes.
+    """
+    a_old, b_old, c_old = old
+    a_new, b_new, c_new = new
+    explicit_weight = 1.0 - theta
+
+    rhs = (
+        explicit_weight * dt * a_old * V[:-2]
+        + (1.0 + explicit_weight * dt * b_old) * V[1:-1]
+        + explicit_weight * dt * c_old * V[2:]
+    )
+    rhs[0] += theta * dt * a_new[0] * bc_low
+    rhs[-1] += theta * dt * c_new[-1] * bc_high
+
+    interior = solve_tridiagonal(
+        -theta * dt * a_new[1:],
+        1.0 - theta * dt * b_new,
+        -theta * dt * c_new[:-1],
+        rhs,
+    )
+
+    out = np.empty_like(V)
+    out[0] = bc_low
+    out[1:-1] = interior
+    out[-1] = bc_high
+    return out
 
 
 def _next_observation(schedule: np.ndarray, t_now: float) -> float | None:

@@ -321,6 +321,20 @@ class LocalVolSurface:
         """Instantaneous drift ``d log F / dt``, from the forward curve."""
         return float(self.forwards.drift(t))
 
+    def forward_growth(self, t_from: float, t_to: float) -> float:
+        """``F(t_to) / F(t_from)``, independent of the spot anchor.
+
+        The integrated drift between the two times, so a boundary condition
+        written with it stays consistent with the operator's advection term --
+        which a constant carry would not.
+        """
+        return float(
+            np.exp(
+                float(self.forwards.log_forward_ratio(t_to))
+                - float(self.forwards.log_forward_ratio(t_from))
+            )
+        )
+
     def log_moneyness(self, S: float | np.ndarray, t: float) -> np.ndarray:
         """``y = log(S / F(t))``, the surface's native coordinate."""
         S_arr = np.asarray(S, dtype=float)

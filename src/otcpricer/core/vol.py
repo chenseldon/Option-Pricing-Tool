@@ -63,6 +63,16 @@ class LocalVolatility(Protocol):
         """Instantaneous drift ``d log F / dt`` at time ``t``."""
         ...
 
+    def forward_growth(self, t_from: float, t_to: float) -> float:
+        """``F(t_to) / F(t_from)``, the forward growth factor between two times.
+
+        Boundary conditions are discounted forward intrinsics, so they need
+        this. Expressed as a ratio rather than as a level because it is the
+        ratio that is scale-free, and because a boundary should not have to
+        know what spot the surface was anchored at.
+        """
+        ...
+
     def atm_total_vol(self, T: float) -> float:
         """At-the-money total volatility to ``T``, i.e. ``sqrt(w(0, T))``.
 

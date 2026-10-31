@@ -203,11 +203,23 @@ class TestQueryEndpoint:
         assert max(max(row) for row in payload["implied_vol"]) < 0.6
 
     def test_explicit_t_min_is_honoured(self, client: Any) -> None:
-        payload = client.post(
+        """The auto grid starts at the shortest *fitted* expiry or t_min, whichever is later.
+
+        Both chains now drop their one-day expiry on the minimum-maturity
+        screen, so the earliest fitted maturity is 0.0795 and a smaller t_min
+        cannot pull the grid below it. Raising t_min still moves it.
+        """
+        early = client.post(
             "/api/vol_surface/query",
             json={"underlying": "510050", "t_min": 0.002, "n_maturities": 3},
         ).get_json()
-        assert payload["maturities"][0] < 1.0 / 52.0
+        assert early["maturities"][0] == pytest.approx(0.0795, abs=1e-3)
+
+        later = client.post(
+            "/api/vol_surface/query",
+            json={"underlying": "510050", "t_min": 0.5, "n_maturities": 3},
+        ).get_json()
+        assert later["maturities"][0] == pytest.approx(0.5, abs=1e-6)
 
     def test_at_the_money_matches_the_fitted_term_structure(self, client: Any) -> None:
         """The grid must be the same surface the fit reported, not a re-fit."""
@@ -226,13 +238,14 @@ class TestQueryEndpoint:
     def test_query_by_strike_uses_the_reference_forward(self, client: Any) -> None:
         payload = client.post(
             "/api/vol_surface/query",
-            json={"underlying": "510050", "strikes": [2.5, 2.8662, 3.2], "maturities": [1.0]},
+            json={"underlying": "510050", "strikes": [2.5, 2.8542, 3.2], "maturities": [1.0]},
         ).get_json()
 
         forward = payload["reference_forward"]
-        assert payload["strikes"] == pytest.approx([2.5, 2.8662, 3.2], abs=1e-4)
+        assert payload["strikes"] == pytest.approx([2.5, 2.8542, 3.2], abs=1e-4)
         assert payload["moneyness"][1] == pytest.approx(0.0, abs=1e-4)
-        assert forward == pytest.approx(2.8662, abs=1e-3)
+        # The nearest fitted expiry's forward, now the 29-day one.
+        assert forward == pytest.approx(2.8542, abs=1e-3)
 
     def test_skew_is_to_the_downside(self, client: Any) -> None:
         """An equity index surface with the skew the wrong way is a sign error."""

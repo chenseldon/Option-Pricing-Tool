@@ -172,7 +172,7 @@ def _excluded_expiries(fitted: FittedSurface) -> list[str]:
     ]
     for slice_input in unusable:
         lines.append(f"  {slice_input.expiry_tag}  ({slice_input.year_fraction:.4f}y)")
-        lines.append(f"      {slice_input.reason}")
+        lines += _wrap(slice_input.reason, indent="      ")
     lines.append("")
     return lines
 
