@@ -51,6 +51,7 @@ __all__ = [
     "DEFAULT_RATE",
     "MAX_PARITY_RESIDUAL_REL",
     "MIN_PAIRED_STRIKES",
+    "ForwardCurve",
     "ForwardResult",
     "imply_forward",
 ]
@@ -254,3 +255,197 @@ def imply_forward(
         },
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Term structure
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ForwardCurve:
+    """The forward term structure implied by a chain, as a drift curve.
+
+    A volatility surface is parameterised in ``k = log(K / F)``, so anything
+    that prices off it has to use *the same* forward curve. Otherwise the
+    moneyness at which the local volatility is evaluated is simply wrong, and
+    nothing downstream reports it.
+
+    The gap is not academic. The implied carry measured on the committed
+    chains is -4.16% a year on 510050 and -5.92% on 510300, while a typical
+    ``r - q`` input of +2% would put the one-year forward out by 6.4% and 8.2%
+    respectively. Against a snowball with barriers at 103% and 80% that error
+    swamps every other modelling choice in the engine.
+
+    Why a drift curve rather than a price curve
+    -------------------------------------------
+    What is stored is the *shape*: the instantaneous drift ``d log F / dt``,
+    piecewise constant between quoted expiries. Levels come from whatever spot
+    the caller is pricing at, via :meth:`forward_from`. That keeps the curve
+    scale-free, so a surface fitted on an ETF trading at 2.85 can price a
+    snowball quoted on an index at 5000 -- the moneyness coordinate only cares
+    about ratios, and a structured note's barriers are percentages.
+
+    Beyond the last quoted expiry
+    -----------------------------
+    The drift reverts to ``tail_drift``, which the caller supplies from its own
+    ``r - q - basis``. This is a deliberate choice over extrapolating the
+    implied carry: the listed options stop at roughly five months while the
+    products run one to three years, and carrying a -5% carry out to three
+    years would drop the forward 14% on the strength of five-month quotes.
+
+    The price of that choice is a kink in the drift at the last quoted expiry.
+    :attr:`kink` measures it, and it is reported rather than smoothed, because
+    on real data it is large.
+
+    Attributes:
+        maturities: Quoted expiry year fractions, strictly increasing.
+        forwards: Parity-implied forward at each quoted expiry.
+        tail_drift: Drift used beyond the last quoted expiry.
+        rate: The rate used for discounting, kept so :meth:`carry` can report
+            the yield deducted from the drift.
+    """
+
+    maturities: tuple[float, ...]
+    forwards: tuple[float, ...]
+    tail_drift: float
+    rate: float = DEFAULT_RATE
+
+    def __post_init__(self) -> None:
+        if len(self.maturities) != len(self.forwards):
+            raise MarketDataError(
+                f"got {len(self.maturities)} maturities but {len(self.forwards)} forwards"
+            )
+        if not self.maturities:
+            raise MarketDataError("a forward curve needs at least one quoted expiry")
+        T = np.asarray(self.maturities, dtype=float)
+        F = np.asarray(self.forwards, dtype=float)
+        if np.any(T <= 0.0):
+            raise MarketDataError("quoted maturities must be positive")
+        if len(T) > 1 and not np.all(np.diff(T) > 0):
+            raise MarketDataError(f"maturities must be strictly increasing, got {T.tolist()}")
+        if np.any(F <= 0.0):
+            raise MarketDataError("implied forwards must be positive")
+
+    # -- internals --------------------------------------------------------
+
+    @property
+    def _knots(self) -> tuple[np.ndarray, np.ndarray]:
+        """Knot times and log-forwards, with ``t = 0`` prepended.
+
+        The value at the origin is back-extrapolated at the first segment's own
+        drift, so the curve is continuous there and ``log_forward_ratio(0)`` is
+        exactly zero.
+        """
+        T = np.asarray(self.maturities, dtype=float)
+        log_F = np.log(np.asarray(self.forwards, dtype=float))
+        first_drift = self._segment_drifts[0]
+        return (
+            np.concatenate(([0.0], T)),
+            np.concatenate(([log_F[0] - first_drift * T[0]], log_F)),
+        )
+
+    @property
+    def _segment_drifts(self) -> np.ndarray:
+        """Drift on each quoted segment; the tail drift when there is only one."""
+        T = np.asarray(self.maturities, dtype=float)
+        log_F = np.log(np.asarray(self.forwards, dtype=float))
+        if T.size < 2:
+            return np.array([self.tail_drift])
+        return np.asarray(np.diff(log_F) / np.diff(T))
+
+    # -- the curve --------------------------------------------------------
+
+    def drift(self, t: float | np.ndarray) -> np.ndarray:
+        """Instantaneous drift ``d log F / dt`` at time ``t``.
+
+        Piecewise constant: the first segment's drift before the first quoted
+        expiry, the enclosing segment's drift between them, and
+        :attr:`tail_drift` beyond the last.
+        """
+        t_arr = np.asarray(t, dtype=float)
+        T = np.asarray(self.maturities, dtype=float)
+        segments = self._segment_drifts
+
+        # searchsorted returns the KNOT index; the segment index is one lower,
+        # because segment i spans (T_i, T_{i+1}]. Without the -1 the curve
+        # returns the next segment's drift, which integrates to a log-forward
+        # that disagrees with log_forward_ratio by a constant -- measured at
+        # 1.62e-03 before this was fixed. The clip at 0 is what makes the drift
+        # before the first quoted expiry equal the first segment's, as
+        # documented, and side="left" makes the drift left-continuous at a
+        # knot, matching a piecewise-constant drift defined on (T_i, T_{i+1}].
+        index = np.clip(np.searchsorted(T, t_arr, side="left") - 1, 0, segments.size - 1)
+        value = segments[index]
+        return np.asarray(np.where(t_arr > T[-1], self.tail_drift, value))
+
+    def log_forward_ratio(self, t: float | np.ndarray) -> np.ndarray:
+        """``log(F(t) / F(0))`` -- the integrated drift.
+
+        Exact rather than a quadrature: the drift is piecewise constant, so the
+        integral is the piecewise-linear interpolant of the log-forwards.
+        """
+        t_arr = np.asarray(t, dtype=float)
+        knot_t, knot_log_f = self._knots
+        inside = np.interp(np.minimum(t_arr, knot_t[-1]), knot_t, knot_log_f)
+        beyond = np.maximum(t_arr - knot_t[-1], 0.0) * self.tail_drift
+        return np.asarray(inside + beyond - knot_log_f[0])
+
+    def forward_from(self, spot: float, t: float | np.ndarray) -> np.ndarray:
+        """Forward to ``t`` for a given spot, following this curve's shape."""
+        return np.asarray(float(spot) * np.exp(self.log_forward_ratio(t)))
+
+    def carry(self, t: float | np.ndarray) -> np.ndarray:
+        """Yield deducted from the drift, ``rate - drift(t)``.
+
+        Matches :attr:`~otcpricer.core.market.EquityMarket.carry`, so a
+        boundary condition written in terms of carry can take either.
+        """
+        return np.asarray(self.rate - self.drift(t))
+
+    @property
+    def spot_anchor(self) -> float:
+        """``F(0)``, back-extrapolated from the first quoted expiry.
+
+        Price a European at this spot and the curve reproduces every quoted
+        forward exactly, which is what makes the vanilla reprice test a test of
+        the local volatility rather than of a spot mismatch.
+        """
+        return float(np.exp(self._knots[1][0]))
+
+    @property
+    def implied_carry(self) -> float:
+        """Average implied carry across the quoted range, ``-d log F / dt``.
+
+        The headline number for how far the market's forward curve sits from a
+        naive ``r - q``.
+        """
+        T = np.asarray(self.maturities, dtype=float)
+        if T.size < 2:
+            return float(self.rate - self.tail_drift)
+        log_F = np.log(np.asarray(self.forwards, dtype=float))
+        return float(-(log_F[-1] - log_F[0]) / (T[-1] - T[0]))
+
+    @property
+    def kink(self) -> float:
+        """Jump in drift at the last quoted expiry, ``tail_drift - last implied``.
+
+        Zero only if the caller's ``r - q - basis`` happens to match what the
+        options imply. On the committed chains it does not, by several
+        percentage points, which is why it is reported.
+        """
+        return float(self.tail_drift - self._segment_drifts[-1])
+
+    def as_dict(self) -> dict[str, object]:
+        """Flat dict for API responses and reports."""
+        segments = self._segment_drifts
+        return {
+            "maturities": [round(t, 6) for t in self.maturities],
+            "forwards": [round(f, 6) for f in self.forwards],
+            "segment_drifts": [round(float(d), 8) for d in segments],
+            "implied_carry": round(self.implied_carry, 8),
+            "tail_drift": round(self.tail_drift, 8),
+            "kink": round(self.kink, 8),
+            "spot_anchor": round(self.spot_anchor, 6),
+            "rate": self.rate,
+        }

@@ -30,6 +30,7 @@ from otcpricer.marketdata.contracts import (
 from otcpricer.marketdata.forward import (
     MAX_PARITY_RESIDUAL_REL,
     MIN_PAIRED_STRIKES,
+    ForwardCurve,
     imply_forward,
 )
 from otcpricer.marketdata.quotes import OptionChain, build_slice
@@ -677,3 +678,192 @@ class TestSurfaceInput:
 
         assert not surface_input.usable_slices
         assert "forward unusable" in surface_input.slices[0].reason
+
+
+# ---------------------------------------------------------------------------
+# The forward term structure
+# ---------------------------------------------------------------------------
+
+
+def _real_curve(snapshot_dir: Path, code: str, tail_drift: float = 0.02) -> ForwardCurve:
+    """Build a curve from a committed chain's parity-implied forwards."""
+    surface_input = extract_surface_input(load_snapshot(snapshot_dir, code))
+    usable = surface_input.usable_slices
+    return ForwardCurve(
+        maturities=tuple(s.year_fraction for s in usable),
+        forwards=tuple(s.forward.forward for s in usable),
+        tail_drift=tail_drift,
+        rate=0.03,
+    )
+
+
+class TestForwardCurve:
+    """The curve the local volatility has to agree with.
+
+    A surface is parameterised in ``log(K / F)``, so if the engine's forward
+    curve differs from the one the surface was fitted against, the local
+    volatility is evaluated at the wrong moneyness and nothing says so. These
+    tests pin the two properties that make that impossible: the curve
+    reproduces the quoted forwards exactly, and its drift integrates to its own
+    log-forward.
+    """
+
+    CURVE = ForwardCurve(
+        maturities=(0.25, 0.5, 1.0),
+        forwards=(99.0, 98.0, 95.0),
+        tail_drift=0.02,
+        rate=0.03,
+    )
+
+    def test_reproduces_the_quoted_forwards_exactly(self) -> None:
+        """Anchored at its own spot, the curve must hit every quoted forward.
+
+        This is what makes the vanilla reprice test a test of the local
+        volatility rather than of a spot mismatch.
+        """
+        for maturity, forward in zip(self.CURVE.maturities, self.CURVE.forwards, strict=True):
+            assert float(self.CURVE.forward_from(self.CURVE.spot_anchor, maturity)) == (
+                pytest.approx(forward, rel=1e-14)
+            )
+
+    def test_drift_integrates_to_the_log_forward(self) -> None:
+        """The off-by-one guard.
+
+        ``searchsorted`` returns a knot index while the drift lives on segments,
+        so the segment index is one lower. Getting that wrong returns the next
+        segment's drift, and the error shows up as a *constant* offset between
+        the integrated drift and the log-forward -- measured at 1.62e-03 on the
+        real 510050 curve before it was fixed. Inspection did not catch it; this
+        comparison did.
+        """
+        for t_end in (0.1, 0.25, 0.4, 0.5, 1.0, 2.5):
+            u = np.linspace(0.0, t_end, 400001)
+            quadrature = float(np.trapezoid(self.CURVE.drift(u), u))
+            analytic = float(self.CURVE.log_forward_ratio(t_end))
+            # The residual is the trapezoid rule's own error on a discontinuous
+            # integrand, not the curve's.
+            assert analytic == pytest.approx(quadrature, abs=1e-6)
+
+    def test_ratio_vanishes_at_the_origin(self) -> None:
+        assert float(self.CURVE.log_forward_ratio(0.0)) == 0.0
+
+    def test_drift_is_the_enclosing_segments_slope(self) -> None:
+        """Explicitly, segment by segment, rather than via the integral."""
+        T = np.array(self.CURVE.maturities)
+        log_F = np.log(np.array(self.CURVE.forwards))
+        expected = np.diff(log_F) / np.diff(T)
+
+        # Inside the first segment, and before the first expiry.
+        assert float(self.CURVE.drift(0.3)) == pytest.approx(expected[0])
+        assert float(self.CURVE.drift(0.1)) == pytest.approx(expected[0])
+        # Inside the second.
+        assert float(self.CURVE.drift(0.75)) == pytest.approx(expected[1])
+        # Left-continuous at a knot: a drift defined on (T_i, T_{i+1}].
+        assert float(self.CURVE.drift(0.5)) == pytest.approx(expected[0])
+
+    def test_tail_reverts_to_the_callers_drift(self) -> None:
+        assert float(self.CURVE.drift(1.5)) == pytest.approx(0.02)
+        assert float(self.CURVE.drift(10.0)) == pytest.approx(0.02)
+
+    def test_tail_is_linear_in_log_forward(self) -> None:
+        last = self.CURVE.maturities[-1]
+        base = float(self.CURVE.log_forward_ratio(last))
+        for extra in (0.5, 1.0, 2.0):
+            assert float(self.CURVE.log_forward_ratio(last + extra)) == pytest.approx(
+                base + 0.02 * extra, rel=1e-12
+            )
+
+    def test_kink_is_the_drift_jump_at_the_last_expiry(self) -> None:
+        """The known price of reverting to the caller's carry; reported, not hidden."""
+        implied_last = (np.log(95.0) - np.log(98.0)) / (1.0 - 0.5)
+        assert self.CURVE.kink == pytest.approx(0.02 - implied_last)
+        assert float(self.CURVE.drift(1.0 + 1e-9)) - float(self.CURVE.drift(1.0)) == (
+            pytest.approx(self.CURVE.kink, rel=1e-6)
+        )
+
+    def test_is_scale_free(self) -> None:
+        """The shape is stored, not the level.
+
+        So a surface fitted on an ETF at 2.85 can price a note quoted on an
+        index at 5000 -- moneyness only cares about ratios.
+        """
+        for t in (0.1, 0.6, 2.0):
+            small = float(self.CURVE.forward_from(2.8662, t)) / 2.8662
+            large = float(self.CURVE.forward_from(5000.0, t)) / 5000.0
+            assert small == pytest.approx(large, rel=1e-14)
+
+    def test_carry_is_rate_minus_drift(self) -> None:
+        for t in (0.1, 0.6, 2.0):
+            assert float(self.CURVE.carry(t)) == pytest.approx(0.03 - float(self.CURVE.drift(t)))
+
+    def test_vectorises(self) -> None:
+        t = np.array([0.05, 0.3, 0.75, 1.5])
+        assert self.CURVE.drift(t).shape == (4,)
+        assert self.CURVE.log_forward_ratio(t).shape == (4,)
+        for index, value in enumerate(t):
+            assert float(self.CURVE.drift(t)[index]) == pytest.approx(
+                float(self.CURVE.drift(value))
+            )
+
+    def test_single_expiry_uses_the_tail_drift_throughout(self) -> None:
+        """A legitimate degenerate case: no segment exists to take a slope from."""
+        curve = ForwardCurve(maturities=(0.5,), forwards=(2.8,), tail_drift=-0.04, rate=0.03)
+        assert float(curve.drift(0.2)) == pytest.approx(-0.04)
+        assert float(curve.drift(2.0)) == pytest.approx(-0.04)
+        assert curve.spot_anchor == pytest.approx(2.8 * np.exp(0.04 * 0.5))
+        assert curve.kink == pytest.approx(0.0)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "fragment"),
+        [
+            ({"maturities": (0.5,), "forwards": (1.0, 2.0)}, "1 maturities but 2 forwards"),
+            ({"maturities": (), "forwards": ()}, "at least one quoted expiry"),
+            ({"maturities": (0.0,), "forwards": (1.0,)}, "maturities must be positive"),
+            ({"maturities": (1.0, 0.5), "forwards": (1.0, 2.0)}, "strictly increasing"),
+            ({"maturities": (0.5,), "forwards": (0.0,)}, "forwards must be positive"),
+        ],
+    )
+    def test_rejects_malformed_input(self, kwargs: dict[str, object], fragment: str) -> None:
+        with pytest.raises(MarketDataError, match=fragment):
+            ForwardCurve(tail_drift=0.0, **kwargs)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("code", ["510050", "510300"])
+    def test_real_curves_reproduce_their_forwards(self, snapshot_dir: Path, code: str) -> None:
+        curve = _real_curve(snapshot_dir, code)
+        for maturity, forward in zip(curve.maturities, curve.forwards, strict=True):
+            assert float(curve.forward_from(curve.spot_anchor, maturity)) == pytest.approx(
+                forward, rel=1e-13
+            )
+
+    @pytest.mark.parametrize(
+        ("code", "carry", "kink"), [("510050", 0.0416, 0.0536), ("510300", 0.0592, 0.0882)]
+    )
+    def test_real_implied_carry_and_kink_are_large(
+        self, snapshot_dir: Path, code: str, carry: float, kink: float
+    ) -> None:
+        """Pinned because the magnitude is the whole argument for this design.
+
+        The market's forward curve declines at 4-6% a year while a typical
+        ``r - q`` of +2% rises. Using the latter would misstate the one-year
+        forward by 6-8%, which against barriers at 103% and 80% swamps
+        everything else. The kink is the acknowledged cost of reverting to the
+        caller's carry past the quoted range.
+        """
+        curve = _real_curve(snapshot_dir, code, tail_drift=0.02)
+        assert curve.implied_carry == pytest.approx(carry, abs=5e-4)
+        assert curve.kink == pytest.approx(kink, abs=5e-4)
+
+    @pytest.mark.parametrize("code", ["510050", "510300"])
+    def test_real_curves_integrate_consistently(self, snapshot_dir: Path, code: str) -> None:
+        curve = _real_curve(snapshot_dir, code)
+        for t_end in (0.05, 0.2, curve.maturities[-1], 1.0, 3.0):
+            u = np.linspace(0.0, float(t_end), 400001)
+            assert float(curve.log_forward_ratio(t_end)) == pytest.approx(
+                float(np.trapezoid(curve.drift(u), u)), abs=1e-6
+            )
+
+    def test_serialises_with_the_kink_visible(self, snapshot_dir: Path) -> None:
+        payload = _real_curve(snapshot_dir, "510050").as_dict()
+        assert payload["kink"] != 0.0
+        for key in ("maturities", "forwards", "segment_drifts", "implied_carry", "spot_anchor"):
+            assert key in payload
