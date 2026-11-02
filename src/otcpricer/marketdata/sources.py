@@ -380,6 +380,8 @@ def build_source(
     snapshot: str | None = None,
     csv_path: Path | str | None = None,
     ttl_seconds: float | None = None,
+    wind_dir: Path | str | None = None,
+    as_of: date | None = None,
 ) -> OptionChainSource:
     """Construct the configured source, wrapped in a cache.
 
@@ -405,10 +407,28 @@ def build_source(
         if csv_path is None:
             raise MarketDataError("source 'csv' requires csv_path")
         inner = CsvSource(path=Path(csv_path))
+    elif resolved_kind == "wind":
+        from otcpricer.marketdata.wind import WindPanel, WindPanelSource
+
+        directory = Path(wind_dir or settings.data.wind_dir or "")
+        if not str(directory) or str(directory) == ".":
+            raise MarketDataError(
+                "source 'wind' requires wind_dir, or OTCPRICER_WIND_DIR to be set"
+            )
+        if as_of is None:
+            raise MarketDataError(
+                "source 'wind' requires as_of: the panel holds 725 dates and "
+                "there is no sensible default among them"
+            )
+        # Deliberately not wrapped in CachingSource. Its key is the underlying
+        # code and its invalidation is a wall clock, both of which are wrong for
+        # a static panel -- and WindPanel already caches, by date as well as by
+        # code.
+        return WindPanelSource(panel=WindPanel(directory), as_of=as_of)
     else:
         raise MarketDataError(
             f"unknown market data source {resolved_kind!r}; expected one of "
-            f"'akshare', 'snapshot', 'csv'"
+            f"'akshare', 'snapshot', 'csv', 'wind'"
         )
 
     return CachingSource(inner=inner, ttl_seconds=ttl)

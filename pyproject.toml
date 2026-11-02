@@ -68,5 +68,5 @@ warn_unused_ignores = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = ["scipy.*", "matplotlib.*", "akshare.*", "QuantLib.*", "numba.*"]
+module = ["scipy.*", "matplotlib.*", "akshare.*", "QuantLib.*", "numba.*", "pandas.*"]
 ignore_missing_imports = true

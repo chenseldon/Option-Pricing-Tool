@@ -55,6 +55,14 @@ class DataSettings(BaseModel):
         ),
     )
     snapshot_dir: str = Field("data/snapshots", description="Offline market data snapshots")
+    wind_dir: str = Field(
+        "",
+        description=(
+            "Directory holding the six Wind panel files. Empty by default: the "
+            "panel is institutional data and is not committed, so an "
+            "unconfigured checkout must not assume it is present."
+        ),
+    )
     cache_ttl_seconds: int = Field(300, ge=0, description="How long a live quote pull stays cached")
     request_timeout_seconds: float = Field(20.0, gt=0, description="Per-request network timeout")
     max_concurrent_requests: int = Field(
@@ -115,6 +123,7 @@ def _build_settings() -> Settings:
             {
                 "source": os.getenv("OTCPRICER_DATA_SOURCE"),
                 "snapshot_dir": os.getenv("OTCPRICER_SNAPSHOT_DIR"),
+                "wind_dir": os.getenv("OTCPRICER_WIND_DIR"),
                 "cache_ttl_seconds": _env_int("OTCPRICER_CACHE_TTL_SECONDS"),
                 "max_concurrent_requests": _env_int("OTCPRICER_MAX_CONCURRENT_REQUESTS"),
                 "request_timeout_seconds": _env_float("OTCPRICER_REQUEST_TIMEOUT_SECONDS"),

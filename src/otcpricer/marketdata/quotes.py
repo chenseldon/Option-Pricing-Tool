@@ -27,7 +27,7 @@ import numpy as np
 
 from otcpricer.core.exceptions import MarketDataError
 from otcpricer.core.types import OptionType
-from otcpricer.marketdata.contracts import ContractCode, Underlying, parse_contract_code
+from otcpricer.marketdata.contracts import ContractCode, Underlying, parse_option_code
 
 __all__ = ["OptionChain", "OptionQuote", "OptionSlice"]
 
@@ -180,13 +180,19 @@ def build_slice(
     exactly the failure that would otherwise pass silently. Verified to agree on
     every row of both live underlyings (24/24 and 28/28).
 
+    Which parser applies comes from the underlying's ``code_style``, because the
+    three feeds spell the identifier in three unrelated ways. Wind's numeric ETF
+    keys encode nothing at all, so they cannot reach here -- those rows are
+    cross-checked against the contract *name* instead, in
+    :mod:`otcpricer.marketdata.wind`.
+
     Raises:
         MarketDataError: on an unparseable code, or a strike disagreement.
     """
     quotes: list[OptionQuote] = []
     for row in rows:
         code = str(row["code"])
-        contract = parse_contract_code(code, strike_scale=underlying.strike_scale)
+        contract = parse_option_code(code, underlying)
         column_strike = float(row["strike"])  # type: ignore[arg-type]
 
         if abs(contract.strike - column_strike) > strike_tolerance:

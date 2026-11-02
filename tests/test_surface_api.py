@@ -44,7 +44,7 @@ def client() -> Any:
 
 
 class TestSnapshotsEndpoint:
-    def test_lists_both_underlyings_with_their_feed_symbols(self, client: Any) -> None:
+    def test_lists_every_underlying_with_its_feed_symbol(self, client: Any) -> None:
         response = client.get("/api/vol_surface/snapshots")
         assert response.status_code == 200
         payload = response.get_json()
@@ -52,6 +52,21 @@ class TestSnapshotsEndpoint:
         assert set(payload["underlyings"]) == set(SUPPORTED_UNDERLYINGS)
         for code, underlying in SUPPORTED_UNDERLYINGS.items():
             assert payload["underlyings"][code]["feed_symbol"] == underlying.feed_symbol
+
+    def test_the_captured_underlyings_list_their_snapshots(self, client: Any) -> None:
+        """Scoped to the underlyings a live board actually serves.
+
+        The CFFEX index options arrive only from the Wind panel, so they carry
+        no ``feed_symbol`` and there is nothing to capture a snapshot of. That
+        is the registry's own distinction, so the test reads it from there
+        rather than naming the two ETF codes and going stale the next time an
+        underlying is added.
+        """
+        payload = client.get("/api/vol_surface/snapshots").get_json()
+
+        captured = [c for c, u in SUPPORTED_UNDERLYINGS.items() if u.feed_symbol is not None]
+        assert captured, "no underlying has a live feed, which cannot be right"
+        for code in captured:
             assert "2026-10-27" in payload["underlyings"][code]["snapshots"]
 
     def test_reports_that_the_default_source_is_offline(self, client: Any) -> None:
