@@ -202,23 +202,32 @@ def characteristic_function(
     beta = kappa - rho * sigma * iu
     d = np.sqrt(beta * beta + sigma * sigma * (iu + u_arr * u_arr))
 
-    # The choice that matters. g uses (beta - d) over (beta + d), so the
-    # exponential below is exp(-d*T) and |g| <= 1. Taking the other root gives
-    # the classic form, exp(+d*T), and an overflow.
-    g = (beta - d) / (beta + d)
+    # ``beta + d`` can vanish at extreme parameter combinations, and it does
+    # occur in practice -- the calibrator probes the corners of its bounds. The
+    # result there is a genuine NaN rather than something to patch: the
+    # formulation has no value at such a point, and a caller treating NaN as
+    # "this parameter set is unusable" is correct (see
+    # otcpricer.models.heston_calibration.UNIDENTIFIABLE_PENALTY). Numpy's
+    # errors are silenced only so an expected, handled outcome does not arrive
+    # as warning spew during a fit; the NaN itself is left to propagate.
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        # The choice that matters. g uses (beta - d) over (beta + d), so the
+        # exponential below is exp(-d*T) and |g| <= 1. Taking the other root
+        # gives the classic form, exp(+d*T), and an overflow.
+        g = (beta - d) / (beta + d)
 
-    exp_dt = np.exp(-d * maturity)
-    one_minus_g_exp = 1.0 - g * exp_dt
+        exp_dt = np.exp(-d * maturity)
+        one_minus_g_exp = 1.0 - g * exp_dt
 
-    # D multiplies v0; C is the rest.
-    D = (beta - d) / (sigma * sigma) * ((1.0 - exp_dt) / one_minus_g_exp)
-    C = (
-        (kappa * theta)
-        / (sigma * sigma)
-        * ((beta - d) * maturity - 2.0 * np.log(one_minus_g_exp / (1.0 - g)))
-    )
+        # D multiplies v0; C is the rest.
+        D = (beta - d) / (sigma * sigma) * ((1.0 - exp_dt) / one_minus_g_exp)
+        C = (
+            (kappa * theta)
+            / (sigma * sigma)
+            * ((beta - d) * maturity - 2.0 * np.log(one_minus_g_exp / (1.0 - g)))
+        )
 
-    return np.exp(C + D * v0 + iu * drift * maturity)
+        return np.exp(C + D * v0 + iu * drift * maturity)
 
 
 def _characteristic_function_classic(
