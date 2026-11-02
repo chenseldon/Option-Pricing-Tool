@@ -330,8 +330,20 @@ class TestFlaskApiRegression:
                 },
             ),
             (
+                # monitoring is required now, and deliberately so: a daily
+                # knock-out is worth about 19% more than a continuous one, so
+                # the frequency is part of the contract rather than a default.
                 "/api/shark_fin",
-                {"S": 5500, "K": 5500, "H": 6050, "T": 0.25, "r": 0.02, "sigma": 0.2, "q": 0.01},
+                {
+                    "S": 5500,
+                    "K": 5500,
+                    "H": 6050,
+                    "T": 0.25,
+                    "r": 0.02,
+                    "sigma": 0.2,
+                    "q": 0.01,
+                    "monitoring": 252,
+                },
             ),
             ("/api/forward", {"S": 5500, "T": 1.0, "r": 0.02, "q": 0.01}),
             (
@@ -645,8 +657,21 @@ class TestCnFdmGreeksRouting:
         assert "Lipschitz" in notes["pathwise"]
         assert notes["likelihood"]
 
-    def test_shark_fin_still_uses_the_legacy_engine(self, client) -> None:  # noqa: ANN001
-        """Not migrated, and the response says so rather than implying parity."""
+    def test_shark_fin_is_now_on_the_barrier_engine(self, client) -> None:  # noqa: ANN001
+        """Migrated, and the response says which contract it priced.
+
+        The legacy grid ran at 252 observations a year, so daily monitoring is
+        what it was actually pricing; that is preserved, but stated rather than
+        implied. The request shape cannot express a monitoring frequency, which
+        is precisely the ambiguity the migration removed -- on this case the
+        daily note is worth 43.02 against 35.17 continuous, a 22% difference
+        the old code silently conflated.
+
+        The legacy three-method Greeks are gone rather than carried forward.
+        They came from the same code whose snowball deltas were wrong in sign,
+        and were never validated for a barrier at all, so returning them
+        alongside a corrected price would lend them credibility they never had.
+        """
         response = client.post(
             "/api/cn_fdm",
             json={
@@ -664,5 +689,11 @@ class TestCnFdmGreeksRouting:
         )
         assert response.status_code == 200
         body = response.get_json()
-        assert body["pathwise"] is not None  # legacy path still returns all three
-        assert "Legacy" in body["greek_notes"]["engine"]
+
+        assert body["pathwise"] is None
+        assert "Migrated to engines/barrier.py" in body["greek_notes"]["engine"]
+        assert "252 observations a year" in body["greek_notes"]["monitoring"]
+
+        # The daily price sits above the continuous closed form, as it must.
+        assert body["price"] > body["haug_price"] > 0.0
+        assert body["price"] / body["haug_price"] == pytest.approx(1.223, rel=0.02)

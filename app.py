@@ -61,7 +61,12 @@ from otcpricer.core.exceptions import MarketDataError, OtcPricerError
 # Corrected snowball engines. The legacy cn_fdm.CN_FDM is still imported above
 # for the shark-fin path, which has not been migrated yet.
 from otcpricer.core.market import EquityMarket
-from otcpricer.core.types import KIStrikeMode
+from otcpricer.core.types import BarrierKind, KIStrikeMode, OptionType
+from otcpricer.engines.barrier import (
+    price_shark_fin_analytic,
+    price_shark_fin_mc,
+    price_shark_fin_pde,
+)
 from otcpricer.engines.european import price_european_pde
 from otcpricer.engines.fourier import price_heston_european
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
@@ -85,6 +90,7 @@ from otcpricer.models.heston_calibration import calibrate_heston
 from otcpricer.models.local_vol import local_vol_from_fitted
 from otcpricer.models.surface import fit_surface
 from otcpricer.products.irs import flat_curve, price_swap
+from otcpricer.products.shark_fin import CONTINUOUS, SharkFinTerms
 from otcpricer.products.snowball import SnowballTerms
 from otcpricer.reports.heston_report import heston_report
 from otcpricer.reports.local_vol_report import local_vol_report, round_trip
@@ -833,6 +839,16 @@ def european_local_vol():
 # ─────────────────────────────────────────────────────────
 # API: Heston Stochastic Volatility
 # ─────────────────────────────────────────────────────────
+
+#: Grid for the shark fin.
+#:
+#: Finer than the snowball default because a discretely monitored barrier
+#: converges only first order in dx -- every observation re-creates a
+#: discontinuity at the barrier, so the solution is never smooth for long.
+#: Measured on a daily down-and-out put: 1.3381, 1.3529, 1.3609, 1.3649,
+#: 1.3669 as the node count doubled, against a Monte Carlo mean of 1.3711.
+SHARK_FIN_PDE_CONFIG = PDEConfig(space_nodes=3200, steps_per_year=2016)
+
 
 #: Heston fits cost about a minute, so they are cached like the surfaces.
 _HESTON_CACHE = {}
@@ -1781,30 +1797,39 @@ def snowball_risk_crosscheck():
 @app.route("/api/shark_fin", methods=["POST"])
 def shark_fin():
     """
-    Price barrier options (Up-and-Out Call / Down-and-Out Put) analytically.
-    Uses the Rubinstein-Reiner / Haug (1998) closed-form formula.
+    Price a shark fin (single-barrier note) on the engines, not inline.
 
-    For Up-and-Out Call (UOC): η = -1, φ = 1, requires H > K
-    For Down-and-Out Put (DOP): η = +1, φ = -1, requires H < K
+    This endpoint used to evaluate the Rubinstein-Reiner formula in the route
+    body, touching no engine, while cn_fdm.py solved a truncated grid for the
+    "same" product. They were prices of *different contracts* -- continuous
+    versus discrete monitoring -- and nothing compared them. Cross-checking
+    against QuantLib found the inline formula was also wrong for **down**
+    barriers, by 1.7 to 5.5 on prices of order 1 to 8, despite a comment
+    claiming validation to 0.01%; it had only ever been checked on an
+    up-and-out call.
 
-    Correct formula: price = A - B - C + D  (with η-signed N() arguments)
+    So ``monitoring`` is now required and explicit. A daily-observed knock-out
+    is worth about 19% more than a continuously monitored one and a quarterly
+    one about 2.4 times as much, so the frequency is part of the term sheet
+    rather than a numerical setting.
+
+    Every price is returned with whatever independent values exist for it: the
+    analytic closed form when the barrier is continuous, and a Monte Carlo
+    cross-check on request.
 
     Request JSON:
-        flag    — 'c' (Up-and-Out Call) or 'p' (Down-and-Out Put)
-        S, K, T, r, sigma, q — standard BSM params
-        H       — barrier level
-        rebate  — cash rebate paid if barrier is hit (default 0)
-        spread  — bid-ask half-spread fraction (default 0.02)
+        S, K, T, r, sigma, q   - standard market inputs
+        H                      - barrier level
+        kind                   - 'uo', 'do', 'ui' or 'di'
+        monitoring             - observations a year, or 'continuous'
+        rebate                 - cash paid on a knock-out touch (default 0)
+        participation          - multiplier on the payoff (default 1)
+        flag                   - 'c' or 'p'; inferred from kind when omitted
+        cross_check            - also run the Monte Carlo (default false)
+        spread                 - bid/ask half-spread as a fraction (default 0)
     """
     try:
-        d = request.get_json(force=True)
-        flag = str(d.get("flag", "c")).lower()
-        # Normalize frontend flag values ('uo','ui','do','di') to internal 'c'/'p' convention
-        _is_in_barrier = flag in ("ui", "di")
-        if flag in ("uo", "ui"):
-            flag = "c"
-        elif flag in ("do", "di"):
-            flag = "p"
+        d = request.get_json(force=True, silent=True) or {}
         S = float(d["S"])
         K = float(d["K"])
         T = float(d["T"])
@@ -1813,113 +1838,97 @@ def shark_fin():
         q = float(d.get("q", 0.0))
         H = float(d["H"])
         rebate = float(d.get("rebate", 0.0))
-        spread = float(d.get("spread", 0.02))
+        participation = float(d.get("participation", 1.0))
+        spread = float(d.get("spread", 0.0))
+        cross_check = bool(d.get("cross_check", False))
+
+        raw_kind = str(d.get("kind", "uo")).lower()
+        if raw_kind not in ("uo", "do", "ui", "di"):
+            raise ValueError(f"kind must be one of uo/do/ui/di, got {raw_kind!r}")
+        kind = BarrierKind(raw_kind)
+
+        # The conventional pairing, so a caller need not restate it: an up
+        # barrier goes with a call, a down barrier with a put.
+        default_flag = "c" if kind.is_up else "p"
+        flag = str(d.get("flag", default_flag)).lower()
+
+        monitoring = d.get("monitoring")
+        if monitoring is None:
+            raise ValueError(
+                "monitoring is required: give observations a year (e.g. 252) or "
+                "'continuous'. A daily-observed knock-out is worth about 19% "
+                "more than a continuous one, so this is part of the contract"
+            )
+        if not (isinstance(monitoring, str) and monitoring.lower() == CONTINUOUS):
+            monitoring = int(monitoring)
+        else:
+            monitoring = CONTINUOUS
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
-    if T <= 0 or sigma <= 0:
-        return jsonify({"error": "T and sigma must be positive"}), 400
-
-    from scipy.stats import norm
-
-    # ── Haug (1998) closed-form for continuous barrier options ──────────────
-    phi = 1.0 if flag == "c" else -1.0  # +1 call, -1 put
-    eta = -1.0 if flag == "c" else 1.0  # -1 up barrier, +1 down barrier
-
-    if flag == "c" and H <= S:
-        return jsonify(
-            {"error": "For Call barrier option, barrier H must be above current spot S"}
-        ), 400
-    if flag == "p" and H >= S:
-        return jsonify(
-            {"error": "For Put barrier option, barrier H must be below current spot S"}
-        ), 400
-    if flag == "c" and H <= K:
-        return jsonify(
-            {"error": "For Call barrier option, H must be > K (otherwise always knocked out)"}
-        ), 400
-    if flag == "p" and H >= K:
-        return jsonify(
-            {"error": "For Put barrier option, H must be < K (otherwise always knocked out)"}
-        ), 400
-
     try:
-        sT = sigma * np.sqrt(T)
-        # λ = (r - q + σ²/2) / σ²
-        lam = (r - q + 0.5 * sigma**2) / sigma**2
-        # μ = λ - 1 = (r - q - σ²/2) / σ²
-        mu = lam - 1.0
+        terms = SharkFinTerms(
+            S0=S,
+            K=K,
+            T=T,
+            barrier=H,
+            kind=kind,
+            option=OptionType.parse(flag),
+            monitoring=monitoring,
+            rebate=rebate,
+            participation=participation,
+        )
+        market = EquityMarket(S=S, r=r, sigma=sigma, q=q)
+        grid = price_shark_fin_pde(terms, market, SHARK_FIN_PDE_CONFIG)
+    except (OtcPricerError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
 
-        eqT = np.exp(-q * T)
-        erT = np.exp(-r * T)
-        hS = H / S
+    payload = grid.as_dict()
+    payload["terms"] = terms.as_dict()
+    payload["bid"] = round(grid.price * (1.0 - spread), 10)
+    payload["ask"] = round(grid.price * (1.0 + spread), 10)
 
-        # BSM argument definitions (Haug 1998, p.66; validated against CN-FDM PDE)
-        x1 = np.log(S / K) / sT + lam * sT
-        x2 = np.log(S / H) / sT + lam * sT
-        y1 = np.log(H**2 / (S * K)) / sT + lam * sT
-        y2 = np.log(H / S) / sT + lam * sT
-
-        # ── Correct Haug (1998) formula using N(y), NOT N(η·y) ────────
-        # The A terms use φ·x (call vs put sign flip)
-        # The B/C/D reflection terms use y directly (barrier type encoded in formula)
-        # Reference: verified against CN-FDM PDE (error < 0.01%)
-
-        def _A_term(x):
-            """Standard BSM term: φ·[S·e^(-qT)·N(φx) - K·e^(-rT)·N(φx - φσ√T)]"""
-            return phi * S * eqT * norm.cdf(phi * x) - phi * K * erT * norm.cdf(phi * x - phi * sT)
-
-        def _B_reflection(y):
-            """Reflection term using N(y) directly (NOT N(η·y))"""
-            return phi * S * eqT * hS ** (2 * lam) * norm.cdf(y) - phi * K * erT * hS ** (
-                2 * lam - 2
-            ) * norm.cdf(y - sT)
-
-        A = _A_term(x1)  # vanilla option price
-        B = _A_term(x2)  # barrier-adjusted BSM term
-        C = _B_reflection(y1)
-        D = _B_reflection(y2)
-
-        barrier_price_out = float(A - B - C + D)
-        barrier_price = float(A - barrier_price_out) if _is_in_barrier else barrier_price_out
-
-        # Rebate present value (correct formula using N(y) convention)
-        if rebate > 0:
-            z = np.log(H / S) / sT + mu * sT
-            r1 = hS ** (mu + lam)
-            r2 = hS ** (mu - lam)
-            rebate_pv = float(
-                rebate * (r1 * norm.cdf(phi * z) + r2 * norm.cdf(phi * z - 2 * phi * lam * sT))
+    # The independent values, where they exist.
+    checks = {}
+    if terms.is_continuous and rebate == 0.0:
+        try:
+            analytic = price_shark_fin_analytic(terms, market)
+            checks["analytic"] = round(analytic, 10)
+            checks["analytic_abs_diff"] = round(abs(grid.price - analytic), 10)
+            checks["analytic_note"] = (
+                "Rubinstein-Reiner closed form, verified against QuantLib's "
+                "AnalyticBarrierEngine to 1e-12 across both barrier directions "
+                "and both knock senses."
             )
-        else:
-            rebate_pv = 0.0
+        except OtcPricerError as e:
+            checks["analytic_unavailable"] = str(e)
+    else:
+        checks["analytic_unavailable"] = (
+            "no closed form for a discretely monitored barrier; the analytic "
+            "value would be a different contract's price"
+        )
 
-        # Vanilla price for comparison
-        vanilla = float(A)
+    if cross_check:
+        simulated = price_shark_fin_mc(
+            terms,
+            market,
+            MonteCarloConfig(paths=200_000, steps_per_year=252, seed=7, antithetic=True),
+        )
+        checks["monte_carlo"] = simulated.as_dict()
+        checks["monte_carlo_z"] = (
+            round((simulated.price - grid.price) / simulated.std_error, 4)
+            if simulated.std_error > 0.0
+            else None
+        )
 
-    except Exception as e:
-        return jsonify({"error": f"Pricing error: {e}"}), 500
-
-    mid = round(max(0.0, barrier_price + rebate_pv), 6)
-    bid = round(mid * (1 - spread), 6)
-    ask = round(mid * (1 + spread), 6)
-
-    return jsonify(
-        {
-            "mid": mid,
-            "bid": bid,
-            "ask": ask,
-            "vanilla_price": round(vanilla, 6),
-            "barrier_discount": round(max(0.0, vanilla - barrier_price), 6),
-            "rebate_pv": round(rebate_pv, 6),
-            "params": {"H": H, "rebate": rebate, "flag": flag},
-        }
+    payload["cross_checks"] = checks
+    payload["note"] = (
+        "Priced on the finite-difference engine, with the barrier on a grid "
+        "node and every observation on a time step. Monitoring frequency is "
+        "part of the contract: discrete observation is worth strictly more "
+        "than continuous."
     )
-
-
-# ─────────────────────────────────────────────────────────
-# API: OTC Forward Pricing
-# ─────────────────────────────────────────────────────────
+    return jsonify(payload)
 
 
 @app.route("/api/forward", methods=["POST"])
@@ -2218,20 +2227,56 @@ def cn_fdm_price_api():
                     ),
                 },
             }
-        elif calc_g:
-            # Shark fin still runs on the legacy engine; it has not been
-            # through the review the snowball has, and its Greeks carry the
-            # same caveats they always did.
-            full_result = cn.greeks()
-            price = full_result["price"]
-            greeks_out = {
-                "resimulation_fd": full_result["resimulation_fd"],
-                "pathwise": full_result["pathwise"],
-                "likelihood": full_result["likelihood"],
-                "notes": {
-                    "engine": "Legacy cn_fdm.py -- not yet migrated or validated.",
-                },
-            }
+        elif product_type == "shark_fin":
+            # Migrated off the legacy class. The legacy grid ran at
+            # M_per_year=252, so daily observation is the contract it was
+            # actually pricing -- that is preserved here, but stated rather
+            # than implied, because a request that cannot express its own
+            # monitoring frequency is the ambiguity this migration existed to
+            # remove. On the legacy test case the daily note is worth 43.02
+            # against 35.17 continuous -- a 22% difference the old code
+            # conflated.
+            monitoring = int(d.get("monitoring", 252))
+            fin_terms = SharkFinTerms(
+                S0=S0,
+                K=K_strike,
+                T=T,
+                barrier=S0 * KO_pct,
+                kind=BarrierKind.UP_AND_OUT,
+                option=OptionType.CALL,
+                monitoring=monitoring,
+                rebate=rebate,
+            )
+            fin_market = EquityMarket(S=S0, r=r, sigma=sigma, q=q)
+            fin_result = price_shark_fin_pde(fin_terms, fin_market, SHARK_FIN_PDE_CONFIG)
+            price = fin_result.price
+            greeks_out = (
+                {
+                    # The legacy three-method output is gone. Those numbers came
+                    # from the same code whose snowball deltas were wrong in
+                    # sign; none of them was ever validated for a barrier.
+                    "resimulation_fd": None,
+                    "pathwise": None,
+                    "likelihood": None,
+                    "notes": {
+                        "engine": (
+                            "Migrated to engines/barrier.py. Greeks are not yet "
+                            "exposed for this product; the legacy three-method "
+                            "output was removed rather than carried forward, "
+                            "because it was never validated for a barrier and "
+                            "came from the code whose snowball deltas were "
+                            "wrong in sign."
+                        ),
+                        "monitoring": (
+                            f"{monitoring} observations a year, which is what the "
+                            f"legacy grid priced. Pass 'monitoring' to change it, "
+                            f"or use /api/shark_fin for the full interface."
+                        ),
+                    },
+                }
+                if calc_g
+                else {}
+            )
         else:
             price = cn.price()
             greeks_out = {}
@@ -2239,31 +2284,31 @@ def cn_fdm_price_api():
     except Exception as e:
         return jsonify({"error": f"CN-FDM solver error: {e}"}), 500
 
-    # ── Haug 解析价格（鲨鱼鳍：与 CN-FDM PDE 交叉验证）──
+    # ── Continuous-barrier closed form, as a cross-check ──
+    # Was computed inline here with the same reflection sign the old
+    # /api/shark_fin used, which is correct for an up-and-out call and wrong
+    # for a down barrier. Now delegated to the verified implementation, which
+    # agrees with QuantLib's AnalyticBarrierEngine to 1e-12 in both
+    # directions. It prices the *continuous* contract, so it sits below the
+    # daily-observed grid price rather than beside it.
     haug_price = None
     if product_type == "shark_fin":
         try:
-            from scipy.stats import norm
-
-            sT_val = sigma * np.sqrt(T)
-            lam_val = (r - q + 0.5 * sigma**2) / sigma**2
-            eqT_val = np.exp(-q * T)
-            erT_val = np.exp(-r * T)
-            hS_val = KO_pct
-            x1v = np.log(S0 / K_strike) / sT_val + lam_val * sT_val
-            x2v = np.log(S0 / (S0 * KO_pct)) / sT_val + lam_val * sT_val
-            y1v = np.log((S0 * KO_pct) ** 2 / (S0 * K_strike)) / sT_val + lam_val * sT_val
-            y2v = np.log(S0 * KO_pct / S0) / sT_val + lam_val * sT_val
-
-            def _a(x):
-                return S0 * eqT_val * norm.cdf(x) - K_strike * erT_val * norm.cdf(x - sT_val)
-
-            def _b(y):
-                return S0 * eqT_val * hS_val ** (2 * lam_val) * norm.cdf(
-                    y
-                ) - K_strike * erT_val * hS_val ** (2 * lam_val - 2) * norm.cdf(y - sT_val)
-
-            haug_price = round(float(_a(x1v) - _a(x2v) - _b(y1v) + _b(y2v)), 6)
+            continuous_terms = SharkFinTerms(
+                S0=S0,
+                K=K_strike,
+                T=T,
+                barrier=S0 * KO_pct,
+                kind=BarrierKind.UP_AND_OUT,
+                option=OptionType.CALL,
+                monitoring=CONTINUOUS,
+            )
+            haug_price = round(
+                price_shark_fin_analytic(
+                    continuous_terms, EquityMarket(S=S0, r=r, sigma=sigma, q=q)
+                ),
+                6,
+            )
         except Exception:
             haug_price = None
 
