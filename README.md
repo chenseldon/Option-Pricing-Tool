@@ -184,6 +184,43 @@ half its cells — a bias that does not shrink with the step.
 > returning 3.9e13 as a price — are in
 > [`docs/models/heston.md`](docs/models/heston.md).
 
+### 🦈 Shark Fin: Two Engines At Last
+
+The last product priced by two unconnected pieces of code that disagreed about
+what the contract **was** — an analytic formula inlined in a Flask route
+(continuous monitoring) and a legacy grid (discrete). Nothing compared them. On
+the legacy test case that is **43.02 daily against 35.17 continuous**, a 22%
+difference, so `monitoring` is now a required field with no default.
+
+Cross-validation immediately found that **the shipped analytic formula was
+wrong for down barriers**:
+
+| kind | before | QuantLib | error |
+|---|---|---|---|
+| up-and-out call | 1.12969334 | 1.12969334 | 2e-14 |
+| down-and-out put | 4.87975297 | 1.82112396 | **3.06** |
+| down-and-out put (K=110) | 6.58113901 | 1.09472507 | **5.49** |
+
+Haug's reflection terms carry `η = −1` for an up barrier and `+1` for a down
+one; the old code applied the up sign unconditionally. It had only ever been
+checked on an up-and-out call — while carrying a comment claiming validation to
+0.01%. All sixteen cases now agree to **≤3.5e-14**.
+
+Barriers also price on the fitted surface, where the smile matters more than
+anywhere else in the project, because a barrier payoff is concentrated at one
+spot level rather than averaged:
+
+| contract | flat @ ATM | local vol | difference |
+|---|---|---|---|
+| 1y up-and-out call, 110% | 0.00689 | 0.01335 | **+93.7%** |
+| 1y down-and-out put, 80% | 0.08602 | 0.05457 | **−36.6%** |
+
+> The discrete-to-continuous premium halves as the observation frequency
+> quadruples — the `1/√m` rate Broadie, Glasserman and Kou give — and two more
+> defects (solving across the barrier costing an order of convergence, and
+> Rannacher damping needing to follow *every* observation) are in
+> [`docs/models/barrier.md`](docs/models/barrier.md).
+
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
 - **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
@@ -273,6 +310,7 @@ half its cells — a bias that does not shrink with the step.
 | `/api/heston/calibrate` | POST | Fit Heston to a chain, serving the SSVI comparison as data |
 | `/api/heston/european` | POST | European option by COS under Heston |
 | `/api/heston/snowball` | POST | Snowball by QE simulation — one engine, and the response says so |
+| `/api/shark_fin` | POST | Barrier note on the engines, with explicit monitoring and its cross-checks |
 | `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
 | `/api/snowball` | POST | Snowball autocallable — path Monte Carlo |
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
