@@ -93,6 +93,38 @@ Supported underlyings: **华夏上证50ETF (510050)** and
 **华泰柏瑞沪深300ETF (510300)**. Offline snapshots are the default source, so
 nothing touches the network unless asked.
 
+### 🗄 A 725-Day Institutional Panel
+
+Pricing no longer stands on one afternoon's quotes and a hardcoded 2% rate.
+The primary underlyings are now the **CFFEX index options** (IO/HO/MO), and
+the reasons are measured:
+
+| | akshare captures | CFFEX index options |
+|---|---|---|
+| Usable expiries | 3 | **6** |
+| Longest tenor | 0.41 y | **1.008 y** |
+| Adjusted contracts | 1,812 of 11,372 | **0** |
+| Parity residual | 0.08–0.69% | **0.02–0.08%** |
+| Matching index future | none | **IF / IH / IM** |
+
+Fit quality is now a **distribution over 2,070 fits**, not a single number —
+IO median **0.476** vol points, HO 0.565, MO 0.588, against the captures'
+0.587 and 0.654, on roughly three times the points. All 2,070 converged and
+all 2,070 are arbitrage-free.
+
+Two defects the data caught, both of which would have passed silently:
+
+- **97,884 rows carry zero volume and a non-zero close.** `has_traded` asks
+  whether the last price is positive, so every untraded contract would have
+  read as a live quote — and they are not stale marks (only 2.7% match the
+  prior day; median daily move 3.25%). CFFEX marks untraded strikes
+  *theoretically*; fitting those fits the exchange's own interpolation.
+- **The settlement beats the close by 5.7×** on parity residuals, winning 12
+  of 12 slices, because a settlement is synchronous by construction.
+
+> Details, including the futures forward check and the two findings only a
+> panel could produce, are in [`docs/data/wind_panel.md`](docs/data/wind_panel.md).
+
 ### 🌡 Dupire Local Volatility
 
 Turns the fitted surface into a pricing volatility, so a structured product is
@@ -203,6 +235,7 @@ Both the formula and that identity are verified symbolically.
 | `/api/local_vol/surface` | POST | Dupire local volatility on a (spot, time) grid, with implied vol alongside |
 | `/api/local_vol/validate` | POST | The Dupire round trip — the correctness evidence, with a pass/fail verdict |
 | `/api/european` | POST | European option priced on the local volatility (skew-consistent) |
+| `/api/irs` | POST | Interest rate swap on a discount curve, with a DV01 that survives bump-and-reprice |
 | `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
 | `/api/snowball` | POST | Snowball autocallable — path Monte Carlo |
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
@@ -631,12 +664,24 @@ closed-form and PDE prices have not been cross-checked the way the snowball's
 now are, so giving it Greeks before its prices are validated would be the wrong
 order of work.
 
-**86.5% of a three-year horizon is extrapolated.** The chains stop at 0.41
-years, so most of a snowball's life rests on the variance term structure's
-linear extension rather than on quotes. No amount of grid refinement touches
-it, and it is the largest single assumption behind any long-dated number —
-larger than everything else in the validation section combined. Reported as
-`extrapolated_fraction` and led with in the local-volatility report.
+**66% of a three-year horizon is extrapolated.** Improved from 86.5% by the
+move to index options reaching 1.008 years, but not solved — it remains the
+largest single assumption behind any long-dated number.
+
+**SSVI's `gamma` sits at its upper bound on 46% of fits.** The power law makes
+the short-maturity wing diverge like `t^(-gamma/2)`, so on nearly half the
+725-day panel that divergence rate is set by the bound rather than by the
+quotes. Invisible on a single date, and it bears directly on local volatility.
+
+**A government curve is not a funding curve.** An OTC desk discounts above the
+CGB yield, and the futures check *cannot* measure the spread: the rate moves
+the parity forward by under 0.05% per 100bp against gaps of 0.08–0.46%, so no
+plausible rate explains them. No spread is invented in its place.
+
+The akshare captures still carry the old 86.5%, since they stop at 0.41 years;
+that is the figure the Phase 2b numbers below were measured against. Either way
+the share is reported as `extrapolated_fraction` and led with in the
+local-volatility report, because no amount of grid refinement touches it.
 
 **Flat volatility remains the default pricing basis.** Local volatility is
 opt-in, so the validated Phase 1/1.5 numbers keep working as regression anchors
