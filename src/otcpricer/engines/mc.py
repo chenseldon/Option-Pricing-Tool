@@ -36,11 +36,14 @@ from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.validation import check_positive
 from otcpricer.core.vol import LocalVolatility
+from otcpricer.models.heston import HestonParams
 from otcpricer.products.snowball import SnowballTerms
 
 __all__ = [
+    "QE_PSI_CRITICAL",
     "MonteCarloConfig",
     "SnowballMCResult",
+    "heston_variance_paths",
     "normal_draws",
     "price_snowball_mc",
     "simulate_log_paths",
@@ -201,6 +204,216 @@ def _simulate_local_vol(
     return log_paths
 
 
+#: Andersen's switching threshold between the two variance branches.
+#:
+#: 1.5 is his recommendation and it is not a tuning knob: below it the
+#: quadratic branch matches the first two moments of the non-central chi-square
+#: well, above it the distribution is too skewed and the exponential branch
+#: takes over. Measured here, moving it to 1.0 or 2.0 changes a one-year
+#: European price by less than one standard error, which is the evidence that
+#: the switch is in the right place rather than merely conventional.
+QE_PSI_CRITICAL = 1.5
+
+
+@dataclass(frozen=True, slots=True)
+class _QeStepConstants:
+    """Per-step constants for the QE variance recursion.
+
+    Depend only on ``dt`` and the parameters, so they are computed once.
+    """
+
+    decay: float
+    var_a: float
+    var_b: float
+    theta: float
+
+    @classmethod
+    def build(cls, params: HestonParams, dt: float) -> _QeStepConstants:
+        decay = float(np.exp(-params.kappa * dt))
+        sigma_sq = params.sigma * params.sigma
+        return cls(
+            decay=decay,
+            var_a=sigma_sq * decay * (1.0 - decay) / params.kappa,
+            var_b=params.theta * sigma_sq * (1.0 - decay) ** 2 / (2.0 * params.kappa),
+            theta=params.theta,
+        )
+
+
+def _qe_variance_step(
+    variance: np.ndarray,
+    constants: _QeStepConstants,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """One QE step of the variance, the single implementation of the scheme.
+
+    Shared by :func:`_simulate_heston_qe` and :func:`heston_variance_paths` so
+    the diagnostic cannot drift away from the pricer. The exact conditional
+    moments are matched and then sampled from, rather than the SDE being
+    discretised:
+
+        ``m  = theta + (v - theta) e^{-kappa dt}``
+        ``s2 = v * var_a + var_b``
+
+    and ``psi = s2 / m^2`` selects the branch. Below
+    :data:`QE_PSI_CRITICAL` the draw is ``a(b + Z)^2`` -- non-central
+    chi-square shaped and non-negative by construction. Above it, an
+    exponential with an **atom at zero**, which is what lets the scheme
+    represent a variance that genuinely reaches zero rather than truncating a
+    negative Euler step.
+    """
+    mean = constants.theta + (variance - constants.theta) * constants.decay
+    var = variance * constants.var_a + constants.var_b
+    psi = np.where(mean > 0.0, var / np.maximum(mean * mean, 1e-300), np.inf)
+
+    quadratic = psi <= QE_PSI_CRITICAL
+
+    inv_psi = 2.0 / np.where(quadratic, psi, 1.0)
+    b_squared = np.maximum(inv_psi - 1.0 + np.sqrt(inv_psi * np.maximum(inv_psi - 1.0, 0.0)), 0.0)
+    a_coef = mean / (1.0 + b_squared)
+    z_var = rng.standard_normal(variance.size)
+    quadratic_draw = a_coef * (np.sqrt(b_squared) + z_var) ** 2
+
+    safe_psi = np.where(quadratic, 2.0, psi)
+    prob_zero = (safe_psi - 1.0) / (safe_psi + 1.0)
+    beta = np.where(mean > 0.0, (1.0 - prob_zero) / np.maximum(mean, 1e-300), 0.0)
+    uniform = rng.random(variance.size)
+    exponential_draw = np.where(
+        uniform <= prob_zero,
+        0.0,
+        np.log(np.maximum((1.0 - prob_zero) / np.maximum(1.0 - uniform, 1e-300), 1.0))
+        / np.maximum(beta, 1e-300),
+    )
+
+    stepped: np.ndarray = np.maximum(np.where(quadratic, quadratic_draw, exponential_draw), 0.0)
+    return stepped
+
+
+def heston_variance_paths(
+    params: HestonParams,
+    T: float,
+    config: MonteCarloConfig,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Variance paths alone, for diagnostics.
+
+    The variance is not recoverable from the spot paths -- the log-spot step
+    mixes ``v_t`` and ``v_{t+dt}`` and adds a deterministic drift, so a zero
+    variance does not freeze the return. Anything that needs to *see* the zero
+    atom, including the test that it exists at all, has to look here.
+
+    Returns:
+        ``(times, variance)`` with ``variance`` shaped ``(steps + 1, paths)``.
+    """
+    check_positive(T, "T")
+    n_steps = max(int(round(T * config.steps_per_year)), 1)
+    dt = T / n_steps
+    constants = _QeStepConstants.build(params, dt)
+    rng = np.random.default_rng(config.seed)
+
+    variance = np.empty((n_steps + 1, config.paths), dtype=float)
+    variance[0, :] = params.v0
+    for step in range(n_steps):
+        variance[step + 1, :] = _qe_variance_step(variance[step, :], constants, rng)
+
+    return np.arange(n_steps + 1, dtype=float) * dt, variance
+
+
+def _simulate_heston_qe(
+    market: EquityMarket,
+    params: HestonParams,
+    dt: float,
+    n_steps: int,
+    n_paths: int,
+    seed: int,
+    antithetic: bool,
+) -> np.ndarray:
+    """Andersen's Quadratic Exponential scheme for Heston.
+
+    Why not Euler
+    -------------
+    The variance follows a CIR process, and when Feller is violated it can
+    reach zero. An Euler step then goes *negative*, and ``sqrt(v)`` is not
+    defined there. The usual patches -- truncate at zero, or reflect -- both
+    introduce a bias that does not vanish as the step shrinks, because the
+    event they are patching is not a discretisation artefact.
+
+    This matters here specifically rather than in general: the parameters
+    calibrated to this project's own data violate Feller on both underlyings
+    (margins -3.36 and -1.52). So QE is a requirement, not a refinement.
+
+    How it works
+    ------------
+    QE matches the *exact* conditional moments of the variance and samples from
+    a distribution with those moments, rather than discretising the SDE. Over a
+    step, given ``v``:
+
+        ``m  = theta + (v - theta) e^{-kappa dt}``
+        ``s2 = v sigma^2 e^{-kappa dt}(1 - e^{-kappa dt})/kappa``
+        ``     + theta sigma^2 (1 - e^{-kappa dt})^2 / (2 kappa)``
+
+    and ``psi = s2 / m^2`` decides the branch. For small ``psi`` the variance
+    is sampled as ``a(b + Z)^2`` -- non-central chi-square shaped, and
+    non-negative by construction. For large ``psi`` it is sampled from an
+    exponential with an atom at zero, which is what lets the scheme represent
+    a variance that genuinely touches zero instead of pretending it cannot.
+
+    The log-spot uses Andersen's central ``(gamma1 = gamma2 = 1/2)``
+    discretisation, which carries the correlation through the ``K1 v_t +
+    K2 v_{t+dt}`` terms rather than through a correlated normal. The remaining
+    normal is therefore *independent* of the variance innovation -- getting
+    that wrong by correlating them as well would double-count rho.
+
+    Returns:
+        Log-spot paths shaped ``(n_steps + 1, n_paths)``.
+    """
+    rng = np.random.default_rng(seed)
+    kappa, theta, sigma, rho = params.kappa, params.theta, params.sigma, params.rho
+    constants = _QeStepConstants.build(params, dt)
+
+    # Andersen's log-spot coefficients, central scheme.
+    gamma1 = gamma2 = 0.5
+    k0 = -rho * kappa * theta * dt / sigma
+    k1 = gamma1 * dt * (kappa * rho / sigma - 0.5) - rho / sigma
+    k2 = gamma2 * dt * (kappa * rho / sigma - 0.5) + rho / sigma
+    k3 = gamma1 * dt * (1.0 - rho * rho)
+    k4 = gamma2 * dt * (1.0 - rho * rho)
+
+    def normals(size: int) -> np.ndarray:
+        """Antithetic in the spot driver, which is where the variance lives."""
+        if not antithetic:
+            return rng.standard_normal(size)
+        half = size // 2
+        base = rng.standard_normal(half)
+        out: np.ndarray = np.concatenate([base, -base])
+        if out.size < size:
+            out = np.concatenate([out, rng.standard_normal(size - out.size)])
+        return out
+
+    log_paths = np.empty((n_steps + 1, n_paths), dtype=float)
+    log_paths[0, :] = np.log(market.S)
+
+    variance = np.full(n_paths, params.v0, dtype=float)
+    log_spot = np.full(n_paths, float(np.log(market.S)), dtype=float)
+
+    for step in range(n_steps):
+        next_variance = _qe_variance_step(variance, constants, rng)
+
+        # --- the log-spot step, with an independent normal
+        diffusion = np.sqrt(np.maximum(k3 * variance + k4 * next_variance, 0.0))
+        log_spot = (
+            log_spot
+            + market.drift * dt
+            + k0
+            + k1 * variance
+            + k2 * next_variance
+            + diffusion * normals(n_paths)
+        )
+
+        variance = next_variance
+        log_paths[step + 1, :] = log_spot
+
+    return log_paths
+
+
 def simulate_log_paths(
     market: EquityMarket,
     T: float,
@@ -208,8 +421,9 @@ def simulate_log_paths(
     *,
     draws: np.ndarray | None = None,
     local_vol: LocalVolatility | None = None,
+    heston: HestonParams | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Simulate geometric Brownian motion paths under the risk-neutral measure.
+    """Simulate paths under the risk-neutral measure.
 
     Integrates in log space, which is exact for GBM over any step size (no
     discretisation bias) and avoids the negative paths an Euler scheme on ``S``
@@ -228,6 +442,10 @@ def simulate_log_paths(
             exact closed-form path runs unchanged. When supplied,
             ``market.sigma`` is not read and the scheme is no longer exact --
             see :func:`_simulate_local_vol`.
+        heston: Heston parameters, simulated by Andersen's QE scheme. Mutually
+            exclusive with ``local_vol``: they are different models, not
+            different settings, and silently preferring one would make a
+            caller's mistake invisible. ``market.sigma`` is not read.
 
     Returns:
         ``(times, paths)`` where ``times`` has length ``steps + 1`` starting at
@@ -237,12 +455,28 @@ def simulate_log_paths(
     n_steps = max(int(round(T * config.steps_per_year)), 1)
     dt = T / n_steps
 
+    if heston is not None and local_vol is not None:
+        raise ValueError(
+            "pass either heston or local_vol, not both: they are different "
+            "models rather than different settings"
+        )
+
     if draws is None:
         draws = normal_draws(n_steps, config.paths, config.seed, config.antithetic)
     elif draws.shape != (n_steps, config.paths):
         raise ValueError(f"draws must have shape {(n_steps, config.paths)}, got {draws.shape}")
 
-    if local_vol is not None:
+    if heston is not None:
+        log_paths = _simulate_heston_qe(
+            market,
+            heston,
+            dt,
+            n_steps,
+            config.paths,
+            config.seed,
+            config.antithetic,
+        )
+    elif local_vol is not None:
         log_paths = _simulate_local_vol(market, local_vol, dt, n_steps, draws)
     else:
         drift_step = (market.drift - 0.5 * market.sigma**2) * dt
