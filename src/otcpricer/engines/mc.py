@@ -114,6 +114,10 @@ class SnowballMCResult:
             years; ``nan`` if no path knocks out. Exposed because it is what
             makes the discounting fix visible.
         paths: Paths simulated.
+        vol_model: What produced the number -- ``"flat"``, ``"dupire-local"``
+            or ``"heston-qe"``. Carried because the three are not
+            interchangeable and the response would otherwise look identical
+            whichever ran.
     """
 
     price: float
@@ -124,10 +128,23 @@ class SnowballMCResult:
     ki_no_ko_prob: float
     expected_ko_time: float
     paths: int
+    vol_model: str = "flat"
 
-    def as_dict(self) -> dict[str, float | int]:
+    @property
+    def cross_checked_by_a_second_engine(self) -> bool:
+        """Whether an independent engine can confirm this price.
+
+        False for Heston, and the one place in this project where that is so.
+        The flat and local-volatility paths both have a Crank-Nicolson partner;
+        Heston's would be a two-dimensional PDE with a cross-derivative and an
+        ADI solver, which is not built. Surfaced as a field rather than left in
+        a docstring, so a caller reading the JSON sees it.
+        """
+        return self.vol_model != "heston-qe"
+
+    def as_dict(self) -> dict[str, object]:
         """Flat dict for API responses."""
-        return {
+        payload: dict[str, object] = {
             "price": round(self.price, 8),
             "std_error": round(self.std_error, 8),
             "ci95": round(self.ci95, 8),
@@ -136,7 +153,19 @@ class SnowballMCResult:
             "ki_no_ko_prob": round(self.ki_no_ko_prob, 6),
             "expected_ko_time": round(self.expected_ko_time, 6),
             "paths": self.paths,
+            "vol_model": self.vol_model,
+            "cross_checked_by_a_second_engine": self.cross_checked_by_a_second_engine,
         }
+        if not self.cross_checked_by_a_second_engine:
+            payload["single_engine_note"] = (
+                "This price has no independent second engine. QE is verified "
+                "against the COS European prices, so the simulation is "
+                "consistent with the model, but the step to a path-dependent "
+                "payoff is not separately confirmed. Do not read it as "
+                "carrying the same weight as the flat or local-volatility "
+                "snowball numbers."
+            )
+        return payload
 
 
 def normal_draws(n_steps: int, n_paths: int, seed: int, antithetic: bool) -> np.ndarray:
@@ -566,6 +595,7 @@ def price_snowball_mc(
     *,
     draws: np.ndarray | None = None,
     local_vol: LocalVolatility | None = None,
+    heston: HestonParams | None = None,
 ) -> SnowballMCResult:
     """Value a snowball note by path Monte Carlo.
 
@@ -597,12 +627,32 @@ def price_snowball_mc(
             engine is unchanged and unbiased for the diffusion; when supplied,
             ``steps_per_year`` becomes an accuracy parameter rather than only a
             scheduling one.
+        heston: Heston parameters, simulated by Andersen's QE scheme. Mutually
+            exclusive with ``local_vol``.
+
+            **This path has one engine, and that is a departure worth stating.**
+            Every other number this project reports is cross-checked by a second
+            independent engine -- the snowball's PDE against its Monte Carlo,
+            the local-volatility surface against its Dupire round trip, the COS
+            European prices against QuantLib. A Heston snowball has no such
+            partner: the second engine would be a two-dimensional PDE with a
+            cross-derivative term and an ADI solver, which is not built here.
+            What *is* checked is the layer below -- QE reproduces the COS
+            European prices, so the simulation is known to be consistent with
+            the model. The step from there to a path-dependent payoff is not
+            independently verified, and a Heston snowball should not be read as
+            carrying the same weight as the flat or local-volatility one.
 
     Returns:
         A :class:`SnowballMCResult` with the price, its Monte Carlo error, and
         the knock-out/knock-in statistics a desk quotes alongside it.
     """
     config = config or MonteCarloConfig()
+    if heston is not None and local_vol is not None:
+        raise ValueError(
+            "pass either heston or local_vol, not both: they are different "
+            "models rather than different settings"
+        )
     n_steps = max(int(round(terms.T * config.steps_per_year)), 1)
 
     batch_size = config.paths if draws is not None else config.batch_paths(n_steps)
@@ -638,7 +688,7 @@ def price_snowball_mc(
             memory_budget_mb=config.memory_budget_mb,
         )
         times, paths = simulate_log_paths(
-            market, terms.T, batch_config, draws=draws, local_vol=local_vol
+            market, terms.T, batch_config, draws=draws, local_vol=local_vol, heston=heston
         )
 
         if batch == 0:
@@ -693,6 +743,13 @@ def price_snowball_mc(
         ki_no_ko_prob=ki_survived_count / n_done,
         expected_ko_time=(ko_time_sum / ko_count) if ko_count else float("nan"),
         paths=n_done,
+        vol_model=(
+            "heston-qe"
+            if heston is not None
+            else "dupire-local"
+            if local_vol is not None
+            else "flat"
+        ),
     )
     _log.debug(
         "snowball MC priced",

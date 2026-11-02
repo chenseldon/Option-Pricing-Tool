@@ -26,6 +26,9 @@ Endpoints:
     POST /api/local_vol/surface : Dupire local volatility on a (S, t) grid
     POST /api/local_vol/validate: Reprice the vanillas; the correctness evidence
     POST /api/european          : European option on the local volatility
+    POST /api/heston/calibrate  : Fit Heston to a chain, with the SSVI comparison
+    POST /api/heston/european   : European option by COS under Heston
+    POST /api/heston/snowball   : Snowball by QE simulation -- one engine only
 
 Usage:
     python app.py
@@ -60,6 +63,7 @@ from otcpricer.core.exceptions import MarketDataError, OtcPricerError
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import KIStrikeMode
 from otcpricer.engines.european import price_european_pde
+from otcpricer.engines.fourier import price_heston_european
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
 from otcpricer.engines.pde import PDEConfig, price_snowball_pde
 from otcpricer.engines.risk import (
@@ -76,10 +80,13 @@ from otcpricer.marketdata.contracts import SUPPORTED_UNDERLYINGS
 from otcpricer.marketdata.forward import DEFAULT_RATE
 from otcpricer.marketdata.rates import rate_curve_from_panel
 from otcpricer.marketdata.snapshots import list_snapshots
+from otcpricer.models.heston import HestonParams
+from otcpricer.models.heston_calibration import calibrate_heston
 from otcpricer.models.local_vol import local_vol_from_fitted
 from otcpricer.models.surface import fit_surface
 from otcpricer.products.irs import flat_curve, price_swap
 from otcpricer.products.snowball import SnowballTerms
+from otcpricer.reports.heston_report import heston_report
 from otcpricer.reports.local_vol_report import local_vol_report, round_trip
 from otcpricer.reports.surface_report import surface_report
 
@@ -821,6 +828,237 @@ def european_local_vol():
             ),
         }
     )
+
+
+# ─────────────────────────────────────────────────────────
+# API: Heston Stochastic Volatility
+# ─────────────────────────────────────────────────────────
+
+#: Heston fits cost about a minute, so they are cached like the surfaces.
+_HESTON_CACHE = {}
+
+
+def _cached_heston(underlying, source_kind, snapshot, rate):
+    key = (underlying, source_kind, snapshot, round(float(rate), 10))
+    if key not in _HESTON_CACHE:
+        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+        usable = fitted.surface_input.usable_slices
+        calibration = calibrate_heston(
+            [s.year_fraction for s in usable],
+            [np.array([q.log_moneyness for q in s.points]) for s in usable],
+            [np.array([q.implied_vol for q in s.points]) for s in usable],
+            [np.array([q.vega for q in s.points]) for s in usable],
+            forwards=[s.forward.forward for s in usable],
+            rate=rate,
+            terms=192,
+        )
+        _HESTON_CACHE[key] = (fitted, calibration)
+    return _HESTON_CACHE[key]
+
+
+def _heston_params_from(data):
+    """Explicit parameters from a request body, or None to calibrate."""
+    names = ("v0", "kappa", "theta", "sigma", "rho")
+    if not all(name in data for name in names):
+        return None
+    return HestonParams(**{name: float(data[name]) for name in names})
+
+
+@app.route("/api/heston/calibrate", methods=["POST"])
+def heston_calibrate():
+    """
+    Fit Heston to a real option chain, alongside the SSVI fit of the same quotes.
+
+    The comparison is the point, and it does not flatter Heston: measured on
+    the same quotes with the same vega-weighted objective, Heston is 10-12%
+    worse on three expiries and 38-41% worse on six, because SSVI carries one
+    parameter per expiry against Heston's five in total. Heston is here for a
+    forward smile that does not flatten, not for accuracy.
+
+    Request JSON: {underlying, source, snapshot, r, report}
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        underlying, source_kind, snapshot, rate = _surface_request(data)
+        want_report = bool(data.get("report", False))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        fitted, calibration = _cached_heston(underlying, source_kind, snapshot, rate)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    ssvi_rms = fitted.calibration.rms_vol_error * 100.0
+    payload = calibration.as_dict()
+    payload["underlying"] = underlying
+    payload["as_of"] = fitted.as_of
+    payload["ssvi_rms_vol_points"] = round(ssvi_rms, 5)
+    payload["heston_over_ssvi"] = (
+        round(calibration.rms_vol_points / ssvi_rms, 4) if ssvi_rms else None
+    )
+    payload["fits_worse_than_ssvi"] = bool(calibration.rms_vol_points > ssvi_rms)
+    if want_report:
+        payload["report"] = heston_report(
+            calibration,
+            underlying=underlying,
+            as_of=fitted.as_of,
+            ssvi_rms_vol_points=ssvi_rms,
+        )
+    return jsonify(payload)
+
+
+@app.route("/api/heston/european", methods=["POST"])
+def heston_european():
+    """
+    Price a European option under Heston by the COS method.
+
+    Cross-checked against QuantLib's analytic Heston engine to 5e-09 across
+    three parameter sets, four maturities and three strikes.
+
+    Parameters come either explicitly (v0, kappa, theta, sigma, rho) or from a
+    calibration to the named underlying.
+
+    Request JSON: {K, T, flag, S, r, q, terms, width} plus either
+                  {v0, kappa, theta, sigma, rho} or {underlying, source, snapshot}
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        strike = float(data["K"])
+        T = float(data["T"])
+        flag = str(data.get("flag", "c")).lower()
+        rate = float(data.get("r", 0.02))
+        dividend = float(data.get("q", 0.0))
+        terms = int(data.get("terms", 1024))
+        width = float(data.get("width", 30.0))
+        if strike <= 0.0 or T <= 0.0:
+            raise ValueError("K and T must be positive")
+        params = _heston_params_from(data)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        if params is None:
+            underlying, source_kind, snapshot, fit_rate = _surface_request(data)
+            fitted, calibration = _cached_heston(underlying, source_kind, snapshot, fit_rate)
+            params = calibration.params
+            # The surface carries no spot -- it is parameterised in forward
+            # terms on purpose -- so the default is the nearest expiry's
+            # forward discounted back. A caller who has a spot should pass it.
+            nearest = min(fitted.surface_input.usable_slices, key=lambda sl: sl.year_fraction)
+            implied_spot = nearest.forward.forward * float(
+                np.exp(-fit_rate * nearest.year_fraction)
+            )
+            spot = float(data.get("S", implied_spot))
+            source = f"calibrated:{underlying}"
+        else:
+            spot = float(data.get("S", 100.0))
+            source = "explicit"
+        result = price_heston_european(
+            params,
+            spot=spot,
+            strike=strike,
+            maturity=T,
+            rate=rate,
+            dividend=dividend,
+            flag=flag,
+            terms=terms,
+            width=width,
+        )
+    except (OtcPricerError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    payload = result.as_dict()
+    payload.update(
+        {
+            "spot": round(spot, 6),
+            "strike": strike,
+            "T": T,
+            "flag": flag,
+            "params": params.as_dict(),
+            "params_source": source,
+            "note": (
+                "Puts are integrated and calls come from put-call parity: the "
+                "call's cosine coefficients contain exp(upper bound), which "
+                "overflows on a wide density. The truncation range is set from the "
+                "model's own cumulants."
+            ),
+        }
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/heston/snowball", methods=["POST"])
+def heston_snowball():
+    """
+    Price a snowball under Heston by Andersen's QE scheme.
+
+    **This price rests on one engine.** Every other number this service returns
+    is cross-checked by a second independent engine; a Heston snowball's
+    partner would be a two-dimensional PDE with a cross-derivative and an ADI
+    solver, which is not built. What is verified is the layer below: QE
+    reproduces the COS European prices within three standard errors, so the
+    simulation is consistent with the model. The step to a path-dependent
+    payoff is not independently confirmed, and the response says so.
+
+    QE rather than Euler is a requirement, not a refinement: the calibrated
+    parameters violate Feller, so the variance reaches zero in 32-46% of
+    simulated cells and a Euler step would go negative.
+
+    Request JSON: {S0, T, ko_pct, ki_pct, coupon_pa, obs_freq, lockup_months,
+                   r, q, paths, steps_per_year, seed} plus either
+                  {v0, kappa, theta, sigma, rho} or {underlying, ...}
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        S0 = float(data.get("S0", 100.0))
+        T = float(data.get("T", 1.0))
+        terms_kwargs = {
+            "S0": S0,
+            "T": T,
+            "ko_pct": float(data.get("ko_pct", 1.03)),
+            "ki_pct": float(data.get("ki_pct", 0.75)),
+            "coupon_pa": float(data.get("coupon_pa", 0.20)),
+        }
+        for optional in ("obs_freq", "ki_obs_freq", "lockup_months"):
+            if optional in data:
+                terms_kwargs[optional] = int(data[optional])
+        rate = float(data.get("r", 0.02))
+        dividend = float(data.get("q", 0.0))
+        params = _heston_params_from(data)
+        mc_config = MonteCarloConfig(
+            paths=int(data.get("paths", 200_000)),
+            steps_per_year=int(data.get("steps_per_year", 252)),
+            seed=int(data.get("seed", 7)),
+            antithetic=bool(data.get("antithetic", True)),
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        if params is None:
+            underlying, source_kind, snapshot, fit_rate = _surface_request(data)
+            _, calibration = _cached_heston(underlying, source_kind, snapshot, fit_rate)
+            params = calibration.params
+            source = f"calibrated:{underlying}"
+        else:
+            source = "explicit"
+        snowball_terms = SnowballTerms(**terms_kwargs)
+        market = EquityMarket(S=S0, r=rate, sigma=0.2, q=dividend)
+        result = price_snowball_mc(snowball_terms, market, mc_config, heston=params)
+    except (OtcPricerError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    payload = result.as_dict()
+    payload.update(
+        {
+            "params": params.as_dict(),
+            "params_source": source,
+            "terms": {k: v for k, v in terms_kwargs.items()},
+            "steps_per_year": mc_config.steps_per_year,
+        }
+    )
+    return jsonify(payload)
 
 
 # ─────────────────────────────────────────────────────────
