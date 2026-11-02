@@ -113,13 +113,17 @@ class TestAgainstThePanel:
                 out[(day, root)] = check_forwards(chain, futures, rate_curve=curve)
         return out
 
-    def test_the_rate_explains_no_gap_anywhere(self, reports) -> None:  # type: ignore[no-untyped-def]
+    def test_the_rate_explains_no_gap_on_these_dates(self, reports) -> None:  # type: ignore[no-untyped-def]
         """The central finding, and the reason the government curve stays an input.
 
-        Closing the measured gaps with the rate would take 757 to 35,699 basis
-        points. Phase 2a found that options alone cannot identify the rate;
-        this extends that to options plus futures, because the rate's leverage
-        on the parity forward is an order of magnitude below the gap.
+        Closing these gaps with the rate would take 757 to 35,699 basis points.
+        Phase 2a found that options alone cannot identify the rate; this
+        extends that to options plus futures, because the rate's leverage on
+        the parity forward is an order of magnitude below the gap.
+
+        Scoped to these two dates on purpose. Over the full 725-day sweep the
+        rate is excluded on 87.6% of fitted rows, not all of them -- see
+        tests/test_wind_anchor.py, which asserts the panel-wide proportion.
         """
         for key, report in reports.items():
             assert not report.rate_explains_any_gap, key

@@ -38,6 +38,11 @@ expiries the leverage has the *opposite sign* to the gap, so no rate closes
 them at all. Solving for the reconciling rate numerically returns -44.9%,
 -25.8%, +40.1% or no root in ±50%.
 
+Across the whole 725-day sweep, a plausible (sub-200 bp) rate error accounts
+for at least one expiry's gap on only **12.4% of fitted rows**, and those are
+the rows with the smallest gaps. The conclusion is therefore stated as a strong
+majority rather than an absolute.
+
 The reason is structural. With ``D`` fixed, parity gives
 ``F = mean[(C - P)/D + K]``, so ``dF/dr = T * mean(C - P)/D``. Near the money
 ``mean(C - P)`` is small, and its *sign* depends on whether the traded strikes
@@ -166,8 +171,14 @@ class ForwardCheck:
         """Whether a plausible rate error could account for this gap.
 
         "Plausible" is 200 bp, which is already wider than the panel's entire
-        1-year yield range. On the measured dates this is false everywhere,
-        which is the point.
+        1-year yield range.
+
+        Across the full 725-day sweep this is false on **87.6%** of fitted
+        rows (257 of 2,070 have at least one expiry a plausible rate could
+        account for). So the rate is not categorically excluded on every
+        single date -- it is excluded on the large majority, and the dates
+        where it is not are the ones with the smallest gaps, where there is
+        least to explain.
         """
         needed = self.rate_change_to_close
         return bool(np.isfinite(needed) and abs(needed) <= 0.02)
@@ -270,9 +281,11 @@ class ForwardCheckReport:
     def rate_explains_any_gap(self) -> bool:
         """Whether a plausible rate error accounts for *any* expiry's gap.
 
-        False on all measured dates. Reported because it is the conclusion that
-        keeps the government curve an input rather than something this check
-        quietly tunes.
+        False on 87.6% of the 2,070 fitted rows in the panel sweep. Reported
+        because it is the conclusion that keeps the government curve an input
+        rather than something this check quietly tunes -- and reported as a
+        proportion rather than an absolute, because 12.4% of rows do admit a
+        plausible rate explanation and claiming otherwise would overstate it.
         """
         return any(c.rate_can_explain_the_gap for c in self.checks)
 

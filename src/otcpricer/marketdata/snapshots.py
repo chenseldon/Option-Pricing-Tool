@@ -95,6 +95,12 @@ def load_snapshot(
         underlying_code: Exchange ticker.
         name: Snapshot name; defaults to the most recent available.
 
+    The returned ``source`` is ``snapshot:<name>:<origin>``, carrying both the
+    replay layer and the feed the capture came from. The origin matters because
+    it encodes the price convention: a Wind chain is built from settlement
+    prices and an akshare one from last trades, and those are not
+    interchangeable.
+
     Raises:
         MarketDataError: if nothing is stored for this underlying, the named
             snapshot is missing, or the file was written by a different format
@@ -136,11 +142,20 @@ def load_snapshot(
         for raw_slice in payload["slices"]
     ]
 
+    # Two facts, both worth keeping: that this is a replay, and what it is a
+    # replay *of*. The origin was always written to the file and always thrown
+    # away on load, which quietly lost the price convention -- a Wind chain
+    # replayed as "snapshot:2024-08-27" no longer says it was built from
+    # settlement prices. Appended rather than substituted so the existing
+    # "snapshot:" prefix still identifies the replay layer.
+    origin = str(payload.get("source", "") or "").strip()
+    source = f"snapshot:{name}" if not origin else f"snapshot:{name}:{origin}"
+
     return OptionChain(
         underlying=underlying,
         as_of=as_of,
         slices=tuple(sorted(slices, key=lambda s: s.expiry)),
-        source=f"snapshot:{name}",
+        source=source,
         warnings=tuple(payload.get("warnings", ())),
     )
 

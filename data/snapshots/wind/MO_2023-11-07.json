@@ -1,0 +1,1261 @@
+{
+  "format_version": 1,
+  "underlying": "MO",
+  "underlying_name": "中证1000股指期权",
+  "as_of": "2023-11-07",
+  "captured_at": "2026-11-02T23:57:20",
+  "source": "wind:2023-11-07:settle",
+  "warnings": [
+    "rejections: 0 of 202 raw rows ({'raw_rows': 202, 'no_static_record': 0, 'adjusted_contract': 0, 'non_positive_price': 0, 'expired': 0, 'total_rejected': 0})"
+  ],
+  "slices": [
+    {
+      "expiry": "2023-11-17",
+      "days_to_expiry": 10,
+      "quotes": [
+        {
+          "code": "MO2311-C-5000.CFE",
+          "last": 0.0,
+          "previous_settlement": 1083.4,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2311-C-5100.CFE",
+          "last": 1006.8,
+          "previous_settlement": 983.6,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2311-C-5200.CFE",
+          "last": 906.8,
+          "previous_settlement": 876.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2311-C-5300.CFE",
+          "last": 806.8,
+          "previous_settlement": 776.0,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2311-C-5400.CFE",
+          "last": 0.0,
+          "previous_settlement": 684.6,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2311-C-5500.CFE",
+          "last": 607.2,
+          "previous_settlement": 576.4,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2311-C-5600.CFE",
+          "last": 507.6,
+          "previous_settlement": 477.0,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2311-C-5700.CFE",
+          "last": 408.4,
+          "previous_settlement": 386.8,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2311-C-5800.CFE",
+          "last": 311.0,
+          "previous_settlement": 288.4,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2311-C-5900.CFE",
+          "last": 217.8,
+          "previous_settlement": 194.8,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2311-C-6000.CFE",
+          "last": 121.8,
+          "previous_settlement": 120.6,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2311-C-6100.CFE",
+          "last": 62.2,
+          "previous_settlement": 64.4,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2311-C-6200.CFE",
+          "last": 29.2,
+          "previous_settlement": 31.4,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2311-C-6300.CFE",
+          "last": 13.2,
+          "previous_settlement": 15.2,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2311-C-6400.CFE",
+          "last": 6.0,
+          "previous_settlement": 7.6,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2311-C-6500.CFE",
+          "last": 3.4,
+          "previous_settlement": 4.0,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2311-C-6600.CFE",
+          "last": 2.0,
+          "previous_settlement": 2.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2311-C-6700.CFE",
+          "last": 1.0,
+          "previous_settlement": 1.6,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2311-C-6800.CFE",
+          "last": 0.8,
+          "previous_settlement": 1.0,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2311-C-6900.CFE",
+          "last": 0.8,
+          "previous_settlement": 0.8,
+          "strike": 6900.0
+        },
+        {
+          "code": "MO2311-P-5000.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.4,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2311-P-5100.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.6,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2311-P-5200.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2311-P-5300.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2311-P-5400.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.8,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2311-P-5500.CFE",
+          "last": 0.8,
+          "previous_settlement": 0.8,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2311-P-5600.CFE",
+          "last": 0.8,
+          "previous_settlement": 1.0,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2311-P-5700.CFE",
+          "last": 1.6,
+          "previous_settlement": 2.0,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2311-P-5800.CFE",
+          "last": 3.0,
+          "previous_settlement": 4.0,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2311-P-5900.CFE",
+          "last": 8.8,
+          "previous_settlement": 12.2,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2311-P-6000.CFE",
+          "last": 26.8,
+          "previous_settlement": 33.8,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2311-P-6100.CFE",
+          "last": 66.0,
+          "previous_settlement": 80.2,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2311-P-6200.CFE",
+          "last": 134.0,
+          "previous_settlement": 146.2,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2311-P-6300.CFE",
+          "last": 215.8,
+          "previous_settlement": 230.0,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2311-P-6400.CFE",
+          "last": 310.2,
+          "previous_settlement": 329.0,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2311-P-6500.CFE",
+          "last": 406.8,
+          "previous_settlement": 426.4,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2311-P-6600.CFE",
+          "last": 494.0,
+          "previous_settlement": 525.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2311-P-6700.CFE",
+          "last": 593.6,
+          "previous_settlement": 624.6,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2311-P-6800.CFE",
+          "last": 693.4,
+          "previous_settlement": 724.6,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2311-P-6900.CFE",
+          "last": 793.4,
+          "previous_settlement": 824.6,
+          "strike": 6900.0
+        }
+      ]
+    },
+    {
+      "expiry": "2023-12-15",
+      "days_to_expiry": 38,
+      "quotes": [
+        {
+          "code": "MO2312-C-5000.CFE",
+          "last": 0.0,
+          "previous_settlement": 1070.0,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2312-C-5100.CFE",
+          "last": 991.2,
+          "previous_settlement": 970.6,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2312-C-5200.CFE",
+          "last": 892.0,
+          "previous_settlement": 872.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2312-C-5300.CFE",
+          "last": 0.0,
+          "previous_settlement": 773.6,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2312-C-5400.CFE",
+          "last": 695.2,
+          "previous_settlement": 676.6,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2312-C-5500.CFE",
+          "last": 598.6,
+          "previous_settlement": 570.4,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2312-C-5600.CFE",
+          "last": 494.2,
+          "previous_settlement": 476.0,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2312-C-5700.CFE",
+          "last": 403.8,
+          "previous_settlement": 392.8,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2312-C-5800.CFE",
+          "last": 318.6,
+          "previous_settlement": 306.8,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2312-C-5900.CFE",
+          "last": 238.0,
+          "previous_settlement": 228.6,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2312-C-6000.CFE",
+          "last": 171.4,
+          "previous_settlement": 163.0,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2312-C-6100.CFE",
+          "last": 118.8,
+          "previous_settlement": 110.8,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2312-C-6200.CFE",
+          "last": 79.0,
+          "previous_settlement": 73.0,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2312-C-6300.CFE",
+          "last": 50.8,
+          "previous_settlement": 46.0,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2312-C-6400.CFE",
+          "last": 33.0,
+          "previous_settlement": 28.6,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2312-C-6500.CFE",
+          "last": 22.2,
+          "previous_settlement": 18.8,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2312-C-6600.CFE",
+          "last": 14.6,
+          "previous_settlement": 12.8,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2312-C-6700.CFE",
+          "last": 10.2,
+          "previous_settlement": 8.6,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2312-C-6800.CFE",
+          "last": 7.8,
+          "previous_settlement": 7.0,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2312-C-7000.CFE",
+          "last": 5.2,
+          "previous_settlement": 5.0,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2312-C-7200.CFE",
+          "last": 3.0,
+          "previous_settlement": 2.8,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2312-C-7400.CFE",
+          "last": 2.2,
+          "previous_settlement": 2.2,
+          "strike": 7400.0
+        },
+        {
+          "code": "MO2312-C-7600.CFE",
+          "last": 1.8,
+          "previous_settlement": 0.8,
+          "strike": 7600.0
+        },
+        {
+          "code": "MO2312-C-7800.CFE",
+          "last": 1.6,
+          "previous_settlement": 0.2,
+          "strike": 7800.0
+        },
+        {
+          "code": "MO2312-P-5000.CFE",
+          "last": 1.4,
+          "previous_settlement": 1.6,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2312-P-5100.CFE",
+          "last": 1.4,
+          "previous_settlement": 1.8,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2312-P-5200.CFE",
+          "last": 2.4,
+          "previous_settlement": 2.6,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2312-P-5300.CFE",
+          "last": 3.4,
+          "previous_settlement": 3.6,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2312-P-5400.CFE",
+          "last": 5.6,
+          "previous_settlement": 5.8,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2312-P-5500.CFE",
+          "last": 8.0,
+          "previous_settlement": 8.2,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2312-P-5600.CFE",
+          "last": 12.6,
+          "previous_settlement": 13.4,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2312-P-5700.CFE",
+          "last": 20.0,
+          "previous_settlement": 21.4,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2312-P-5800.CFE",
+          "last": 32.6,
+          "previous_settlement": 34.6,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2312-P-5900.CFE",
+          "last": 54.4,
+          "previous_settlement": 56.8,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2312-P-6000.CFE",
+          "last": 86.6,
+          "previous_settlement": 90.6,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2312-P-6100.CFE",
+          "last": 132.0,
+          "previous_settlement": 136.8,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2312-P-6200.CFE",
+          "last": 191.8,
+          "previous_settlement": 200.6,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2312-P-6300.CFE",
+          "last": 264.0,
+          "previous_settlement": 272.4,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2312-P-6400.CFE",
+          "last": 348.2,
+          "previous_settlement": 356.4,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2312-P-6500.CFE",
+          "last": 436.8,
+          "previous_settlement": 446.6,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2312-P-6600.CFE",
+          "last": 533.4,
+          "previous_settlement": 538.6,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2312-P-6700.CFE",
+          "last": 624.6,
+          "previous_settlement": 643.2,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2312-P-6800.CFE",
+          "last": 722.6,
+          "previous_settlement": 740.8,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2312-P-7000.CFE",
+          "last": 0.0,
+          "previous_settlement": 938.4,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2312-P-7200.CFE",
+          "last": 1116.8,
+          "previous_settlement": 1137.2,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2312-P-7400.CFE",
+          "last": 0.0,
+          "previous_settlement": 1337.0,
+          "strike": 7400.0
+        },
+        {
+          "code": "MO2312-P-7600.CFE",
+          "last": 0.0,
+          "previous_settlement": 1537.2,
+          "strike": 7600.0
+        },
+        {
+          "code": "MO2312-P-7800.CFE",
+          "last": 0.0,
+          "previous_settlement": 1738.2,
+          "strike": 7800.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-01-19",
+      "days_to_expiry": 73,
+      "quotes": [
+        {
+          "code": "MO2401-C-5000.CFE",
+          "last": 0.0,
+          "previous_settlement": 1066.8,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2401-C-5100.CFE",
+          "last": 0.0,
+          "previous_settlement": 968.4,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2401-C-5200.CFE",
+          "last": 880.6,
+          "previous_settlement": 871.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2401-C-5300.CFE",
+          "last": 0.0,
+          "previous_settlement": 774.6,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2401-C-5400.CFE",
+          "last": 689.0,
+          "previous_settlement": 680.2,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2401-C-5500.CFE",
+          "last": 595.6,
+          "previous_settlement": 587.6,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2401-C-5600.CFE",
+          "last": 508.6,
+          "previous_settlement": 502.4,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2401-C-5700.CFE",
+          "last": 421.4,
+          "previous_settlement": 413.4,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2401-C-5800.CFE",
+          "last": 341.4,
+          "previous_settlement": 335.2,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2401-C-5900.CFE",
+          "last": 270.4,
+          "previous_settlement": 265.0,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2401-C-6000.CFE",
+          "last": 208.8,
+          "previous_settlement": 203.8,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2401-C-6100.CFE",
+          "last": 157.2,
+          "previous_settlement": 152.6,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2401-C-6200.CFE",
+          "last": 114.6,
+          "previous_settlement": 111.8,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2401-C-6300.CFE",
+          "last": 83.0,
+          "previous_settlement": 80.0,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2401-C-6400.CFE",
+          "last": 59.0,
+          "previous_settlement": 58.2,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2401-C-6500.CFE",
+          "last": 42.2,
+          "previous_settlement": 39.8,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2401-C-6600.CFE",
+          "last": 29.4,
+          "previous_settlement": 28.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2401-C-6700.CFE",
+          "last": 21.0,
+          "previous_settlement": 20.0,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2401-C-6800.CFE",
+          "last": 15.4,
+          "previous_settlement": 0.0,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2401-P-5000.CFE",
+          "last": 3.6,
+          "previous_settlement": 3.8,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2401-P-5100.CFE",
+          "last": 4.6,
+          "previous_settlement": 5.2,
+          "strike": 5100.0
+        },
+        {
+          "code": "MO2401-P-5200.CFE",
+          "last": 6.4,
+          "previous_settlement": 7.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2401-P-5300.CFE",
+          "last": 8.8,
+          "previous_settlement": 10.0,
+          "strike": 5300.0
+        },
+        {
+          "code": "MO2401-P-5400.CFE",
+          "last": 13.4,
+          "previous_settlement": 14.6,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2401-P-5500.CFE",
+          "last": 19.2,
+          "previous_settlement": 21.2,
+          "strike": 5500.0
+        },
+        {
+          "code": "MO2401-P-5600.CFE",
+          "last": 28.2,
+          "previous_settlement": 31.2,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2401-P-5700.CFE",
+          "last": 42.2,
+          "previous_settlement": 46.4,
+          "strike": 5700.0
+        },
+        {
+          "code": "MO2401-P-5800.CFE",
+          "last": 60.8,
+          "previous_settlement": 68.2,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2401-P-5900.CFE",
+          "last": 89.6,
+          "previous_settlement": 96.2,
+          "strike": 5900.0
+        },
+        {
+          "code": "MO2401-P-6000.CFE",
+          "last": 126.4,
+          "previous_settlement": 134.4,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2401-P-6100.CFE",
+          "last": 175.8,
+          "previous_settlement": 183.8,
+          "strike": 6100.0
+        },
+        {
+          "code": "MO2401-P-6200.CFE",
+          "last": 233.8,
+          "previous_settlement": 242.4,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2401-P-6300.CFE",
+          "last": 301.4,
+          "previous_settlement": 310.2,
+          "strike": 6300.0
+        },
+        {
+          "code": "MO2401-P-6400.CFE",
+          "last": 377.2,
+          "previous_settlement": 386.2,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2401-P-6500.CFE",
+          "last": 459.6,
+          "previous_settlement": 468.8,
+          "strike": 6500.0
+        },
+        {
+          "code": "MO2401-P-6600.CFE",
+          "last": 0.0,
+          "previous_settlement": 556.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2401-P-6700.CFE",
+          "last": 0.0,
+          "previous_settlement": 669.8,
+          "strike": 6700.0
+        },
+        {
+          "code": "MO2401-P-6800.CFE",
+          "last": 0.0,
+          "previous_settlement": 0.0,
+          "strike": 6800.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-03-15",
+      "days_to_expiry": 129,
+      "quotes": [
+        {
+          "code": "MO2403-C-5000.CFE",
+          "last": 1064.6,
+          "previous_settlement": 1053.2,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2403-C-5200.CFE",
+          "last": 877.0,
+          "previous_settlement": 863.6,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2403-C-5400.CFE",
+          "last": 692.4,
+          "previous_settlement": 679.8,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2403-C-5600.CFE",
+          "last": 522.0,
+          "previous_settlement": 511.6,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2403-C-5800.CFE",
+          "last": 371.2,
+          "previous_settlement": 358.8,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2403-C-6000.CFE",
+          "last": 247.4,
+          "previous_settlement": 241.0,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2403-C-6200.CFE",
+          "last": 157.0,
+          "previous_settlement": 150.4,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2403-C-6400.CFE",
+          "last": 97.0,
+          "previous_settlement": 92.2,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2403-C-6600.CFE",
+          "last": 61.2,
+          "previous_settlement": 57.4,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2403-C-6800.CFE",
+          "last": 41.2,
+          "previous_settlement": 37.2,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2403-C-7000.CFE",
+          "last": 28.6,
+          "previous_settlement": 26.0,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2403-C-7200.CFE",
+          "last": 20.6,
+          "previous_settlement": 19.6,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2403-C-7400.CFE",
+          "last": 16.6,
+          "previous_settlement": 15.8,
+          "strike": 7400.0
+        },
+        {
+          "code": "MO2403-C-7600.CFE",
+          "last": 14.0,
+          "previous_settlement": 13.4,
+          "strike": 7600.0
+        },
+        {
+          "code": "MO2403-C-7800.CFE",
+          "last": 12.6,
+          "previous_settlement": 12.0,
+          "strike": 7800.0
+        },
+        {
+          "code": "MO2403-P-5000.CFE",
+          "last": 10.2,
+          "previous_settlement": 10.6,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2403-P-5200.CFE",
+          "last": 17.4,
+          "previous_settlement": 18.4,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2403-P-5400.CFE",
+          "last": 31.8,
+          "previous_settlement": 33.6,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2403-P-5600.CFE",
+          "last": 57.8,
+          "previous_settlement": 60.6,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2403-P-5800.CFE",
+          "last": 104.4,
+          "previous_settlement": 108.4,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2403-P-6000.CFE",
+          "last": 179.0,
+          "previous_settlement": 187.2,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2403-P-6200.CFE",
+          "last": 289.8,
+          "previous_settlement": 294.6,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2403-P-6400.CFE",
+          "last": 430.4,
+          "previous_settlement": 441.2,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2403-P-6600.CFE",
+          "last": 590.2,
+          "previous_settlement": 598.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2403-P-6800.CFE",
+          "last": 767.8,
+          "previous_settlement": 777.6,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2403-P-7000.CFE",
+          "last": 952.8,
+          "previous_settlement": 989.0,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2403-P-7200.CFE",
+          "last": 0.0,
+          "previous_settlement": 1181.6,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2403-P-7400.CFE",
+          "last": 0.0,
+          "previous_settlement": 1377.0,
+          "strike": 7400.0
+        },
+        {
+          "code": "MO2403-P-7600.CFE",
+          "last": 0.0,
+          "previous_settlement": 1574.2,
+          "strike": 7600.0
+        },
+        {
+          "code": "MO2403-P-7800.CFE",
+          "last": 0.0,
+          "previous_settlement": 1772.4,
+          "strike": 7800.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-06-21",
+      "days_to_expiry": 227,
+      "quotes": [
+        {
+          "code": "MO2406-C-5000.CFE",
+          "last": 1024.0,
+          "previous_settlement": 1023.4,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2406-C-5200.CFE",
+          "last": 844.8,
+          "previous_settlement": 844.2,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2406-C-5400.CFE",
+          "last": 673.8,
+          "previous_settlement": 674.0,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2406-C-5600.CFE",
+          "last": 519.6,
+          "previous_settlement": 521.6,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2406-C-5800.CFE",
+          "last": 383.6,
+          "previous_settlement": 387.0,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2406-C-6000.CFE",
+          "last": 273.0,
+          "previous_settlement": 272.2,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2406-C-6200.CFE",
+          "last": 192.0,
+          "previous_settlement": 193.6,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2406-C-6400.CFE",
+          "last": 132.6,
+          "previous_settlement": 136.2,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2406-C-6600.CFE",
+          "last": 91.2,
+          "previous_settlement": 92.0,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2406-C-6800.CFE",
+          "last": 63.2,
+          "previous_settlement": 65.4,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2406-C-7000.CFE",
+          "last": 47.4,
+          "previous_settlement": 49.6,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2406-C-7200.CFE",
+          "last": 36.8,
+          "previous_settlement": 37.6,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2406-C-7400.CFE",
+          "last": 29.2,
+          "previous_settlement": 31.6,
+          "strike": 7400.0
+        },
+        {
+          "code": "MO2406-P-5000.CFE",
+          "last": 37.8,
+          "previous_settlement": 40.0,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2406-P-5200.CFE",
+          "last": 56.2,
+          "previous_settlement": 59.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2406-P-5400.CFE",
+          "last": 82.6,
+          "previous_settlement": 86.6,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2406-P-5600.CFE",
+          "last": 121.2,
+          "previous_settlement": 128.2,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2406-P-5800.CFE",
+          "last": 184.8,
+          "previous_settlement": 190.0,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2406-P-6000.CFE",
+          "last": 275.8,
+          "previous_settlement": 275.2,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2406-P-6200.CFE",
+          "last": 386.2,
+          "previous_settlement": 391.4,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2406-P-6400.CFE",
+          "last": 522.8,
+          "previous_settlement": 532.6,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2406-P-6600.CFE",
+          "last": 681.2,
+          "previous_settlement": 693.8,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2406-P-6800.CFE",
+          "last": 851.6,
+          "previous_settlement": 857.4,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2406-P-7000.CFE",
+          "last": 0.0,
+          "previous_settlement": 1034.0,
+          "strike": 7000.0
+        },
+        {
+          "code": "MO2406-P-7200.CFE",
+          "last": 1221.4,
+          "previous_settlement": 1222.8,
+          "strike": 7200.0
+        },
+        {
+          "code": "MO2406-P-7400.CFE",
+          "last": 1410.4,
+          "previous_settlement": 1412.0,
+          "strike": 7400.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-09-20",
+      "days_to_expiry": 318,
+      "quotes": [
+        {
+          "code": "MO2409-C-5000.CFE",
+          "last": 982.8,
+          "previous_settlement": 983.8,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2409-C-5200.CFE",
+          "last": 811.0,
+          "previous_settlement": 814.0,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2409-C-5400.CFE",
+          "last": 657.6,
+          "previous_settlement": 655.8,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2409-C-5600.CFE",
+          "last": 512.6,
+          "previous_settlement": 517.0,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2409-C-5800.CFE",
+          "last": 386.8,
+          "previous_settlement": 393.0,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2409-C-6000.CFE",
+          "last": 287.2,
+          "previous_settlement": 291.2,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2409-C-6200.CFE",
+          "last": 211.4,
+          "previous_settlement": 211.6,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2409-C-6400.CFE",
+          "last": 154.0,
+          "previous_settlement": 151.6,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2409-C-6600.CFE",
+          "last": 114.8,
+          "previous_settlement": 110.8,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2409-C-6800.CFE",
+          "last": 88.8,
+          "previous_settlement": 83.6,
+          "strike": 6800.0
+        },
+        {
+          "code": "MO2409-P-5000.CFE",
+          "last": 64.6,
+          "previous_settlement": 69.8,
+          "strike": 5000.0
+        },
+        {
+          "code": "MO2409-P-5200.CFE",
+          "last": 90.4,
+          "previous_settlement": 96.6,
+          "strike": 5200.0
+        },
+        {
+          "code": "MO2409-P-5400.CFE",
+          "last": 127.8,
+          "previous_settlement": 137.4,
+          "strike": 5400.0
+        },
+        {
+          "code": "MO2409-P-5600.CFE",
+          "last": 182.0,
+          "previous_settlement": 188.8,
+          "strike": 5600.0
+        },
+        {
+          "code": "MO2409-P-5800.CFE",
+          "last": 255.8,
+          "previous_settlement": 261.8,
+          "strike": 5800.0
+        },
+        {
+          "code": "MO2409-P-6000.CFE",
+          "last": 355.2,
+          "previous_settlement": 359.6,
+          "strike": 6000.0
+        },
+        {
+          "code": "MO2409-P-6200.CFE",
+          "last": 473.6,
+          "previous_settlement": 475.0,
+          "strike": 6200.0
+        },
+        {
+          "code": "MO2409-P-6400.CFE",
+          "last": 611.6,
+          "previous_settlement": 615.6,
+          "strike": 6400.0
+        },
+        {
+          "code": "MO2409-P-6600.CFE",
+          "last": 769.0,
+          "previous_settlement": 767.2,
+          "strike": 6600.0
+        },
+        {
+          "code": "MO2409-P-6800.CFE",
+          "last": 939.0,
+          "previous_settlement": 937.0,
+          "strike": 6800.0
+        }
+      ]
+    }
+  ]
+}
