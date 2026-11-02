@@ -367,6 +367,10 @@ class TestExistingRoutesUnchanged:
         "/api/local_vol/surface",
         "/api/local_vol/validate",
         "/api/european",
+        # Phase 3b
+        "/api/heston/calibrate",
+        "/api/heston/european",
+        "/api/heston/snowball",
     }
 
     def test_every_prior_route_still_exists(self) -> None:
