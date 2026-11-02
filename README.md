@@ -150,6 +150,40 @@ Both the formula and that identity are verified symbolically.
 > this, and every measurement are in
 > [`docs/models/local_volatility.md`](docs/models/local_volatility.md).
 
+### 🎲 Heston Stochastic Volatility
+
+Dupire reprices today's vanillas by construction and then implies a forward
+smile that flattens. Heston gives up some of today's fit for a forward smile
+that is a model's rather than an artefact's — and the trade is stated in the
+unflattering direction too: **Heston describes today's quotes worse than SSVI
+does**, by 10–12% on three expiries and 38–41% on six, because SSVI buys one
+parameter per expiry.
+
+European prices come from a self-built **COS** (Fourier-cosine) engine, which
+matches QuantLib's analytic Heston engine to **5e-09** — and to 3e-13 at the
+calibrated parameters, closer than QuantLib's own COS engine sits to its
+analytic one. Paths come from **Andersen's QE scheme**, which is a requirement
+rather than a refinement here:
+
+| params | Feller margin | variance cells exactly zero |
+|---|---|---|
+| textbook | +0.070 | **0.000%** |
+| 510050 (calibrated) | −3.360 | **45.80%** |
+| 510300 (calibrated) | −1.525 | **31.60%** |
+
+Nearly half of all simulated variance cells are exactly zero at the calibrated
+parameters, so a truncated Euler scheme would be clamping a negative value on
+half its cells — a bias that does not shrink with the step.
+
+> **This is the one place in the project where a price has only one engine.**
+> A Heston snowball's partner would be a 2D PDE with a cross-derivative and an
+> ADI solver, which is deliberately not built. The response says so in its own
+> JSON (`cross_checked_by_a_second_engine: false`) rather than only in prose.
+> Three numerical traps found on the way — the Little Heston Trap overflowing
+> at 1.85 years, a transcribed cumulant wrong by 5×, and a payoff coefficient
+> returning 3.9e13 as a price — are in
+> [`docs/models/heston.md`](docs/models/heston.md).
+
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
 - **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
@@ -236,6 +270,9 @@ Both the formula and that identity are verified symbolically.
 | `/api/local_vol/validate` | POST | The Dupire round trip — the correctness evidence, with a pass/fail verdict |
 | `/api/european` | POST | European option priced on the local volatility (skew-consistent) |
 | `/api/irs` | POST | Interest rate swap on a discount curve, with a DV01 that survives bump-and-reprice |
+| `/api/heston/calibrate` | POST | Fit Heston to a chain, serving the SSVI comparison as data |
+| `/api/heston/european` | POST | European option by COS under Heston |
+| `/api/heston/snowball` | POST | Snowball by QE simulation — one engine, and the response says so |
 | `/api/smile_presets` | POST | Auto-fill smile table from BSM prices |
 | `/api/snowball` | POST | Snowball autocallable — path Monte Carlo |
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
@@ -672,6 +709,12 @@ largest single assumption behind any long-dated number.
 the short-maturity wing diverge like `t^(-gamma/2)`, so on nearly half the
 725-day panel that divergence rate is set by the bound rather than by the
 quotes. Invisible on a single date, and it bears directly on local volatility.
+
+**A Heston snowball has one engine.** Every other number here is confirmed by
+a second independent engine; this one's partner would be a two-dimensional PDE
+with a cross-derivative and an ADI solver, which was deliberately not built.
+What is verified is that QE reproduces the COS European prices — the step to a
+path-dependent payoff is not.
 
 **A government curve is not a funding curve.** An OTC desk discounts above the
 CGB yield, and the futures check *cannot* measure the spread: the rate moves
