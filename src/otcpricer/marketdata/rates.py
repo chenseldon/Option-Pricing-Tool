@@ -152,6 +152,30 @@ class RateCurve:
         df_to = float(self.discount_factor(t_to))
         return float(np.log(df_from / df_to) / (t_to - t_from))
 
+    def simple_forward_rate(self, t_from: float, t_to: float) -> float:
+        """The *simply* compounded forward rate over ``[t_from, t_to]``.
+
+        ``df(t_from)/df(t_to) - 1`` divided by the accrual, which is what a
+        floating leg actually pays: SHIBOR and LPR are simple rates over the
+        period, not continuously compounded ones.
+
+        The distinction is not cosmetic, and it has a decisive test. The
+        floating-leg par identity
+
+            ``sum_i F_i * dt * df(t_i) + df(T) = 1``
+
+        telescopes only for the simple rate, because
+        ``[df(t_{i-1})/df(t_i) - 1] * df(t_i) = df(t_{i-1}) - df(t_i)``. Using
+        the continuous rate instead leaves an ``O((r*dt)^2)`` residue -- which
+        measured 0.02% of notional on a 2-year semiannual swap and 1.0% on a
+        10-year annual one. Small, plausible, and wrong.
+        """
+        if t_to <= t_from:
+            raise MarketDataError(f"need t_to > t_from, got {t_from} and {t_to}")
+        df_from = float(self.discount_factor(t_from))
+        df_to = float(self.discount_factor(t_to))
+        return float((df_from / df_to - 1.0) / (t_to - t_from))
+
     # ------------------------------------------------------------- reporting
 
     @property
