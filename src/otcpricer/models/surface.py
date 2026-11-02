@@ -23,6 +23,7 @@ from otcpricer.core.exceptions import CalibrationError
 from otcpricer.core.logging import get_logger
 from otcpricer.marketdata.forward import DEFAULT_RATE
 from otcpricer.marketdata.quotes import OptionChain
+from otcpricer.marketdata.rates import RateCurve
 from otcpricer.marketdata.sources import OptionChainSource, build_source
 from otcpricer.marketdata.surface_input import SurfaceInput, extract_surface_input
 from otcpricer.models.arbitrage import (
@@ -113,6 +114,7 @@ def fit_surface_from_chain(
     chain: OptionChain,
     *,
     rate: float = DEFAULT_RATE,
+    rate_curve: RateCurve | None = None,
     min_usable_slices: int = MIN_USABLE_SLICES,
 ) -> FittedSurface:
     """Fit a surface to an already-fetched chain.
@@ -126,7 +128,7 @@ def fit_surface_from_chain(
             per-slice reasons attached so the cause is visible rather than
             needing to be rediscovered.
     """
-    surface_input = extract_surface_input(chain, rate=rate)
+    surface_input = extract_surface_input(chain, rate=rate, rate_curve=rate_curve)
     usable = surface_input.usable_slices
 
     if len(usable) < min_usable_slices:
@@ -174,6 +176,7 @@ def fit_surface(
     source_kind: str | None = None,
     snapshot: str | None = None,
     rate: float = DEFAULT_RATE,
+    rate_curve: RateCurve | None = None,
 ) -> FittedSurface:
     """Fetch a chain and fit a surface to it.
 
@@ -185,9 +188,12 @@ def fit_surface(
             configuration.
         snapshot: Snapshot name, when replaying.
         rate: Continuously compounded rate for the forward and discounting.
+            Ignored when ``rate_curve`` is given.
+        rate_curve: A term structure to read each slice's rate off, at that
+            slice's own tenor.
 
     Returns:
         A :class:`FittedSurface`.
     """
     resolved = source or build_source(source_kind, snapshot=snapshot)
-    return fit_surface_from_chain(resolved.fetch(underlying_code), rate=rate)
+    return fit_surface_from_chain(resolved.fetch(underlying_code), rate=rate, rate_curve=rate_curve)

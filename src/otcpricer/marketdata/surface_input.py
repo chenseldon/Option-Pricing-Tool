@@ -109,6 +109,7 @@ from otcpricer.core.logging import get_logger
 from otcpricer.core.types import OptionType
 from otcpricer.marketdata.forward import DEFAULT_RATE, ForwardResult, imply_forward
 from otcpricer.marketdata.quotes import OptionChain, OptionSlice
+from otcpricer.marketdata.rates import RateCurve
 from otcpricer.models import bsm
 
 __all__ = [
@@ -264,6 +265,11 @@ class SurfaceInput:
     source: str
     rate: float
     slices: tuple[SliceInput, ...]
+    #: Where ``rate`` came from: ``"flat"``, or a curve's own provenance
+    #: string. A single rate is a fine summary of this data -- the curve is
+    #: flat below one year and every listed option expires inside 1.008 years
+    #: -- but a report should still be able to say which it was.
+    rate_source: str = "flat"
 
     @property
     def usable_slices(self) -> tuple[SliceInput, ...]:
@@ -472,6 +478,7 @@ def extract_surface_input(
     chain: OptionChain,
     *,
     rate: float = DEFAULT_RATE,
+    rate_curve: RateCurve | None = None,
     max_vol_uncertainty: float = MAX_VOL_UNCERTAINTY,
     max_tick_vol_uncertainty: float = MAX_TICK_VOL_UNCERTAINTY,
     max_moneyness_sd: float = MAX_MONEYNESS_SD,
@@ -483,7 +490,12 @@ def extract_surface_input(
     Args:
         chain: The option chain.
         rate: Continuously compounded rate, used for both the forward and the
-            Black-76 discounting.
+            Black-76 discounting. Ignored when ``rate_curve`` is given.
+        rate_curve: A term structure to take each slice's rate from, at that
+            slice's own tenor. No downstream type changes with it, because
+            ``ForwardResult.rate`` already echoes the rate used *per slice* --
+            a per-slice rate was always representable, it just had nowhere to
+            come from.
         max_vol_uncertainty: Identifiability limit for accepting a quote.
         max_tick_vol_uncertainty: Limit on the volatility one tick of price is
             worth. Quotes above it are reporting the tick, not the market.
@@ -497,10 +509,16 @@ def extract_surface_input(
         A :class:`SurfaceInput` carrying the surviving points per expiry and a
         full account of what was rejected and why.
     """
+
+    def slice_rate(option_slice: OptionSlice) -> float:
+        if rate_curve is None:
+            return rate
+        return float(rate_curve.zero_rate(option_slice.year_fraction))
+
     slices = tuple(
         _extract_slice(
             option_slice,
-            rate=rate,
+            rate=slice_rate(option_slice),
             max_vol_uncertainty=max_vol_uncertainty,
             max_tick_vol_uncertainty=max_tick_vol_uncertainty,
             max_moneyness_sd=max_moneyness_sd,
@@ -514,7 +532,12 @@ def extract_surface_input(
         underlying_code=chain.underlying.code,
         as_of=chain.as_of.isoformat(),
         source=chain.source,
-        rate=rate,
+        # The representative level. Each slice's own rate is on its
+        # ForwardResult; this is what a one-line summary should say, and for
+        # this data it is also the truth, since the curve is flat below one
+        # year and every listed option expires inside 1.008 years.
+        rate=rate if rate_curve is None else rate_curve.short_rate,
+        rate_source="flat" if rate_curve is None else rate_curve.source,
         slices=slices,
     )
     get_logger(__name__).info(
