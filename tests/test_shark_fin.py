@@ -587,3 +587,136 @@ class TestGridIntegrity:
                 price_shark_fin_pde(up_out_call(), MARKET, FINE)
         finally:
             barrier_module._build_barrier_grid = original  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# On the fitted surface
+# ---------------------------------------------------------------------------
+
+
+class TestOnTheLocalVolatilitySurface:
+    """Barriers priced against the whole smile rather than one number.
+
+    This is where the effect is largest in the whole project, and for a
+    structural reason: a barrier payoff is concentrated at one spot level, so
+    it depends on the volatility *there* rather than on an average. A single
+    flat number cannot express that, and the error it makes is one-sided in a
+    direction that depends on which side the barrier is.
+    """
+
+    @pytest.fixture(scope="class")
+    def surface(self):  # type: ignore[no-untyped-def]
+        from otcpricer.models.local_vol import local_vol_from_fitted
+        from otcpricer.models.surface import fit_surface
+
+        try:
+            return local_vol_from_fitted(fit_surface("510300"), spot=4.1, tail_drift=0.02)
+        except Exception:  # pragma: no cover - needs the committed snapshots
+            pytest.skip("no snapshots committed")
+
+    @pytest.fixture(scope="class")
+    def flat_market(self, surface):  # type: ignore[no-untyped-def]
+        """Flat at the surface's own at-the-money level, so the comparison is fair.
+
+        Comparing against an arbitrary volatility would measure the choice of
+        volatility; comparing against the surface's at-the-money total vol
+        isolates what the *smile* does.
+        """
+        return EquityMarket(S=4.1, r=0.02, sigma=float(surface.atm_total_vol(1.0)), q=0.0)
+
+    @pytest.mark.parametrize(
+        ("kind", "option", "barrier_pct", "direction"),
+        [
+            # The surface's upside volatility is below its at-the-money level,
+            # so an up-and-out knocks out less often and is worth more.
+            (BarrierKind.UP_AND_OUT, OptionType.CALL, 1.10, "higher"),
+            (BarrierKind.UP_AND_OUT, OptionType.CALL, 1.20, "higher"),
+            # And its downside volatility is above, so a down-and-out at a
+            # distant barrier knocks out more often and is worth less.
+            (BarrierKind.DOWN_AND_OUT, OptionType.PUT, 0.80, "lower"),
+        ],
+    )
+    def test_the_smile_moves_the_price_in_the_direction_the_skew_implies(
+        self,
+        surface,
+        flat_market,
+        kind: BarrierKind,
+        option: OptionType,
+        barrier_pct: float,
+        direction: str,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """Measured: +94% and +16% on the up barriers, -37% on the far down one.
+
+        The sign is the test. A barrier sits at one spot level, so what matters
+        is the volatility at *that* level -- and on a downward-skewed equity
+        surface that is below the at-the-money for an up barrier and above it
+        for a down one. Getting the direction wrong would mean the smile was
+        being applied backwards, which no price-level check would catch.
+        """
+        terms = SharkFinTerms(
+            S0=4.1,
+            K=4.1,
+            T=1.0,
+            barrier=4.1 * barrier_pct,
+            kind=kind,
+            option=option,
+            monitoring=252,
+        )
+        flat = price_shark_fin_pde(terms, flat_market, FINE).price
+        local = price_shark_fin_pde(terms, flat_market, FINE, local_vol=surface)
+
+        assert local.vol_model == "dupire-local"
+        if direction == "higher":
+            assert local.price > flat
+        else:
+            assert local.price < flat
+        # And the effect is large enough to matter, not a rounding difference.
+        assert abs(local.price / flat - 1.0) > 0.03
+
+    def test_the_two_engines_agree_on_the_surface(self, surface, flat_market) -> None:  # type: ignore[no-untyped-def]
+        """Which is what makes the local-volatility barrier price trustworthy.
+
+        The analytic form cannot check this -- there is no closed form for a
+        barrier under a local volatility -- so the Monte Carlo is the only
+        independent value available, and the agreement has to carry the weight
+        the analytic comparison carries in the flat case.
+        """
+        terms = SharkFinTerms(
+            S0=4.1,
+            K=4.1,
+            T=1.0,
+            barrier=4.1 * 1.20,
+            kind=BarrierKind.UP_AND_OUT,
+            option=OptionType.CALL,
+            monitoring=252,
+        )
+        grid = price_shark_fin_pde(
+            terms, flat_market, PDEConfig(space_nodes=3200, steps_per_year=2016), local_vol=surface
+        ).price
+        simulated = price_shark_fin_mc(
+            terms,
+            flat_market,
+            MonteCarloConfig(paths=200_000, steps_per_year=252, seed=5, antithetic=True),
+            local_vol=surface,
+        )
+        assert simulated.vol_model == "dupire-local"
+        assert abs(simulated.price - grid) < 3.0 * simulated.std_error
+
+    def test_a_constant_local_volatility_reduces_to_the_flat_engine(self, flat_market) -> None:  # type: ignore[no-untyped-def]
+        """The degenerate check, which localises a failure to indexing.
+
+        If a constant local volatility does not reproduce the flat price, the
+        fault is in how the surface is sampled onto the grid rather than in the
+        discretisation -- the same reasoning Phase 2b used, where this test
+        caught an inverted moneyness coordinate.
+        """
+        from tests.test_european import ConstantLocalVol
+
+        terms = up_out_call(S0=100.0, K=100.0, barrier=120.0, monitoring=252)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.25, q=0.0)
+
+        flat = price_shark_fin_pde(terms, market, FINE).price
+        constant = price_shark_fin_pde(
+            terms, market, FINE, local_vol=ConstantLocalVol(sigma=0.25, mu=0.03)
+        ).price
+        assert constant == pytest.approx(flat, rel=1e-9)
