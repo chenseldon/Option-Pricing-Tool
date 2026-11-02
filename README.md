@@ -258,25 +258,39 @@ spot level rather than averaged:
 │   │   ├── svi_calibration.py  #   Constrained SSVI fit (no-arbitrage imposed)
 │   │   ├── arbitrage.py        #   Independent dense-grid arbitrage checker
 │   │   ├── surface.py          #   Chain -> fitted surface, in one call
-│   │   └── local_vol.py        #   Dupire local volatility + diagnostics
+│   │   ├── local_vol.py        #   Dupire local volatility + diagnostics
+│   │   ├── heston.py           #   Heston CF (little-trap form only) + cumulants
+│   │   └── heston_calibration.py #  Heston fit, on SSVI's own objective
 │   ├── marketdata/             # Real option chains
 │   │   ├── contracts.py        #   Code parsing + pinned feed-symbol registry
 │   │   ├── sources.py          #   akshare (retry/backoff), snapshot, CSV, cache
 │   │   ├── snapshots.py        #   Capture and replay, with a format version
 │   │   ├── forward.py          #   Forward from put-call parity + residuals
-│   │   └── surface_input.py    #   Implied vols and the six quote screens
-│   ├── products/snowball.py    # Snowball terms + observation schedule
+│   │   ├── surface_input.py    #   Implied vols and the six quote screens
+│   │   ├── wind.py             #   The 725-day institutional panel (settle prices)
+│   │   └── rates.py            #   Two-tenor government curve (NOT a bootstrap)
+│   ├── products/
+│   │   ├── snowball.py         #   Snowball terms + observation schedule
+│   │   ├── shark_fin.py        #   Barrier note; monitoring is required, not default
+│   │   └── irs.py              #   Swap on a curve, float leg resetting off it
+│   ├── validation/             # Checks whose output is evidence, not a price
+│   │   └── futures_check.py    #   Parity forward vs the matching index future
 │   ├── reports/                # Model validation output
 │   │   ├── layout.py           #   Shared plain-text report formatting
 │   │   ├── surface_report.py   #   Calibration/parity/rejection/arbitrage report
-│   │   └── local_vol_report.py #   Extrapolation, forward curve, Dupire round trip
+│   │   ├── local_vol_report.py #   Extrapolation, forward curve, Dupire round trip
+│   │   └── heston_report.py    #   Leads with the caveats, not the fit quality
 │   └── engines/
-│       ├── mc.py               #   Path Monte Carlo (batched, antithetic, local vol)
+│       ├── mc.py               #   Path MC (batched, antithetic, local vol, Heston QE)
 │       ├── pde.py              #   Crank-Nicolson FDM; constant + variable coefficients
 │       ├── european.py         #   European local-vol PDE/MC -- the validation vehicle
+│       ├── fourier.py          #   COS method -- the Fourier engine long promised
+│       ├── barrier.py          #   Barrier PDE + MC + verified closed form
 │       └── risk.py             #   Greeks: PDE grid differentiation + MC check
-├── tests/                      # 760 tests: analytic, QuantLib, convergence
+├── scripts/build_wind_anchor.py # The 11-minute panel sweep, run by hand
+├── tests/                      # 1,252 tests: analytic, QuantLib, convergence
 ├── data/snapshots/             # Committed real option chains (test fixtures)
+├── data/wind/                  # The 725-day anchor + its threshold manifest
 ├── docs/models/                # Model derivations, assumptions, rejected methods
 ├── app.py                      # Flask backend — pricing API endpoints
 ├── bs_pricing.py               # Compatibility layer over otcpricer.models.bsm
