@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from scipy.special import ndtr
 
-from otcpricer.core.exceptions import ParameterError
+from otcpricer.core.exceptions import EngineError, ParameterError
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import KIStrikeMode
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc, simulate_log_paths
@@ -723,3 +723,140 @@ class TestEconomicSanity:
             reference_terms(), REFERENCE_MARKET, MonteCarloConfig(paths=200_000)
         )
         assert 0.0 < result.price < 0.20
+
+
+class TestScheduleFidelity:
+    """A grid too coarse for the contract is refused, not silently coarsened.
+
+    This is a fidelity defect, not the Phase 1 oscillation one, and the
+    distinction matters. Phase 1's barrier and observation misalignments made
+    the price *jitter* under refinement -- visibly wrong, and fixed by snapping
+    the grid. What was left was quieter: when the contract asks for more
+    observation dates than the grid has steps, both engines dropped the excess
+    and priced a note nobody wrote.
+
+    A note with fewer knock-out chances is worth strictly more, so the error is
+    one-signed rather than noise. And the two engines dropped them
+    *differently*, which is what made it invisible: the cross-engine check
+    compared two substituted contracts.
+    """
+
+    @staticmethod
+    def _terms(obs_freq: int) -> SnowballTerms:
+        return SnowballTerms(
+            S0=5000.0, T=1.0, ko_pct=1.03, ki_pct=0.75, coupon_pa=0.20, obs_freq=obs_freq
+        )
+
+    def test_the_simulation_refuses_a_schedule_it_cannot_hold(self) -> None:
+        """Measured before the fix: obs_freq 252, 300, 400, 600 and 1000 -- notes
+        asking for 189, 225, 300, 450 and 750 knock-out dates -- all returned
+        0.04795316632228654 at 252 steps a year. One bit-identical price for
+        five different contracts.
+        """
+        config = MonteCarloConfig(paths=5_000, steps_per_year=252, seed=1, memory_budget_mb=4096.0)
+        for obs_freq in (300, 400, 600, 1000):
+            with pytest.raises(EngineError, match="knock-out dates collide"):
+                price_snowball_mc(self._terms(obs_freq), REFERENCE_MARKET, config)
+
+    def test_the_finite_difference_engine_refuses_it_too(self) -> None:
+        """And with the same collision count, which is the agreement that
+        matters: before the fix it returned five *different* prices spread over
+        4.22e-04 with no order to them, because its dict kept the later
+        contractual date per step where the simulation kept the grid's.
+        """
+        config = PDEConfig(space_nodes=400, steps_per_year=252)
+        for obs_freq in (300, 400, 600):
+            with pytest.raises(EngineError, match="knock-out observation dates collide"):
+                price_snowball_pde(self._terms(obs_freq), REFERENCE_MARKET, config)
+
+    def test_both_engines_count_the_same_collisions(self) -> None:
+        """Because they are reading one contract against one grid size."""
+        import re
+
+        terms = self._terms(400)
+        with pytest.raises(EngineError) as mc_error:
+            price_snowball_mc(
+                terms,
+                REFERENCE_MARKET,
+                MonteCarloConfig(paths=1_000, steps_per_year=252, seed=1, memory_budget_mb=4096.0),
+            )
+        with pytest.raises(EngineError) as pde_error:
+            price_snowball_pde(
+                terms, REFERENCE_MARKET, PDEConfig(space_nodes=400, steps_per_year=252)
+            )
+
+        def first_number(message: str) -> int:
+            found = re.search(r"\d+", message)
+            assert found is not None, message
+            return int(found.group())
+
+        assert first_number(str(mc_error.value)) == first_number(str(pde_error.value)) == 111
+
+    def test_the_error_names_a_grid_that_works(self) -> None:
+        """A refusal that does not say what to do instead is an obstacle.
+
+        The advice is always a finer grid rather than a coarser contract,
+        because the contract is the thing being priced.
+        """
+        terms = self._terms(400)
+        with pytest.raises(EngineError, match="steps_per_year >= 400"):
+            price_snowball_mc(
+                terms,
+                REFERENCE_MARKET,
+                MonteCarloConfig(paths=1_000, steps_per_year=252, seed=1, memory_budget_mb=4096.0),
+            )
+
+        priced = price_snowball_mc(
+            terms,
+            REFERENCE_MARKET,
+            MonteCarloConfig(paths=5_000, steps_per_year=400, seed=1, memory_budget_mb=8192.0),
+        )
+        assert 0.0 < priced.price < 0.20
+
+    def test_a_representable_schedule_is_untouched(self) -> None:
+        """The check is a gate, not a constraint on anything real.
+
+        Every frequency a term sheet actually carries -- monthly, fortnightly,
+        weekly, daily -- fits a 252-step year, and the default monthly schedule
+        fits with 20x to spare.
+        """
+        config = MonteCarloConfig(paths=5_000, steps_per_year=252, seed=1, memory_budget_mb=4096.0)
+        for obs_freq in (1, 2, 4, 12, 26, 52, 126, 252):
+            priced = price_snowball_mc(self._terms(obs_freq), REFERENCE_MARKET, config)
+            assert 0.0 < priced.price < 0.30, obs_freq
+
+    def test_more_observations_are_worth_more_which_is_why_dropping_them_lies(
+        self,
+    ) -> None:
+        """The economic fact behind the refusal.
+
+        A knock-out is a chance to terminate early on the coupon, so more
+        observations make the note worth more to the client. Dropping them is
+        therefore one-signed error, not rounding -- and the sign is the one
+        that flatters the quote.
+        """
+        config = MonteCarloConfig(
+            paths=100_000, steps_per_year=252, seed=3, memory_budget_mb=8192.0
+        )
+        prices = [
+            price_snowball_mc(self._terms(freq), REFERENCE_MARKET, config).price
+            for freq in (4, 12, 52, 252)
+        ]
+        assert all(later < earlier for earlier, later in zip(prices, prices[1:], strict=False)), (
+            prices
+        )
+
+    def test_a_seasoned_valuation_drops_past_dates_without_complaint(self) -> None:
+        """Dropping a date because it has happened is not substitution.
+
+        The distinction is the whole semantics of t0: a past observation is
+        history, and its outcome is the caller's to state through knocked_in.
+        Only two *future* dates landing on one step is a fidelity failure.
+        """
+        terms = self._terms(12)
+        config = MonteCarloConfig(paths=20_000, steps_per_year=252, seed=1, memory_budget_mb=4096.0)
+        seasoned = price_snowball_mc(terms, REFERENCE_MARKET, config, t0=0.5)
+        assert 0.0 < seasoned.price < 0.30
+        # Half the note's knock-out dates are behind it, so it can knock out
+        # on fewer of them and is worth less than the note at inception.
+        assert seasoned.ko_prob < price_snowball_mc(terms, REFERENCE_MARKET, config).ko_prob

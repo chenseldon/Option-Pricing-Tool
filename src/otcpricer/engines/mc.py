@@ -32,6 +32,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from otcpricer.core.exceptions import EngineError
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.validation import check_positive
@@ -556,11 +557,13 @@ def simulate_log_paths(
     return times, np.exp(log_paths)
 
 
-def _schedule_indices(observation_times: np.ndarray, times: np.ndarray) -> np.ndarray:
+def _schedule_indices(
+    observation_times: np.ndarray, times: np.ndarray, *, label: str = "observation"
+) -> np.ndarray:
     """Map observation dates onto the nearest simulation grid index.
 
-    Returns unique indices in increasing order, excluding index 0 -- which is
-    the valuation date, and is never an observation: at inception because the
+    Returns indices in increasing order, excluding index 0 -- which is the
+    valuation date, and is never an observation: at inception because the
     schedule starts later, and on a seasoned valuation because any observation
     already past is history rather than something to simulate.
 
@@ -568,6 +571,32 @@ def _schedule_indices(observation_times: np.ndarray, times: np.ndarray) -> np.nd
     valuation that is the whole point: they have already happened, and the
     caller states their outcome through ``knocked_in`` rather than having them
     re-drawn.
+
+    Two dates landing on one step is refused
+    ----------------------------------------
+    This used to end in ``np.unique``, and the docstring presented the
+    de-duplication as a feature. It is not: a monitoring date silently
+    discarded is a monitoring date the contract has and the price does not,
+    and a knock-out note with fewer observations is worth strictly more.
+
+    What it actually caused is **schedule substitution**, and the measurement
+    is unambiguous. At 252 steps a year, with ``obs_freq`` of 252, 300, 400,
+    600 and 1000 -- notes asking for 189, 225, 300, 450 and 750 knock-out
+    observations -- this engine returned ``0.04795316632228654`` for all five.
+    Bit-identical prices for five different contracts.
+
+    The finite-difference engine substitutes too, and *differently*: its
+    ``ko_steps`` dict keeps the last contractual date written to each step and
+    pays the contractual accrual, where this one paid the grid's. Across the
+    same five contracts it returned five different prices spread over 4.22e-04
+    with no order to them. So the two engines were not merely imprecise; they
+    were pricing different substituted contracts and the cross-engine check
+    could not see it, because both substitutions moved the same way.
+
+    Raises:
+        EngineError: if two dates collide on one step. The message carries the
+            ``steps_per_year`` that would be enough, because the fix is always
+            a finer grid rather than a coarser contract.
     """
     if observation_times.size == 0:
         return np.empty(0, dtype=int)
@@ -576,7 +605,26 @@ def _schedule_indices(observation_times: np.ndarray, times: np.ndarray) -> np.nd
         return np.empty(0, dtype=int)
     idx = np.searchsorted(times, future - 1e-12)
     idx = np.clip(idx, 1, times.size - 1)
-    return np.unique(idx)
+
+    distinct = np.unique(idx)
+    if distinct.size != idx.size:
+        horizon = float(times[-1] - times[0])
+        gaps = np.diff(np.concatenate(([float(times[0])], future)))
+        tightest = float(gaps.min())
+        # The nudge is not cosmetic: a schedule at 1/400 of a year gives a gap
+        # whose reciprocal is 400.0000000000001, so a bare ceil would advise
+        # 401 steps for a contract that fits exactly in 400 -- and then the
+        # advice would not be the tightest grid that works.
+        needed = int(np.ceil(1.0 / tightest - 1e-9)) if tightest > 0.0 else 0
+        raise EngineError(
+            f"{idx.size - distinct.size} of {idx.size} {label} dates collide on "
+            f"the simulation grid: {idx.size} dates over {times.size - 1} steps "
+            f"spanning {horizon:.4f} years, with the closest pair {tightest:.6f} "
+            f"years apart. Dropping them would price a note with fewer "
+            f"observations, which is worth strictly more -- use "
+            f"steps_per_year >= {needed} instead"
+        )
+    return np.asarray(idx, dtype=int)
 
 
 def _evaluate_batch(
@@ -797,8 +845,8 @@ def price_snowball_mc(
         )
 
         if batch == 0:
-            ko_idx = _schedule_indices(terms.ko_observation_times(), times)
-            ki_idx = _schedule_indices(terms.ki_observation_times(), times)
+            ko_idx = _schedule_indices(terms.ko_observation_times(), times, label="knock-out")
+            ki_idx = _schedule_indices(terms.ki_observation_times(), times, label="knock-in")
 
         discounted, knocked_out, batch_knocked_in, ki_and_survived, ko_time = _evaluate_batch(
             terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in, t0=t0

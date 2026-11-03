@@ -44,6 +44,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.linalg import solve_banded
 
+from otcpricer.core.exceptions import EngineError
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.vol import LocalVolatility
@@ -795,7 +796,17 @@ def price_snowball_pde(
         step = int(round((T - t_obs) / grid.dt)) - 1
         return None if step < 0 else min(step, grid.n_steps - 1)
 
+    # Collisions are refused rather than resolved. Keying by step means two
+    # observation dates landing on one step leave only the later one, and the
+    # note then pays on a schedule it does not have -- fewer knock-out chances,
+    # which is worth strictly more. Measured at 252 steps a year with obs_freq
+    # of 252, 300, 400, 600 and 1000, this engine returned five *different*
+    # prices spread over 4.22e-04 with no order to them, while the Monte Carlo
+    # returned one bit-identical price for all five. Two engines substituting
+    # differently is worse than either substituting, because the cross-check
+    # cannot see it.
     ko_steps: dict[int, float] = {}
+    ko_collisions = 0
     for t_obs in terms.ko_observation_times():
         step = _to_step(float(t_obs))
         if step is None:
@@ -804,7 +815,19 @@ def price_snowball_pde(
             # than a missing case. Asserting that keeps it from looking like an
             # oversight.
             continue
+        if step in ko_steps:
+            ko_collisions += 1
         ko_steps[step] = float(t_obs)
+
+    if ko_collisions:
+        raise EngineError(
+            f"{ko_collisions} knock-out observation dates collide on the time "
+            f"grid: obs_freq={terms.obs_freq} needs more than "
+            f"{grid.n_steps} steps over {T:.4f} years. Keeping only the later "
+            f"date of each pair would price a note with fewer observations, "
+            f"which is worth strictly more -- raise steps_per_year to at least "
+            f"{terms.obs_freq} instead"
+        )
 
     # Knock-in is also a *discretely* monitored barrier, on its own daily
     # schedule. Applying it at every time step instead -- as the original
@@ -815,12 +838,24 @@ def price_snowball_pde(
     # settling, because each refinement bought more monitoring dates.
     ki_steps: set[int] = set()
     ki_observed_at_maturity = False
+    ki_requested = 0
     for t_obs in terms.ki_observation_times():
         step = _to_step(float(t_obs))
         if step is None:
             ki_observed_at_maturity = True
         else:
+            ki_requested += 1
             ki_steps.add(step)
+
+    if len(ki_steps) != ki_requested:
+        raise EngineError(
+            f"{ki_requested - len(ki_steps)} knock-in observation dates collide "
+            f"on the time grid: ki_obs_freq={terms.ki_obs_freq} needs more than "
+            f"{grid.n_steps} steps over {T:.4f} years. The grid already snaps "
+            f"its step count to a multiple of ki_obs_freq, so reaching this "
+            f"means the requested steps_per_year was coarser than one "
+            f"observation period"
+        )
 
     # A knock-in at maturity is *not* a no-op: below the barrier the note pays
     # the short-put loss, not the coupon. Folding it into the terminal
