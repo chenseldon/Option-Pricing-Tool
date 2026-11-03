@@ -271,9 +271,31 @@ class TestFuturesBasis:
         ).price
         assert basis < plain
 
-    def test_negative_basis_rejected(self) -> None:
-        with pytest.raises(ParameterError):
-            EquityMarket(S=5000.0, r=0.02, sigma=0.2, q=0.01, basis_pa=-0.01)
+    def test_a_measured_premium_is_accepted(self) -> None:
+        """It was refused until the futures panel was measured.
+
+        A negative basis means the future trades above its index, which happens
+        on 40.9% of IH days in the CFFEX panel and leaves the carry negative on
+        10.3% of them. Rejecting it was reading a market tendency as a law.
+        """
+        premium = EquityMarket(S=5000.0, r=0.02, sigma=0.2, q=0.01, basis_pa=-0.01)
+        assert premium.carry == pytest.approx(0.0)
+        assert premium.drift == pytest.approx(0.02)
+
+        plain = price_snowball_pde(reference_terms(), EquityMarket(5000.0, 0.02, 0.2, 0.01))
+        lifted = price_snowball_pde(reference_terms(), premium)
+        assert lifted.price > plain.price, "a premium lifts the drift and the note with it"
+
+    def test_an_absurd_basis_magnitude_is_still_rejected(self) -> None:
+        """Because the sign was not the error worth catching -- the unit is.
+
+        A basis handed over in percent (``6.0`` for 6%) is the realistic
+        mistake, and it survives a sign check perfectly well.
+        """
+        with pytest.raises(ParameterError, match=r"\|basis_pa\|"):
+            EquityMarket(S=5000.0, r=0.02, sigma=0.2, q=0.01, basis_pa=6.0)
+        with pytest.raises(ParameterError, match=r"\|basis_pa\|"):
+            EquityMarket(S=5000.0, r=0.02, sigma=0.2, q=0.01, basis_pa=-6.0)
 
 
 class TestKnockedInNoteCanStillKnockOut:

@@ -280,10 +280,10 @@ class TestDecomposition:
     def test_the_basis_nearly_doubles_the_quotable_coupon(self) -> None:
         """The market view, measured: "the deeper the discount, the higher the coupon".
 
-        At MO's measured basis of about 7.7% a year the reference trade quotes
-        13.40% against 7.12% at a zero basis -- so the futures discount
-        accounts for roughly 47% of the coupon. That is first-order, not a
-        refinement, which is why the old default of zero mattered.
+        At a 7.7% basis on the reference market the trade quotes 13.40%
+        against 7.12% at a zero basis -- so the futures discount accounts for
+        roughly 47% of the coupon. That is first-order, not a refinement, which
+        is why the old default of zero mattered.
         """
         with_basis = replace(MARKET, basis_pa=0.077)
         split = decompose_par_coupon(TERMS, with_basis, CONFIG)
@@ -292,6 +292,66 @@ class TestDecomposition:
         assert split.par_coupon == pytest.approx(0.1339660, rel=1e-3)
         assert split.basis_part > split.without_basis * 0.8
         assert split.basis_share == pytest.approx(0.469, abs=0.01)
+
+    def test_the_carry_measured_off_the_real_board_more_than_doubles_it(self) -> None:
+        """On the convention marketdata/carry.py actually produces: q=0, basis=carry.
+
+        The carries are the ones that module reads off the CFFEX board on
+        2024-12-25 at r=2%. The CSI 1000's is the one that matters, and the
+        measurement is larger than the market claim: 15.04% against 6.54%, a
+        factor of 2.30.
+        """
+        expected = {0.0: 0.065385, 0.0183: 0.076347, 0.0340: 0.087034, 0.1015: 0.150398}
+        for carry, par in expected.items():
+            market = EquityMarket(S=5000.0, r=0.02, sigma=0.20, q=0.0, basis_pa=carry)
+            assert solve_par_coupon(TERMS, market, CONFIG).par_coupon == pytest.approx(
+                par, rel=1e-3
+            ), f"carry {carry}"
+
+        assert expected[0.1015] / expected[0.0] == pytest.approx(2.30, abs=0.02)
+
+    def test_the_sensitivity_to_carry_nearly_doubles_across_the_measured_range(self) -> None:
+        """So the split cannot be a slope times a level.
+
+        d(par)/d(carry) is 0.599 averaged over [0, 1.83%] and 0.838 over
+        [0, 10.15%], with a local slope of 1.196 at the CSI 1000's level. A
+        desk extrapolating the near-end sensitivity to a deep discount would
+        understate the coupon by a third, which is the reason
+        decompose_par_coupon solves twice instead of differentiating once.
+        """
+
+        def par(carry: float) -> float:
+            market = EquityMarket(S=5000.0, r=0.02, sigma=0.20, q=0.0, basis_pa=carry)
+            return solve_par_coupon(TERMS, market, CONFIG).par_coupon
+
+        at_zero = par(0.0)
+        average_near = (par(0.0183) - at_zero) / 0.0183
+        average_far = (par(0.1015) - at_zero) / 0.1015
+        local_far = (par(0.1065) - par(0.0965)) / 0.01
+
+        assert average_near == pytest.approx(0.599, abs=0.01)
+        assert average_far == pytest.approx(0.838, abs=0.01)
+        assert local_far == pytest.approx(1.196, abs=0.01)
+        assert local_far / average_near == pytest.approx(1.997, abs=0.01), (
+            "the local slope at the CSI 1000 level is 1.997x the near-end average"
+        )
+
+    def test_a_premium_lowers_the_quote_and_is_now_expressible(self) -> None:
+        """The case core/market.py refused outright until this phase.
+
+        IH futures trade above their index on 40.9% of panel days, so a
+        negative basis is not a hypothetical. It lifts the drift, which makes
+        the note worth more to the client, which means the desk can quote less.
+        """
+        premium = EquityMarket(S=5000.0, r=0.02, sigma=0.20, q=0.0, basis_pa=-0.02)
+        flat = EquityMarket(S=5000.0, r=0.02, sigma=0.20, q=0.0, basis_pa=0.0)
+        assert solve_par_coupon(TERMS, premium, CONFIG).par_coupon == pytest.approx(
+            0.055020, rel=1e-3
+        )
+        assert (
+            solve_par_coupon(TERMS, premium, CONFIG).par_coupon
+            < solve_par_coupon(TERMS, flat, CONFIG).par_coupon
+        )
 
     def test_a_zero_basis_leaves_nothing_to_attribute(self) -> None:
         split = decompose_par_coupon(TERMS, MARKET, CONFIG)

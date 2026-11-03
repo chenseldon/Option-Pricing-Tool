@@ -477,7 +477,7 @@ class TestSnowballEndpoints:
             {"lockup_months": 18},  # lock-up longer than the tenor
             {"S": -1},  # negative spot
             {"sigma": 0.0},  # zero volatility
-            {"basis_pa": -0.01},  # negative basis
+            {"basis_pa": -6.0},  # basis handed over in percent, not a decimal
         ],
     )
     def test_invalid_inputs_return_400_not_500(self, client, bad) -> None:  # noqa: ANN001

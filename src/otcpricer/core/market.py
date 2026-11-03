@@ -23,13 +23,27 @@ The direction is worth stating because it is easy to get backwards. A larger
 discount lowers the drift, which makes the note worth less to the client, which
 lets the desk quote a *higher* coupon for the same price -- matching the market
 observation that a deeper 贴水 supports a richer snowball coupon.
+
+The sign was over-constrained
+-----------------------------
+``basis_pa`` was required to be non-negative, which reads the market view --
+"the A-share index futures persistently trade at a discount" -- as a law rather
+than as a tendency. Measured on the CFFEX panel in
+:mod:`otcpricer.marketdata.carry`, IH futures trade *above* their index on
+40.9% of days and the resulting carry is negative on 10.3% of them. So the
+check now bounds the magnitude and leaves the sign to the data.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from otcpricer.core.validation import check_non_negative, check_positive, validate_market_params
+from otcpricer.core.validation import (
+    MAX_ABS_CARRY,
+    check_in_range,
+    check_positive,
+    validate_market_params,
+)
 
 __all__ = ["EquityMarket"]
 
@@ -43,10 +57,14 @@ class EquityMarket:
         r: Continuously compounded risk-free rate, used for discounting.
         sigma: Annualised volatility.
         q: Continuous dividend yield.
-        basis_pa: Annualised index futures discount (贴水), as a positive
-            decimal for a future trading *below* spot. Enters the drift only,
-            never the discount factor. Defaults to 0 so existing behaviour is
-            unchanged unless a caller opts in.
+        basis_pa: Annualised index futures basis, as a *positive* decimal for
+            a future trading **below** spot (贴水) and negative for a premium.
+            Enters the drift only, never the discount factor. Defaults to 0 so
+            existing behaviour is unchanged unless a caller opts in.
+
+            Negative values are admissible, and were not before: see
+            :data:`~otcpricer.core.validation.MAX_ABS_CARRY`. Only the
+            magnitude is bounded, to catch a basis handed over in percent.
     """
 
     S: float
@@ -57,7 +75,15 @@ class EquityMarket:
 
     def __post_init__(self) -> None:
         validate_market_params(self.S, 1.0, self.r, self.sigma, self.q)
-        check_non_negative(self.basis_pa, "basis_pa")
+        # Magnitude only. The sign was constrained here until the futures panel
+        # was measured; a premium is a real market state on two IH days in five.
+        check_in_range(
+            abs(self.basis_pa),
+            "|basis_pa|",
+            0.0,
+            MAX_ABS_CARRY,
+            include_low=True,
+        )
 
     @property
     def carry(self) -> float:

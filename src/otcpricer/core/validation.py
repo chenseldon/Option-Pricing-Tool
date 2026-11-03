@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from otcpricer.core.exceptions import ParameterError
 
 __all__ = [
+    "MAX_ABS_CARRY",
     "MAX_VOLATILITY",
     "check_positive",
     "check_non_negative",
@@ -32,6 +33,23 @@ __all__ = [
 #: can legitimately appear mid-solve in an implied-vol search, so the solver
 #: clamps rather than relying on this bound.
 MAX_VOLATILITY = 5.0
+
+#: Bound on the magnitude of an annualised carry or basis, either sign.
+#:
+#: The sign is *not* constrained, and that is the point of this constant
+#: existing. ``basis_pa`` was required to be non-negative, which assumed the
+#: futures can only be at a discount. Measured over the 725-day CFFEX panel at
+#: the panel's own zero rate, the spot-to-farthest-contract carry is negative
+#: on **8.3%** of days for IF and **10.3%** for IH; the underlying premium -- a
+#: future trading above its index -- occurs on **40.9%** of IH days. Premium is
+#: a real market state, and clamping it to zero would be editing the data to
+#: fit the assumption rather than the reverse.
+#:
+#: What remains worth refusing is a unit error. The measured range across the
+#: panel is -6.9% to +19.1%, so 100% a year is two decades of headroom and
+#: still catches a basis handed over in percent (``6.0`` meaning 6%), which is
+#: the mistake this bound is actually for.
+MAX_ABS_CARRY = 1.0
 
 
 def check_positive(value: float, name: str) -> float:

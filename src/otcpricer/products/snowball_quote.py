@@ -83,22 +83,38 @@ relationship is linear. Here the affinity is itself the test: three coupons
 must be collinear to machine precision, which is a far stronger statement than
 any tolerance on a root.
 
-The basis is a first-order driver of the answer
+The carry is a first-order driver of the answer
 -----------------------------------------------
-Measured on the reference trade at 20% volatility:
+Measured on the reference trade at 20% volatility and ``r = 2%``, with the
+carry fed the way :mod:`otcpricer.marketdata.carry` measures it -- ``q = 0``,
+``basis_pa = carry`` -- at the carries that module reads off the CFFEX board on
+2024-12-25:
 
-=========================  ============
-futures basis              par coupon
-=========================  ============
-0 (the old default)              7.12%
-IO, measured ~0.6%               7.49%
-MO, measured ~7.7%           **13.40%**
-=========================  ============
+==========================  ============
+carry                       par coupon
+==========================  ============
+0 (the old default)              6.54%
+IH, measured +1.83%              7.63%
+IF, measured +3.40%              8.70%
+IM, measured +10.15%        **15.04%**
+IH at a 2% premium               5.50%
+==========================  ============
 
-So the basis nearly doubles the quotable coupon, which is exactly what the
-market view -- "the deeper the futures discount, the higher the coupon" --
-asserts, now measured rather than repeated. :func:`decompose_par_coupon`
-splits the quote into its volatility and basis parts for that reason.
+So the CSI 1000's measured carry **more than doubles** the quotable coupon --
+2.30x -- which is what the market view, "the deeper the futures discount the
+higher the coupon", asserts. Now measured rather than repeated, and the
+measurement is larger than the claim.
+
+The last row was not expressible at all until this phase: a negative basis was
+refused by ``core/market.py``, and the futures panel shows IH futures above
+their index on 40.9% of days.
+
+The relationship is **not** linear. ``d(par)/d(carry)`` averages 0.599 over
+``[0, 1.83%]`` and 0.838 over ``[0, 10.15%]``, with a local slope of **1.196**
+at the IM level -- 1.997x the near-end average. So a desk extrapolating the
+near-end sensitivity to a deep discount would understate the coupon by a third.
+That convexity is why :func:`decompose_par_coupon` reports a difference of two
+solves rather than a sensitivity times a level.
 """
 
 from __future__ import annotations
@@ -433,9 +449,10 @@ class CouponDecomposition:
             "note": (
                 "The split is the difference between solving at the market's "
                 "basis and at a zero basis. It is not additive in any deeper "
-                "sense -- the two legs interact through the drift -- but it is "
-                "the comparison a desk actually makes when the futures curve "
-                "moves."
+                "sense -- the two legs interact through the drift, and "
+                "d(par)/d(carry) doubles from 0.60 near zero to 1.20 at the "
+                "measured CSI 1000 level -- but it is the comparison a desk "
+                "actually makes when the futures curve moves."
             ),
         }
 
@@ -456,8 +473,15 @@ def decompose_par_coupon(
     futures discount and cash management, and that "the deeper the discount,
     the higher the coupon". The first two of those are now measurable here --
     and the effect is large rather than marginal. At the reference trade's 20%
-    volatility the quote runs 7.12% at a zero basis and 13.40% at the measured
-    MO basis, so the discount accounts for **47%** of the coupon.
+    volatility the quote runs 6.54% at a zero carry and 15.04% at the carry
+    measured on the CSI 1000 board, so the discount accounts for **57%** of the
+    coupon.
+
+    The split is a difference of two solves rather than a sensitivity times a
+    level, because ``d(par)/d(carry)`` very nearly doubles across that range --
+    0.599 averaged near zero against a local 1.196 at the IM level, a ratio of
+    1.997. Attributing by either slope alone would misstate the carry's share
+    by a third.
     """
     full = solve_par_coupon(terms, market, config, knocked_in=knocked_in, local_vol=local_vol)
     flat_basis = solve_par_coupon(
