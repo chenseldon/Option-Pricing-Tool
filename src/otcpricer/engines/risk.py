@@ -65,11 +65,17 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from otcpricer.core.exceptions import EngineError
 from otcpricer.core.logging import get_logger
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import Greeks
 from otcpricer.core.vol import LocalVolatility
-from otcpricer.engines.mc import MonteCarloConfig, normal_draws, price_snowball_mc
+from otcpricer.engines.mc import (
+    MonteCarloConfig,
+    SnowballMCResult,
+    normal_draws,
+    price_snowball_mc,
+)
 from otcpricer.engines.pde import (
     LOCAL_VOL_PDE_CONFIG,
     PDEConfig,
@@ -409,7 +415,8 @@ def snowball_risk_mc(
 
     Returns:
         A :class:`SnowballRisk` with per-Greek standard errors propagated from
-        the underlying runs.
+        the underlying runs. Theta's is the error of a *paired* difference;
+        every other is a conservative quadrature bound.
     """
     config = config or MonteCarloConfig()
 
@@ -425,7 +432,13 @@ def snowball_risk_mc(
         )
         return result.price, result.std_error
 
-    base_price, base_se = value(market)
+    # The base run keeps its per-path values, because the paired theta below
+    # needs them and re-running the same simulation to collect them would
+    # double the cost of the most expensive call in the function.
+    base_paired = price_snowball_mc(
+        terms, market, config, draws=draws, local_vol=local_vol, keep_path_values=True
+    )
+    base_price, base_se = base_paired.price, base_paired.std_error
 
     spot_bump = market.S * spot_bump_rel
     up_price, up_se = value(market.with_shift(spot_rel=spot_bump_rel))
@@ -464,11 +477,30 @@ def snowball_risk_mc(
     )
     carry_rho = (carry_up - carry_down) / (2.0 * carry_bump) * _PER_PERCENT
 
-    # Theta is left to the PDE. Shortening the tenor deletes a knock-out
-    # observation (9 become 8 on the reference trade), so a maturity-bumped
-    # Monte Carlo theta would measure that contract change rather than decay.
-    # Reporting nan is honest; reporting a number would not be.
-    theta = float("nan")
+    # Theta, from a seasoned valuation rather than a shortened tenor.
+    #
+    # Shortening T deletes a knock-out observation -- nine become eight on the
+    # reference trade -- so a maturity-bumped theta measures a contract change
+    # and nan was the honest answer. Advancing the *valuation date* changes no
+    # term of the contract: the schedule and the coupon accrual stay written
+    # from inception, and only the simulation's start, the surviving
+    # observations and the discounting origin move.
+    #
+    # The step is one of the simulation's own steps, so dt is identical in both
+    # runs and the seasoned run reuses every increment but the first. That
+    # makes the difference a genuinely paired estimator rather than two
+    # independent means.
+    theta_step = 1.0 / config.steps_per_year
+    seasoned = price_snowball_mc(
+        terms,
+        market,
+        config,
+        draws=draws[1:],
+        local_vol=local_vol,
+        t0=theta_step,
+        keep_path_values=True,
+    )
+    theta, theta_se = _paired_theta(base_paired, seasoned, theta_step, config.antithetic)
 
     # Common random numbers correlate the bumped runs, so adding their errors
     # in quadrature overstates the result -- the shared noise largely cancels
@@ -482,6 +514,11 @@ def snowball_risk_mc(
         "vega": difference_error(vol_up_se, vol_down_se, 2.0 * vol_bump / _PER_PERCENT),
         "rho": difference_error(rate_up_se, rate_down_se, 2.0 * rate_bump / _PER_PERCENT),
         "carry_rho": difference_error(carry_up_se, carry_down_se, 2.0 * carry_bump / _PER_PERCENT),
+        # Paired, not quadrature. The two runs share every increment but one,
+        # so adding their errors in quadrature overstates the difference's
+        # error by a factor of four or more -- it reached 12,412% of the value
+        # at a fine step, which says nothing about the estimate at all.
+        "theta": theta_se,
     }
 
     risk = SnowballRisk(
@@ -520,6 +557,45 @@ class RiskComparison:
         }
 
 
+def _paired_theta(
+    base: SnowballMCResult,
+    seasoned: SnowballMCResult,
+    step: float,
+    antithetic: bool,
+) -> tuple[float, float]:
+    """Theta and its own standard error from two paired runs.
+
+    The error comes from the per-path *difference*, which is the only honest
+    way to report it: under common random numbers the two runs share most of
+    their noise, so quadrature on their separate errors describes a pair of
+    independent runs that were never performed. Measured on the reference
+    trade, quadrature gives 347% of the value where this gives 89%.
+
+    Antithetic pairs are averaged before the variance is taken, exactly as
+    :func:`price_snowball_mc` does for the price: the two halves of a pair are
+    negatively correlated by construction, so treating them as independent
+    samples would overstate the error again, in the other direction from
+    quadrature.
+
+    Returns:
+        ``(theta, std_error)`` per calendar day.
+    """
+    if base.path_values is None or seasoned.path_values is None:
+        raise EngineError("a paired theta needs per-path values from both runs")
+
+    difference = np.asarray(seasoned.path_values - base.path_values, dtype=float)
+    scale = step * _DAYS_PER_YEAR
+    theta = float(difference.mean()) / scale
+
+    samples = difference
+    if antithetic:
+        half = difference.size // 2
+        if half:
+            samples = 0.5 * (difference[:half] + difference[half : 2 * half])
+    std_error = float(np.std(samples, ddof=1) / np.sqrt(samples.size)) / scale
+    return theta, std_error
+
+
 def compare_snowball_risk(
     terms: SnowballTerms,
     market: EquityMarket,
@@ -541,6 +617,12 @@ def compare_snowball_risk(
     a generous one. The Monte Carlo estimator for it is intrinsically noisy on
     a discontinuous payoff, so the useful question is whether the two agree in
     sign and magnitude, not to three digits.
+
+    Theta is compared in a block of its own. It is the last of the Greeks to
+    get a second engine, and the comparison is weaker than the others in a way
+    worth seeing rather than averaging away: the two are difference quotients
+    over horizons four times apart, and three sampling errors come to about
+    80% of the value. Both facts are reported alongside the verdict.
     """
     # The flat grid's budget does not carry over to a Dupire surface; see
     # LOCAL_VOL_PDE_CONFIG for the measured convergence behind this.
@@ -612,6 +694,49 @@ def compare_snowball_risk(
             "estimator by h^2, so its sampling error is large and can exceed "
             "the value itself. Judged against that error, not on sign. Use the "
             "PDE value."
+        ),
+    }
+
+    # Theta gets its own block, for two reasons that the main loop's budget
+    # would hide.
+    #
+    # First, the two numbers are *different difference quotients* of the same
+    # derivative. The PDE reads two adjacent levels of its own backward solve,
+    # so its step is the grid's dt -- 1/1008 of a year at the standard config.
+    # The Monte Carlo advances the valuation date by one of *its* steps, 1/252.
+    # Both estimate dV/dt, over horizons four times apart, so they differ by an
+    # O(h) term before either is wrong about anything.
+    #
+    # Second, three sampling errors come to roughly 80% of theta's value at
+    # 200,000 paths. A pass inside that budget is weak evidence, and reporting
+    # it beside delta's -- where the budget is 27% of the value -- would make
+    # the two look equally established. The ratio is published so a reader can
+    # see which it is.
+    pde_theta = float(pde.greeks.theta)
+    mc_theta = float(mc.greeks.theta)
+    theta_sampling = float((mc.std_error or {}).get("theta", 0.0))
+    theta_gap = abs(pde_theta - mc_theta)
+    theta_budget = 3.0 * theta_sampling
+    verdicts["theta"] = {
+        "pde": pde_theta,
+        "mc": mc_theta,
+        "gap": theta_gap,
+        "budget": theta_budget,
+        "mc_std_error": theta_sampling,
+        "mc_error_share_of_value": (theta_budget / abs(mc_theta) if mc_theta else float("inf")),
+        "signs_agree": (pde_theta > 0) == (mc_theta > 0),
+        "within_budget": theta_gap <= theta_budget,
+        "note": (
+            "Different difference quotients of the same derivative: the PDE "
+            "steps by its grid's dt (1/1008 y), the simulation by one of its "
+            "own steps (1/252 y), so an O(h) gap is expected before either is "
+            "wrong. The simulated theta comes from advancing the valuation "
+            "date, not from shortening the tenor -- shortening it deletes a "
+            "knock-out observation and measures a contract change instead of "
+            "decay. Its error is a paired difference under common random "
+            "numbers, and at 3 standard errors it is a large fraction of the "
+            "value: see mc_error_share_of_value before reading the pass as "
+            "strong."
         ),
     }
 

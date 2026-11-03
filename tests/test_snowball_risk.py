@@ -486,15 +486,22 @@ class TestRegressionAnchors:
         """It is deterministic; claiming a standard error would be misleading."""
         assert snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD).std_error is None
 
-    def test_monte_carlo_theta_is_nan_not_a_wrong_number(self) -> None:
-        """Bumping the tenor deletes a knock-out observation, so a simulated
-        theta would measure a contract change. nan is the honest answer."""
+    def test_monte_carlo_theta_is_a_number_now(self) -> None:
+        """It was nan, and the reason it was nan is worth keeping in view.
+
+        Shortening the tenor deletes a knock-out observation -- nine become
+        eight on the reference trade -- so a maturity-bumped theta measures a
+        contract change rather than time decay, and nan was the honest answer.
+        Advancing the *valuation date* changes no term of the contract, so
+        there is now something to report.
+        """
         mc = snowball_risk_mc(
             reference_terms(),
             REFERENCE_MARKET,
             MonteCarloConfig(paths=20_000, memory_budget_mb=4096.0),
         )
-        assert np.isnan(mc.greeks.theta)
+        assert not np.isnan(mc.greeks.theta)
+        assert (mc.std_error or {})["theta"] > 0.0
 
     def test_risk_price_matches_the_quote(self) -> None:
         """The risk and the price must come from the same state."""
@@ -510,6 +517,123 @@ class TestRegressionAnchors:
         assert payload["method"] == "pde-grid"
         assert set(payload) >= {"delta", "gamma", "vega", "theta", "rho", "price", "method"}
         assert "carry_rho" in payload
+
+
+class TestTheta:
+    """The last Greek to get a second engine.
+
+    The route is a seasoned valuation rather than a shortened tenor, which is
+    the whole reason it is possible: shortening ``T`` deletes a knock-out
+    observation, so the difference measures a contract change. Advancing the
+    valuation date leaves every term of the contract where the term sheet put
+    it.
+    """
+
+    def test_the_two_engines_agree_within_the_sampling_error(self) -> None:
+        """Measured: PDE +0.00025218 against MC +0.00027274 +/- 7.28e-05.
+
+        A gap of 0.28 standard errors. Reported with the caveat that three of
+        those errors come to about 80% of the value, so this is agreement
+        rather than confirmation -- which is what the verdict block's
+        ``mc_error_share_of_value`` is for.
+        """
+        comparison = compare_snowball_risk(
+            reference_terms(),
+            REFERENCE_MARKET,
+            pde_config=STANDARD,
+            mc_config=MonteCarloConfig(
+                paths=200_000, steps_per_year=252, seed=42, memory_budget_mb=8192.0
+            ),
+        )
+        verdict = comparison.verdicts["theta"]
+        assert verdict["within_budget"], verdict
+        assert verdict["signs_agree"]
+        assert float(verdict["gap"]) < float(verdict["budget"])
+        # Honest about how weak the pass is.
+        assert 0.3 < float(verdict["mc_error_share_of_value"]) < 2.0
+
+    def test_the_paired_error_matches_the_spread_across_seeds(self) -> None:
+        """The check that the reported standard error means anything.
+
+        An internally computed error is a claim about dispersion; the only way
+        to verify it is to run the estimator repeatedly and measure the
+        dispersion. Measured over four seeds at 100,000 paths, the seed-to-seed
+        standard deviation sits within a factor of two of the paired error each
+        run reports for itself -- which is as tight as four samples can show.
+
+        This is also what rules out the alternative: a quadrature bound on the
+        two runs' separate errors is four times too large, and would pass this
+        test in the wrong direction.
+        """
+        thetas, reported = [], []
+        for seed in range(4):
+            mc = snowball_risk_mc(
+                reference_terms(),
+                REFERENCE_MARKET,
+                MonteCarloConfig(
+                    paths=100_000, steps_per_year=252, seed=500 + seed, memory_budget_mb=8192.0
+                ),
+            )
+            thetas.append(mc.greeks.theta)
+            reported.append((mc.std_error or {})["theta"])
+
+        observed = float(np.std(thetas, ddof=1))
+        claimed = float(np.mean(reported))
+        assert 0.5 < observed / claimed < 2.0, (
+            f"reported {claimed:.2e} against an observed spread of {observed:.2e}"
+        )
+
+    def test_the_error_falls_as_the_square_root_of_the_path_count(self) -> None:
+        """Which is what says the estimator is a mean and not something else."""
+        errors = []
+        for paths in (50_000, 200_000):
+            mc = snowball_risk_mc(
+                reference_terms(),
+                REFERENCE_MARKET,
+                MonteCarloConfig(paths=paths, steps_per_year=252, seed=99, memory_budget_mb=8192.0),
+            )
+            errors.append((mc.std_error or {})["theta"])
+        assert errors[0] / errors[1] == pytest.approx(2.0, rel=0.25)
+
+    def test_the_seasoned_valuation_changes_no_term_of_the_contract(self) -> None:
+        """The property the whole approach rests on.
+
+        A note valued one step in is the *same* note: the same monthly
+        knock-out dates, the same coupon accrual from inception, the same
+        maturity. Only the simulation's start, the surviving observations and
+        the discounting origin move. So the price must be close to the
+        inception price -- one day of a 25bp-a-day theta -- rather than
+        different by the amount a deleted observation would cost.
+        """
+        from otcpricer.engines.mc import normal_draws, price_snowball_mc
+
+        terms = reference_terms()
+        config = MonteCarloConfig(
+            paths=200_000, steps_per_year=252, seed=7, memory_budget_mb=8192.0
+        )
+        draws = normal_draws(252, config.paths, config.seed, config.antithetic)
+
+        inception = price_snowball_mc(terms, REFERENCE_MARKET, config, draws=draws)
+        seasoned = price_snowball_mc(terms, REFERENCE_MARKET, config, draws=draws[1:], t0=1.0 / 252)
+
+        # One step of decay at the measured theta, not a structural jump.
+        assert abs(seasoned.price - inception.price) < 5e-3
+        # And the schedule really did lose nothing: the knock-out probability
+        # is essentially unchanged, where deleting an observation would drop it.
+        assert seasoned.ko_prob == pytest.approx(inception.ko_prob, abs=5e-3)
+
+    def test_a_valuation_date_at_or_past_maturity_is_refused(self) -> None:
+        from otcpricer.engines.mc import price_snowball_mc
+
+        terms = reference_terms()
+        for bad in (terms.T, terms.T + 0.5, -0.1):
+            with pytest.raises(ValueError, match=r"t0 must lie in \[0, T\)"):
+                price_snowball_mc(
+                    terms,
+                    REFERENCE_MARKET,
+                    MonteCarloConfig(paths=1_000, memory_budget_mb=4096.0),
+                    t0=bad,
+                )
 
 
 class TestCarryRho:

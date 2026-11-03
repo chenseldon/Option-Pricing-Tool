@@ -118,6 +118,19 @@ class SnowballMCResult:
             or ``"heston-qe"``. Carried because the three are not
             interchangeable and the response would otherwise look identical
             whichever ran.
+        path_values: Discounted payoff per path, or ``None``.
+
+            Populated only on request, and only when the run is a single batch
+            -- which supplying ``draws`` already forces. It exists for one
+            reason: a **paired** difference needs per-path values to report its
+            own error.
+
+            Under common random numbers two runs share most of their noise, so
+            combining their standard errors in quadrature overstates the error
+            of the difference enormously. Measured on theta, the quadrature
+            bound came to 347% of the value where the paired estimator puts it
+            at 89%, and at a finer step the bound reached 12,412% -- a number
+            that says nothing at all about the estimate.
     """
 
     price: float
@@ -129,6 +142,7 @@ class SnowballMCResult:
     expected_ko_time: float
     paths: int
     vol_model: str = "flat"
+    path_values: np.ndarray | None = None
 
     @property
     def cross_checked_by_a_second_engine(self) -> bool:
@@ -193,6 +207,8 @@ def _simulate_local_vol(
     dt: float,
     n_steps: int,
     draws: np.ndarray,
+    *,
+    t0: float = 0.0,
 ) -> np.ndarray:
     """Step log-spot forward with a state-dependent volatility.
 
@@ -221,7 +237,10 @@ def _simulate_local_vol(
     root_dt = float(np.sqrt(dt))
 
     for step in range(n_steps):
-        t = step * dt
+        # Absolute time. The surface is a function of calendar time, so a
+        # seasoned valuation must sample it at the dates it will actually
+        # live through, not at an elapsed time starting from zero.
+        t = t0 + step * dt
         current = log_paths[step]
         sigma = np.asarray(local_vol.local_vol(np.exp(current), t), dtype=float)
         log_paths[step + 1] = (
@@ -451,6 +470,7 @@ def simulate_log_paths(
     draws: np.ndarray | None = None,
     local_vol: LocalVolatility | None = None,
     heston: HestonParams | None = None,
+    t0: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Simulate paths under the risk-neutral measure.
 
@@ -475,14 +495,23 @@ def simulate_log_paths(
             exclusive with ``local_vol``: they are different models, not
             different settings, and silently preferring one would make a
             caller's mistake invisible. ``market.sigma`` is not read.
+        t0: Start of the simulation in years, for a seasoned valuation. The
+            horizon simulated is ``T - t0``; ``market.S`` is read as the spot
+            *at* ``t0``, and the returned times are absolute, measured from
+            inception, so a contract schedule written from inception needs no
+            translation.
 
     Returns:
         ``(times, paths)`` where ``times`` has length ``steps + 1`` starting at
-        0, and ``paths`` is ``(steps + 1, n_paths)`` with row 0 equal to spot.
+        ``t0``, and ``paths`` is ``(steps + 1, n_paths)`` with row 0 equal to
+        spot.
     """
     check_positive(T, "T")
-    n_steps = max(int(round(T * config.steps_per_year)), 1)
-    dt = T / n_steps
+    if not 0.0 <= t0 < T:
+        raise ValueError(f"t0 must lie in [0, T), got t0={t0} and T={T}")
+    horizon = T - t0
+    n_steps = max(int(round(horizon * config.steps_per_year)), 1)
+    dt = horizon / n_steps
 
     if heston is not None and local_vol is not None:
         raise ValueError(
@@ -506,7 +535,7 @@ def simulate_log_paths(
             config.antithetic,
         )
     elif local_vol is not None:
-        log_paths = _simulate_local_vol(market, local_vol, dt, n_steps, draws)
+        log_paths = _simulate_local_vol(market, local_vol, dt, n_steps, draws, t0=t0)
     else:
         drift_step = (market.drift - 0.5 * market.sigma**2) * dt
         vol_step = market.sigma * np.sqrt(dt)
@@ -519,19 +548,33 @@ def simulate_log_paths(
         np.cumsum(log_increments, axis=0, out=log_paths[1:, :])
         log_paths[1:, :] += np.log(market.S)
 
-    times = np.arange(n_steps + 1, dtype=float) * dt
+    # Absolute times measured from *inception*, not from t0. The contract's
+    # observation schedule and its coupon accrual are both written from
+    # inception, so shifting the clock here instead of there would mean
+    # shifting them back everywhere downstream.
+    times = t0 + np.arange(n_steps + 1, dtype=float) * dt
     return times, np.exp(log_paths)
 
 
 def _schedule_indices(observation_times: np.ndarray, times: np.ndarray) -> np.ndarray:
     """Map observation dates onto the nearest simulation grid index.
 
-    Returns unique indices in increasing order, excluding index 0 (inception is
-    never an observation).
+    Returns unique indices in increasing order, excluding index 0 -- which is
+    the valuation date, and is never an observation: at inception because the
+    schedule starts later, and on a seasoned valuation because any observation
+    already past is history rather than something to simulate.
+
+    Observations strictly before ``times[0]`` are dropped. On a seasoned
+    valuation that is the whole point: they have already happened, and the
+    caller states their outcome through ``knocked_in`` rather than having them
+    re-drawn.
     """
     if observation_times.size == 0:
         return np.empty(0, dtype=int)
-    idx = np.searchsorted(times, observation_times - 1e-12)
+    future = observation_times[observation_times > times[0] + 1e-12]
+    if future.size == 0:
+        return np.empty(0, dtype=int)
+    idx = np.searchsorted(times, future - 1e-12)
     idx = np.clip(idx, 1, times.size - 1)
     return np.unique(idx)
 
@@ -545,6 +588,7 @@ def _evaluate_batch(
     ki_idx: np.ndarray,
     *,
     knocked_in: bool = False,
+    t0: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Resolve one batch of paths into discounted payoffs and state flags.
 
@@ -594,7 +638,12 @@ def _evaluate_batch(
     # --- Discount each path at its own payment date -------------------------
     # This is the correction: the legacy engine applied exp(-r * T) to every
     # path, including the majority that terminate early.
-    discounted = np.asarray(payoff * np.exp(-market.r * pay_time))
+    #
+    # Discounting runs from the *valuation* date to the payment date. On a
+    # seasoned valuation the two differ, and using the inception-based time
+    # would scale the whole price by exp(-r*t0) -- small, systematic, and in
+    # exactly the place a theta would read it as decay.
+    discounted = np.asarray(payoff * np.exp(-market.r * (pay_time - t0)))
     return discounted, knocked_out, has_knocked_in, ki_and_survived, ko_time
 
 
@@ -607,6 +656,8 @@ def price_snowball_mc(
     local_vol: LocalVolatility | None = None,
     heston: HestonParams | None = None,
     knocked_in: bool = False,
+    t0: float = 0.0,
+    keep_path_values: bool = False,
 ) -> SnowballMCResult:
     """Value a snowball note by path Monte Carlo.
 
@@ -638,6 +689,28 @@ def price_snowball_mc(
             engine is unchanged and unbiased for the diffusion; when supplied,
             ``steps_per_year`` becomes an accuracy parameter rather than only a
             scheduling one.
+        t0: Valuation date in years from inception, for a seasoned trade.
+            Zero values the note at inception.
+
+            The contract does **not** move: its observation schedule and its
+            coupon accrual stay written from inception, so a knock-out at
+            ``t`` still pays ``coupon_pa * t`` and the monthly dates stay where
+            the term sheet put them. What changes is where the simulation
+            starts, which observations remain, and that discounting runs from
+            ``t0`` rather than from zero.
+
+            This is what makes a Monte Carlo theta possible. Shortening ``T``
+            instead silently deletes a knock-out observation -- nine become
+            eight on the reference trade -- so a maturity-bumped theta measures
+            a contract change rather than time decay. Advancing the valuation
+            date changes no term of the contract at all.
+
+            Observations already past are dropped rather than re-drawn. Their
+            outcome is the caller's to state, through ``knocked_in``.
+        keep_path_values: Return the discounted payoff of every path, for a
+            paired difference that needs its own standard error. Requires a
+            single batch, which supplying ``draws`` forces; refused otherwise
+            rather than returning one batch's worth and looking complete.
         heston: Heston parameters, simulated by Andersen's QE scheme. Mutually
             exclusive with ``local_vol``.
 
@@ -664,10 +737,24 @@ def price_snowball_mc(
             "pass either heston or local_vol, not both: they are different "
             "models rather than different settings"
         )
-    n_steps = max(int(round(terms.T * config.steps_per_year)), 1)
+    if not 0.0 <= t0 < terms.T:
+        raise ValueError(
+            f"t0 must lie in [0, T) -- a valuation date at or after maturity has "
+            f"nothing left to simulate. Got t0={t0} against T={terms.T}"
+        )
+    n_steps = max(int(round((terms.T - t0) * config.steps_per_year)), 1)
 
     batch_size = config.paths if draws is not None else config.batch_paths(n_steps)
     n_batches = max(int(np.ceil(config.paths / batch_size)), 1)
+
+    if keep_path_values and n_batches > 1:
+        raise ValueError(
+            f"keep_path_values needs a single batch, but this run would take "
+            f"{n_batches} at {config.paths} paths and {n_steps} steps. Supply "
+            f"draws (which forces one batch), raise memory_budget_mb, or lower "
+            f"the path count -- returning one batch's values would look like the "
+            f"whole run"
+        )
 
     # One spawned seed sequence per batch: reproducible, and independent across
     # batches in a way sequential integer seeds would not guarantee.
@@ -684,6 +771,7 @@ def price_snowball_mc(
     ki_survived_count = 0
     ko_time_sum = 0.0
     ko_idx = ki_idx = np.empty(0, dtype=int)
+    kept_values: np.ndarray | None = None
 
     for batch, entropy in enumerate(seed_stream):
         remaining = config.paths - n_done
@@ -699,7 +787,13 @@ def price_snowball_mc(
             memory_budget_mb=config.memory_budget_mb,
         )
         times, paths = simulate_log_paths(
-            market, terms.T, batch_config, draws=draws, local_vol=local_vol, heston=heston
+            market,
+            terms.T,
+            batch_config,
+            draws=draws,
+            local_vol=local_vol,
+            heston=heston,
+            t0=t0,
         )
 
         if batch == 0:
@@ -707,8 +801,11 @@ def price_snowball_mc(
             ki_idx = _schedule_indices(terms.ki_observation_times(), times)
 
         discounted, knocked_out, batch_knocked_in, ki_and_survived, ko_time = _evaluate_batch(
-            terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in
+            terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in, t0=t0
         )
+
+        if keep_path_values:
+            kept_values = discounted
 
         total += float(discounted.sum())
         flat_sq_sum += float(np.dot(discounted, discounted))
@@ -761,6 +858,7 @@ def price_snowball_mc(
             if local_vol is not None
             else "flat"
         ),
+        path_values=kept_values,
     )
     _log.debug(
         "snowball MC priced",
