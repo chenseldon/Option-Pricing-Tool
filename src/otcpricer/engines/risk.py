@@ -79,6 +79,7 @@ from otcpricer.engines.pde import (
 from otcpricer.products.snowball import SnowballTerms
 
 __all__ = [
+    "DEFAULT_CARRY_BUMP",
     "DEFAULT_RATE_BUMP",
     "DEFAULT_SPOT_BUMP_REL",
     "DEFAULT_VOL_BUMP",
@@ -95,6 +96,14 @@ _log = get_logger(__name__)
 DEFAULT_VOL_BUMP = 0.01
 #: Rate bump for rho, in absolute units (25 basis points).
 DEFAULT_RATE_BUMP = 0.0025
+
+#: Absolute carry bump for ``carry_rho``, 25bp a year.
+#:
+#: Matched to :data:`DEFAULT_RATE_BUMP` so the two sensitivities are directly
+#: comparable -- they are the same size of move in opposite halves of the
+#: drift, and reading them side by side is how a desk sees that a basis move
+#: is not a rate move.
+DEFAULT_CARRY_BUMP = 0.0025
 #: Relative spot bump for the Monte Carlo finite differences (1%).
 #:
 #: Larger than one would choose for a smooth payoff, deliberately. Common
@@ -121,12 +130,26 @@ class SnowballRisk:
             empty for the deterministic PDE.
         price: The value the Greeks were taken around, as a cross-check that
             the risk and the quote come from the same state.
+        carry_rho: Sensitivity to **total carry**, per percentage point a year,
+            or ``None`` if it was not computed.
+
+            One field, not two. ``q`` and ``basis_pa`` reach every engine only
+            through their sum ``market.carry``, so ``dV/dq`` and
+            ``dV/dbasis_pa`` are the same derivative -- measured at a relative
+            difference of 1.5e-15, i.e. identical to the last bit. Reporting
+            both would manufacture an independence the model does not have, and
+            a desk hedging each separately would double-count.
+
+            It is here rather than in :class:`~otcpricer.core.types.Greeks`
+            because that is a fixed five-field record shared with the vanilla
+            products, and a basis is not a vanilla concept.
     """
 
     greeks: Greeks
     method: str
     price: float
     std_error: dict[str, float] | None = None
+    carry_rho: float | None = None
 
     #: Decimal places for serialisation. Generous on purpose: these are
     #: fractions of notional, so gamma lands around 1e-07 and the 8 places
@@ -140,6 +163,14 @@ class SnowballRisk:
             "price": round(self.price, 8),
             **self.greeks.as_dict(self.DECIMALS),
         }
+        if self.carry_rho is not None:
+            payload["carry_rho"] = round(self.carry_rho, self.DECIMALS)
+            payload["carry_rho_note"] = (
+                "Sensitivity to total carry (q + basis_pa) per percentage "
+                "point. There is deliberately no separate dividend "
+                "sensitivity: the engines read only the sum, so dV/dq and "
+                "dV/dbasis_pa are the same derivative to 1.5e-15."
+            )
         if self.std_error:
             payload["std_error"] = {k: round(v, 10) for k, v in self.std_error.items()}
         return payload
@@ -229,6 +260,7 @@ def snowball_risk_pde(
     knocked_in: bool = False,
     vol_bump: float = DEFAULT_VOL_BUMP,
     rate_bump: float = DEFAULT_RATE_BUMP,
+    carry_bump: float = DEFAULT_CARRY_BUMP,
     local_vol: LocalVolatility | None = None,
 ) -> SnowballRisk:
     """Greeks from the Crank-Nicolson solver. The production method.
@@ -255,6 +287,7 @@ def snowball_risk_pde(
             already breached its barrier.
         vol_bump: Absolute volatility bump for vega.
         rate_bump: Absolute rate bump for rho.
+        carry_bump: Absolute carry bump for ``carry_rho``.
 
     Returns:
         A :class:`SnowballRisk` with no standard errors: the method is
@@ -301,10 +334,37 @@ def snowball_risk_pde(
     )
     rho = (rate_up - rate_down) / (2.0 * rate_bump) * _PER_PERCENT
 
+    # Carry rho: the drift half of rho, without the discounting half. The
+    # basis is now measured rather than assumed (marketdata/carry.py), and the
+    # measurement moves: the spot-to-far carry has a standard deviation of
+    # 2.1% to 3.9% a year across the panel, against a rate that moved 70bp over
+    # three years. So this is the larger of the two exposures by an order of
+    # magnitude, and it had no Greek at all.
+    #
+    # On the local-volatility path the surface carries the drift, so the
+    # surface is shifted too -- with_carry_shift, not with_rate_shift, which
+    # moves rate and drift together and would leave the carry unchanged.
+    carry_up = _pde_value(
+        terms,
+        market.with_shift(carry_abs=carry_bump),
+        config,
+        knocked_in,
+        None if local_vol is None else local_vol.with_carry_shift(carry_bump),
+    )
+    carry_down = _pde_value(
+        terms,
+        market.with_shift(carry_abs=-carry_bump),
+        config,
+        knocked_in,
+        None if local_vol is None else local_vol.with_carry_shift(-carry_bump),
+    )
+    carry_rho = (carry_up - carry_down) / (2.0 * carry_bump) * _PER_PERCENT
+
     risk = SnowballRisk(
         greeks=Greeks(delta=delta, gamma=gamma, vega=vega, theta=theta, rho=rho),
         method="pde-grid" if local_vol is None else "pde-grid+ssvi-parallel-vega",
         price=base.price,
+        carry_rho=carry_rho,
     )
     _log.debug("snowball PDE risk", extra={"spot": market.S, **risk.greeks.as_dict()})
     return risk
@@ -318,6 +378,7 @@ def snowball_risk_mc(
     spot_bump_rel: float = DEFAULT_SPOT_BUMP_REL,
     vol_bump: float = DEFAULT_VOL_BUMP,
     rate_bump: float = DEFAULT_RATE_BUMP,
+    carry_bump: float = DEFAULT_CARRY_BUMP,
     local_vol: LocalVolatility | None = None,
 ) -> SnowballRisk:
     """Greeks by Monte Carlo resimulation, as an independent check on the PDE.
@@ -344,6 +405,7 @@ def snowball_risk_mc(
         spot_bump_rel: Relative spot bump.
         vol_bump: Absolute volatility bump.
         rate_bump: Absolute rate bump.
+        carry_bump: Absolute carry bump for ``carry_rho``.
 
     Returns:
         A :class:`SnowballRisk` with per-Greek standard errors propagated from
@@ -392,6 +454,16 @@ def snowball_risk_mc(
     )
     rho = (rate_up - rate_down) / (2.0 * rate_bump) * _PER_PERCENT
 
+    carry_up, carry_up_se = value(
+        market.with_shift(carry_abs=carry_bump),
+        None if local_vol is None else local_vol.with_carry_shift(carry_bump),
+    )
+    carry_down, carry_down_se = value(
+        market.with_shift(carry_abs=-carry_bump),
+        None if local_vol is None else local_vol.with_carry_shift(-carry_bump),
+    )
+    carry_rho = (carry_up - carry_down) / (2.0 * carry_bump) * _PER_PERCENT
+
     # Theta is left to the PDE. Shortening the tenor deletes a knock-out
     # observation (9 become 8 on the reference trade), so a maturity-bumped
     # Monte Carlo theta would measure that contract change rather than decay.
@@ -409,6 +481,7 @@ def snowball_risk_mc(
         "gamma": difference_error(np.hypot(up_se, down_se), 2.0 * base_se, spot_bump**2),
         "vega": difference_error(vol_up_se, vol_down_se, 2.0 * vol_bump / _PER_PERCENT),
         "rho": difference_error(rate_up_se, rate_down_se, 2.0 * rate_bump / _PER_PERCENT),
+        "carry_rho": difference_error(carry_up_se, carry_down_se, 2.0 * carry_bump / _PER_PERCENT),
     }
 
     risk = SnowballRisk(
@@ -418,6 +491,7 @@ def snowball_risk_mc(
         ),
         price=base_price,
         std_error=std_error,
+        carry_rho=carry_rho,
     )
     _log.debug("snowball MC risk", extra={"spot": market.S, **risk.greeks.as_dict()})
     return risk
@@ -481,10 +555,23 @@ def compare_snowball_risk(
     pde = snowball_risk_pde(terms, market, pde_config, local_vol=local_vol)
     mc = snowball_risk_mc(terms, market, mc_config, local_vol=local_vol)
 
+    def read(risk: SnowballRisk, name: str) -> float:
+        """One Greek off a result, whether it lives on Greeks or beside it.
+
+        ``carry_rho`` is on :class:`SnowballRisk` rather than in
+        :class:`~otcpricer.core.types.Greeks`, which is a fixed five-field
+        record shared with the vanilla products. The lookup is widened here so
+        the budget logic stays in one place rather than being copied for one
+        sensitivity.
+        """
+        if name == "carry_rho":
+            return float("nan") if risk.carry_rho is None else float(risk.carry_rho)
+        return float(getattr(risk.greeks, name))
+
     verdicts: dict[str, dict[str, object]] = {}
-    for name in ("delta", "vega", "rho"):
-        pde_value = float(getattr(pde.greeks, name))
-        mc_value = float(getattr(mc.greeks, name))
+    for name in ("delta", "vega", "rho", "carry_rho"):
+        pde_value = read(pde, name)
+        mc_value = read(mc, name)
         sampling = float((mc.std_error or {}).get(name, 0.0))
         # Three sampling errors, floored at 2% of the PDE value so the budget
         # stays meaningful where the Monte Carlo happens to be very precise but

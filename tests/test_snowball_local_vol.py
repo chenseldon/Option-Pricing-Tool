@@ -388,6 +388,39 @@ class TestRiskUnderLocalVolatility:
             assert getattr(local.greeks, name) == pytest.approx(
                 getattr(flat.greeks, name), abs=1e-12
             ), name
+        assert local.carry_rho == pytest.approx(flat.carry_rho, abs=1e-12)
+
+    def test_carry_rho_moves_the_drift_without_moving_the_rate(self) -> None:
+        """The same trap as rho, one layer down, and a sharper one.
+
+        ``ForwardCurve`` stores a rate and a drift, and its carry is their
+        difference. So ``with_rate_shift``, which moves both together, leaves
+        the carry *exactly* unchanged -- using it here would return a carry_rho
+        of zero while every other Greek looked right.
+
+        Under a constant surface ``with_carry_shift`` and a market bump
+        coincide, so the degenerate pins it: the local path must reproduce the
+        flat path's carry_rho, which is nowhere near zero.
+        """
+        terms = SnowballTerms(S0=100.0, T=1.0, ko_pct=1.03, ki_pct=0.80, coupon_pa=0.20)
+        market = EquityMarket(S=100.0, r=0.03, sigma=0.20, q=0.0)
+        local_vol = ConstantLocalVol(0.20, market.drift)
+
+        flat = snowball_risk_pde(terms, market, self.CONFIG).carry_rho
+        local = snowball_risk_pde(terms, market, self.CONFIG, local_vol=local_vol).carry_rho
+
+        assert flat is not None and local is not None
+        assert abs(flat) > 1e-4, "the flat carry_rho must be large enough to be worth matching"
+        assert local == pytest.approx(flat, abs=1e-12)
+
+        # And the trap itself: a rate shift leaves the surface's carry alone.
+        surface = ConstantLocalVol(0.20, market.drift)
+        assert surface.with_rate_shift(0.01).drift(0.5) == pytest.approx(
+            surface.drift(0.5) + 0.01, abs=1e-15
+        )
+        assert surface.with_carry_shift(0.01).drift(0.5) == pytest.approx(
+            surface.drift(0.5) - 0.01, abs=1e-15
+        )
 
     def test_rho_moves_the_drift_and_not_only_the_discounting(self) -> None:
         """The defect this caught, pinned so it cannot come back.

@@ -575,9 +575,7 @@ def _evaluate_batch(
     else:
         ki_levels = paths[ki_idx, :] <= terms.ki_barrier
         cutoff = np.where(knocked_out, ko_time, np.inf)[None, :]
-        has_knocked_in = np.asarray(
-            (ki_levels & (times[ki_idx][:, None] <= cutoff)).any(axis=0)
-        )
+        has_knocked_in = np.asarray((ki_levels & (times[ki_idx][:, None] <= cutoff)).any(axis=0))
 
     # --- Assemble payoff and payment time per path --------------------------
     payoff = np.empty(n_paths, dtype=float)
@@ -708,10 +706,8 @@ def price_snowball_mc(
             ko_idx = _schedule_indices(terms.ko_observation_times(), times)
             ki_idx = _schedule_indices(terms.ki_observation_times(), times)
 
-        discounted, knocked_out, batch_knocked_in, ki_and_survived, ko_time = (
-            _evaluate_batch(
-                terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in
-            )
+        discounted, knocked_out, batch_knocked_in, ki_and_survived, ko_time = _evaluate_batch(
+            terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in
         )
 
         total += float(discounted.sum())

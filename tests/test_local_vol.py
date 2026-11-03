@@ -443,6 +443,41 @@ class TestParallelShift:
         with pytest.raises(CalibrationError, match="non-monotone"):
             surface.with_atm_shift(-0.10)
 
+    def test_a_carry_shift_moves_the_tail_drift_and_leaves_the_rate(self) -> None:
+        """The one respect in which it differs from a rate shift -- and it is
+        the respect that decides whether carry_rho measures anything.
+
+        ``ForwardCurve.carry`` is ``rate - drift``. A rate shift moves both, so
+        the carry it reports is unchanged; only moving the drift alone changes
+        it. Using the rate shift for carry_rho would therefore return a clean
+        zero on the local-volatility path while every other Greek looked
+        correct.
+
+        The quoted forwards do not move under either: they were implied from
+        the option chain and are observations, not functions of a hypothetical
+        carry.
+        """
+        surface = _real("510300")
+        bump = 0.0025
+        shifted = surface.with_carry_shift(bump)
+
+        assert shifted.forwards.tail_drift == pytest.approx(
+            surface.forwards.tail_drift - bump, abs=1e-15
+        )
+        assert shifted.forwards.rate == surface.forwards.rate
+        assert shifted.forwards.forwards == surface.forwards.forwards
+
+        beyond = surface.forwards.maturities[-1] + 1.0
+        assert float(shifted.forwards.carry(beyond)) == pytest.approx(
+            float(surface.forwards.carry(beyond)) + bump, abs=1e-15
+        )
+
+        # And the contrast that makes the method necessary.
+        rate_shifted = surface.with_rate_shift(bump)
+        assert float(rate_shifted.forwards.carry(beyond)) == pytest.approx(
+            float(surface.forwards.carry(beyond)), abs=1e-15
+        )
+
     def test_shift_survives_on_the_real_surfaces(self) -> None:
         """Measured: the guard is real but does not bind in practice.
 

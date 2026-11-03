@@ -117,17 +117,31 @@ class EquityMarket:
         spot_rel: float = 0.0,
         vol_abs: float = 0.0,
         rate_abs: float = 0.0,
+        carry_abs: float = 0.0,
+        div_abs: float = 0.0,
     ) -> EquityMarket:
         """Return a shifted copy, for finite-difference risk and stress grids.
+
+        ``carry_abs`` and ``div_abs`` move ``basis_pa`` and ``q`` respectively,
+        and they reach the price through :attr:`carry` -- the same sum. They
+        are therefore the *same* shift, and both exist only so a test can apply
+        them separately and show that they are. One Greek is reported, not two;
+        see :func:`~otcpricer.engines.risk.snowball_risk_pde`.
 
         Args:
             spot_rel: Relative spot shift (``0.01`` is +1%).
             vol_abs: Absolute volatility shift (``0.01`` is +1 vol point).
-            rate_abs: Absolute rate shift (``0.0001`` is +1bp).
+            rate_abs: Absolute rate shift (``0.0001`` is +1bp). Moves the
+                discounting as well as the drift.
+            carry_abs: Absolute shift to ``basis_pa``. Drift only.
+            div_abs: Absolute shift to ``q``. Drift only, and indistinguishable
+                from ``carry_abs`` in every price.
         """
         return replace(
             self,
             S=self.S * (1.0 + spot_rel),
             sigma=max(self.sigma + vol_abs, 1e-8),
             r=self.r + rate_abs,
+            basis_pa=self.basis_pa + carry_abs,
+            q=max(self.q + div_abs, 0.0),
         )

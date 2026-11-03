@@ -107,6 +107,29 @@ class LocalVolatility(Protocol):
         """
         ...
 
+    def with_carry_shift(self, carry_abs: float) -> LocalVolatility:
+        """A copy whose drift reflects a shifted carry, for ``carry_rho``.
+
+        Distinct from :meth:`with_rate_shift` in exactly one respect, and it is
+        the respect that matters: a carry shift moves the *drift* without
+        moving the rate. ``ForwardCurve`` stores both, and its
+        :meth:`~otcpricer.marketdata.forward.ForwardCurve.carry` is
+        ``rate - drift`` -- so shifting both together, as a rate shift does,
+        leaves the carry unchanged and would measure nothing at all.
+
+        Which is the trap this method exists to avoid. On this path the drift
+        comes from the surface rather than from ``market``, so bumping
+        ``market.basis_pa`` alone does not reach the diffusion, and the Greek
+        would come back near zero: a plausible wrong answer rather than an
+        obvious one, which is the same failure mode
+        :meth:`with_atm_shift` documents for vega.
+
+        Only the extrapolated tail moves, for the same reason as there: the
+        forwards inside the quoted range were implied from the option chain and
+        are observations, not functions of a hypothetical carry.
+        """
+        ...
+
     def with_rate_shift(self, rate_abs: float) -> LocalVolatility:
         """A copy whose drift reflects a shifted rate, for rho.
 

@@ -541,6 +541,30 @@ class LocalVolSurface:
             require_well_defined=require_well_defined,
         )
 
+    def with_carry_shift(self, carry_abs: float) -> LocalVolSurface:
+        """A copy whose tail drift alone is shifted, for ``carry_rho``.
+
+        ``tail_drift`` falls by the carry bump and ``rate`` is left alone --
+        which is the whole difference from :meth:`with_rate_shift`, where both
+        move together. Since ``ForwardCurve.carry`` is ``rate - drift``, moving
+        both leaves the carry untouched; only this moves it.
+        """
+        shifted = ForwardCurve(
+            maturities=self.forwards.maturities,
+            forwards=self.forwards.forwards,
+            tail_drift=self.forwards.tail_drift - float(carry_abs),
+            rate=self.forwards.rate,
+        )
+        return LocalVolSurface(
+            self.surface,
+            shifted,
+            self.spot,
+            floor=self.floor,
+            cap=self.cap,
+            precondition=self.precondition,
+            require_well_defined=False,
+        )
+
     def with_rate_shift(self, rate_abs: float) -> LocalVolSurface:
         """A copy whose tail drift and discount rate are shifted, for rho.
 

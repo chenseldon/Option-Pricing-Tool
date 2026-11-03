@@ -509,3 +509,134 @@ class TestRegressionAnchors:
         json.dumps(payload)
         assert payload["method"] == "pde-grid"
         assert set(payload) >= {"delta", "gamma", "vega", "theta", "rho", "price", "method"}
+        assert "carry_rho" in payload
+
+
+class TestCarryRho:
+    """The basis finally has a Greek -- and deliberately only one.
+
+    The basis is now measured rather than assumed, and the measurement moves:
+    across the CFFEX panel the spot-to-far carry has a standard deviation of
+    2.1% to 3.9% a year, against a policy rate that moved about 70bp over the
+    same three years. So this is the larger of the two drift exposures by an
+    order of magnitude, and until now it had no sensitivity at all.
+    """
+
+    def test_a_dividend_shift_and_a_basis_shift_are_the_same_derivative(self) -> None:
+        """Which is why there is one Greek and not two.
+
+        ``q`` and ``basis_pa`` reach both engines only through
+        ``market.carry``, their sum. So these are not two sensitivities that
+        happen to be close -- they are one sensitivity computed twice, and the
+        prices come back **bit-identical**, not merely equal to a tolerance.
+
+        Reporting both would manufacture an independence the model does not
+        have, and a desk hedging each separately would double-count the same
+        exposure.
+        """
+        terms, market = reference_terms(), REFERENCE_MARKET
+        bump = 0.0025
+
+        from_q = price_snowball_pde(terms, market.with_shift(div_abs=bump), STANDARD).price
+        from_basis = price_snowball_pde(terms, market.with_shift(carry_abs=bump), STANDARD).price
+        assert from_q == from_basis, "the two shifts are the same shift"
+
+        down_q = price_snowball_pde(terms, market.with_shift(div_abs=-bump), STANDARD).price
+        down_basis = price_snowball_pde(terms, market.with_shift(carry_abs=-bump), STANDARD).price
+        assert down_q == down_basis
+
+        assert (from_q - down_q) == (from_basis - down_basis)
+
+    def test_the_two_shifts_move_the_carry_identically(self) -> None:
+        """The reason behind the test above, stated on the market object."""
+        market = REFERENCE_MARKET
+        bump = 0.0025
+        assert market.with_shift(div_abs=bump).carry == pytest.approx(
+            market.with_shift(carry_abs=bump).carry, abs=1e-18
+        )
+        assert market.with_shift(div_abs=bump).drift == pytest.approx(
+            market.with_shift(carry_abs=bump).drift, abs=1e-18
+        )
+        # But they are not the same object: only one of them moved q.
+        assert market.with_shift(div_abs=bump).q != market.with_shift(carry_abs=bump).q
+
+    def test_carry_rho_is_negative_because_carry_lowers_the_drift(self) -> None:
+        """Measured at -0.00308 per percentage point on the reference trade.
+
+        A larger carry lowers the drift, which pushes the underlying towards
+        the knock-in and away from the knock-out, so the note is worth less.
+        That is the same chain that makes a deeper discount support a richer
+        coupon, seen from the price side.
+        """
+        risk = snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD)
+        assert risk.carry_rho is not None
+        assert risk.carry_rho == pytest.approx(-0.003080, rel=2e-3)
+
+    def test_carry_rho_is_not_minus_rho_and_the_difference_is_the_discounting(
+        self,
+    ) -> None:
+        """The decomposition that makes both numbers worth reporting.
+
+        ``rho`` moves the discount factor *and* the drift; ``carry_rho`` moves
+        the drift only. So ``rho + carry_rho`` isolates the discounting half:
+        measured at -0.000351 against a drift half of +0.003080, so the drift
+        is **8.8x** the discounting on this trade.
+
+        If ``carry_rho`` were simply ``-rho`` it would be redundant. The ratio
+        is -1.129, which is how far from redundant it is.
+        """
+        risk = snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD)
+        assert risk.carry_rho is not None
+        rho = risk.greeks.rho
+        discounting_half = rho + risk.carry_rho
+        drift_half = -risk.carry_rho
+
+        assert discounting_half == pytest.approx(-0.000351, rel=5e-2)
+        assert abs(drift_half / discounting_half) == pytest.approx(8.8, rel=5e-2)
+        assert risk.carry_rho / rho == pytest.approx(-1.129, rel=5e-3)
+
+    def test_a_deeper_carry_raises_the_exposure(self) -> None:
+        """At the CSI 1000's measured carry both sensitivities roughly double.
+
+        Which is the practical reading: a note quoted off a deeply discounted
+        board is far more exposed to the board moving than one quoted off a
+        flat one.
+        """
+        shallow = snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD)
+        deep = snowball_risk_pde(
+            reference_terms(),
+            EquityMarket(S=5000.0, r=0.02, sigma=0.20, q=0.0, basis_pa=0.1015),
+            STANDARD,
+        )
+        assert shallow.carry_rho is not None and deep.carry_rho is not None
+        assert abs(deep.carry_rho) > 1.5 * abs(shallow.carry_rho)
+
+    def test_both_engines_agree_on_it(self) -> None:
+        """So the new Greek arrives with the same backing as the old five."""
+        comparison = compare_snowball_risk(
+            reference_terms(),
+            REFERENCE_MARKET,
+            pde_config=STANDARD,
+            mc_config=MonteCarloConfig(paths=200_000, memory_budget_mb=4096.0),
+        )
+        verdict = comparison.verdicts["carry_rho"]
+        assert verdict["within_budget"], verdict
+        assert float(verdict["pde"]) < 0.0 and float(verdict["mc"]) < 0.0
+        assert comparison.agree
+
+    def test_the_simulation_reports_a_standard_error_for_it(self) -> None:
+        mc = snowball_risk_mc(
+            reference_terms(),
+            REFERENCE_MARKET,
+            MonteCarloConfig(paths=20_000, memory_budget_mb=4096.0),
+        )
+        assert mc.carry_rho is not None
+        assert (mc.std_error or {})["carry_rho"] > 0.0
+
+    def test_the_payload_says_why_there_is_no_dividend_sensitivity(self) -> None:
+        """Because the absence is the design, and an absence explains nothing
+        on its own."""
+        payload = snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD).as_dict()
+        assert "same derivative" in str(payload["carry_rho_note"])
+        assert "dividend_sensitivity" not in payload
+        assert "basis_sensitivity" not in payload

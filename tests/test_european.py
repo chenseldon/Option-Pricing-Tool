@@ -84,6 +84,9 @@ class ConstantLocalVol:
     def with_rate_shift(self, rate_abs: float) -> ConstantLocalVol:
         return ConstantLocalVol(self.sigma, self.mu + float(rate_abs))
 
+    def with_carry_shift(self, carry_abs: float) -> ConstantLocalVol:
+        return ConstantLocalVol(self.sigma, self.mu - float(carry_abs))
+
 
 class TimeVaryingVol:
     """``sigma^2(t) = s0^2 (1 + beta t)``: smooth, and independent of spot.
@@ -120,6 +123,9 @@ class TimeVaryingVol:
 
     def with_rate_shift(self, rate_abs: float) -> TimeVaryingVol:
         return TimeVaryingVol(self.s0, self.beta, self.mu + float(rate_abs))
+
+    def with_carry_shift(self, carry_abs: float) -> TimeVaryingVol:
+        return TimeVaryingVol(self.s0, self.beta, self.mu - float(carry_abs))
 
 
 # ---------------------------------------------------------------------------
