@@ -543,6 +543,8 @@ def _evaluate_batch(
     paths: np.ndarray,
     ko_idx: np.ndarray,
     ki_idx: np.ndarray,
+    *,
+    knocked_in: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Resolve one batch of paths into discounted payoffs and state flags.
 
@@ -563,9 +565,19 @@ def _evaluate_batch(
 
     # --- Knock-in: any observation at or below the barrier, before the note
     # knocked out. A knock-in after termination cannot affect the payoff.
-    ki_levels = paths[ki_idx, :] <= terms.ki_barrier
-    cutoff = np.where(knocked_out, ko_time, np.inf)[None, :]
-    knocked_in = np.asarray((ki_levels & (times[ki_idx][:, None] <= cutoff)).any(axis=0))
+    if knocked_in:
+        # A note that has *already* knocked in. The breach is in the past, so
+        # it necessarily precedes any future knock-out and no path can be
+        # clean: every path either recovers above the barrier and terminates
+        # on its coupon, or takes the put loss. That is exactly the PDE's
+        # V_ki state, which is what makes the two comparable.
+        has_knocked_in = np.ones(n_paths, dtype=bool)
+    else:
+        ki_levels = paths[ki_idx, :] <= terms.ki_barrier
+        cutoff = np.where(knocked_out, ko_time, np.inf)[None, :]
+        has_knocked_in = np.asarray(
+            (ki_levels & (times[ki_idx][:, None] <= cutoff)).any(axis=0)
+        )
 
     # --- Assemble payoff and payment time per path --------------------------
     payoff = np.empty(n_paths, dtype=float)
@@ -575,8 +587,8 @@ def _evaluate_batch(
     pay_time[knocked_out] = ko_time[knocked_out]
 
     survived = np.asarray(~knocked_out)
-    ki_and_survived = np.asarray(survived & knocked_in)
-    clean = survived & ~knocked_in
+    ki_and_survived = np.asarray(survived & has_knocked_in)
+    clean = survived & ~has_knocked_in
 
     payoff[ki_and_survived] = terms.knock_in_payoff(paths[-1, ki_and_survived])
     payoff[clean] = terms.full_coupon_payoff()
@@ -585,7 +597,7 @@ def _evaluate_batch(
     # This is the correction: the legacy engine applied exp(-r * T) to every
     # path, including the majority that terminate early.
     discounted = np.asarray(payoff * np.exp(-market.r * pay_time))
-    return discounted, knocked_out, knocked_in, ki_and_survived, ko_time
+    return discounted, knocked_out, has_knocked_in, ki_and_survived, ko_time
 
 
 def price_snowball_mc(
@@ -596,6 +608,7 @@ def price_snowball_mc(
     draws: np.ndarray | None = None,
     local_vol: LocalVolatility | None = None,
     heston: HestonParams | None = None,
+    knocked_in: bool = False,
 ) -> SnowballMCResult:
     """Value a snowball note by path Monte Carlo.
 
@@ -695,15 +708,17 @@ def price_snowball_mc(
             ko_idx = _schedule_indices(terms.ko_observation_times(), times)
             ki_idx = _schedule_indices(terms.ki_observation_times(), times)
 
-        discounted, knocked_out, knocked_in, ki_and_survived, ko_time = _evaluate_batch(
-            terms, market, times, paths, ko_idx, ki_idx
+        discounted, knocked_out, batch_knocked_in, ki_and_survived, ko_time = (
+            _evaluate_batch(
+                terms, market, times, paths, ko_idx, ki_idx, knocked_in=knocked_in
+            )
         )
 
         total += float(discounted.sum())
         flat_sq_sum += float(np.dot(discounted, discounted))
         n_done += discounted.size
         ko_count += int(knocked_out.sum())
-        ki_count += int(knocked_in.sum())
+        ki_count += int(batch_knocked_in.sum())
         ki_survived_count += int(ki_and_survived.sum())
         ko_time_sum += float(np.nansum(ko_time))
 
