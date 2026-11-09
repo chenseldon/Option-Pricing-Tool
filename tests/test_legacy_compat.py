@@ -487,6 +487,136 @@ class TestSnowballEndpoints:
         assert "error" in response.get_json()
 
 
+class TestTheLegacyEngineIsGone:
+    """cn_fdm.py had one caller left, and it was serving a 45% error.
+
+    The ``calc_greeks=false`` branch of /api/cn_fdm ran ``CN_FDM.price()``,
+    which ignored the lock-up, the knock-in strike mode and the basis -- and
+    whose own PDE and Monte Carlo struck the knock-in put at different levels,
+    so the two halves of one class priced different contracts.
+
+    On the reference trade it returned **0.021250** against the reviewed
+    engine's **0.038599**: wrong by 44.9% of price, on a route a caller could
+    reach by passing one flag.
+    """
+
+    PAYLOAD = {
+        "product_type": "snowball",
+        "S0": 5000,
+        "T": 1.0,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.01,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.15,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_the_module_cannot_be_imported_because_it_is_deleted(self) -> None:
+        """The strongest form of retirement available."""
+        with pytest.raises(ModuleNotFoundError):
+            import cn_fdm  # noqa: F401
+
+    def test_both_branches_return_the_same_price(self, client) -> None:  # noqa: ANN001
+        """Which is what says they are one engine rather than two.
+
+        Asking for Greeks must not change the price. Before this, one branch
+        ran the reviewed PDE and the other ran the legacy class, so the flag
+        moved the price by 45%.
+        """
+        with_greeks = client.post(
+            "/api/cn_fdm", json={**self.PAYLOAD, "calc_greeks": True}
+        ).get_json()
+        without = client.post("/api/cn_fdm", json={**self.PAYLOAD, "calc_greeks": False}).get_json()
+
+        assert with_greeks["price"] == without["price"]
+        assert without["price"] == pytest.approx(0.038599, abs=1e-6)
+        assert without["price"] != pytest.approx(0.021250, abs=1e-4), (
+            "this is the legacy number; the branch has not been migrated"
+        )
+
+    def test_the_echoed_barrier_is_the_one_that_was_priced(self, client) -> None:  # noqa: ANN001
+        """The defect this fixes, stated as the test that catches it.
+
+        /api/cn_fdm defaulted KO_pct to 1.05 for its response echo and the
+        parser defaulted it to 1.03 for the actual pricing, so a request
+        omitting the field was priced at 1.03 and reported at 1.05 -- a 200
+        index point lie about where the barrier sat.
+
+        The echo is now read off the priced SnowballTerms, so the two cannot
+        drift apart again.
+        """
+        body = client.post("/api/cn_fdm", json=self.PAYLOAD).get_json()
+        params = body["params"]
+
+        assert params["ko_pct"] == 1.03
+        assert params["ko_barrier"] == pytest.approx(5000 * 1.03)
+        assert params["ko_barrier"] != pytest.approx(5000 * 1.05)
+
+        # And an explicit value is honoured in both places.
+        explicit = client.post("/api/cn_fdm", json={**self.PAYLOAD, "KO_pct": 1.08}).get_json()[
+            "params"
+        ]
+        assert explicit["ko_pct"] == 1.08
+        assert explicit["ko_barrier"] == pytest.approx(5000 * 1.08)
+
+    def test_the_echo_finally_shows_what_was_always_priced(self, client) -> None:  # noqa: ANN001
+        """lockup_months, ki_strike_mode and basis_pa reach a response at last.
+
+        All three have been priced since Phase 1 and none appeared in this
+        route's output, because the echo was rebuilt from the legacy field
+        list rather than from the contract.
+        """
+        body = client.post(
+            "/api/cn_fdm", json={**self.PAYLOAD, "lockup_months": 6, "basis_pa": 0.08}
+        ).get_json()
+        params = body["params"]
+
+        assert params["lockup_months"] == 6
+        assert params["ki_strike_mode"] == "s0"
+        assert params["basis_pa"] == pytest.approx(0.08)
+        # The carry is reported beside its parts, because the sum is what the
+        # engines read.
+        assert params["carry"] == pytest.approx(0.08 + 0.01)
+        assert params["drift"] == pytest.approx(0.02 - 0.09)
+        assert "re-parsed from the request" in params["echo_note"]
+
+    def test_an_impossible_trade_is_a_client_error_not_a_crash(self, client) -> None:  # noqa: ANN001
+        """It used to reach the blanket handler and come back as a 500."""
+        response = client.post("/api/cn_fdm", json={**self.PAYLOAD, "KI_pct": 1.10})
+        assert response.status_code == 400
+        assert "knock-in" in response.get_json()["error"]
+
+    def test_the_shark_fin_echo_describes_the_barrier_note(self, client) -> None:  # noqa: ANN001
+        """The same treatment, from SharkFinTerms rather than SnowballTerms."""
+        body = client.post(
+            "/api/cn_fdm",
+            json={
+                "product_type": "shark_fin",
+                "S0": 100,
+                "T": 1.0,
+                "r": 0.03,
+                "sigma": 0.20,
+                "K_strike": 100,
+                "KO_pct": 1.20,
+            },
+        ).get_json()
+        params = body["params"]
+
+        assert params["barrier"] == pytest.approx(120.0)
+        assert params["monitoring"] == 252
+        assert params["is_continuous"] is False
+        # The continuous closed form sits below the daily grid price, because
+        # a discretely monitored knock-out is worth strictly more.
+        assert body["haug_price"] < body["price"]
+
+
 class TestSnowballRiskEndpoints:
     """The snowball Greeks API, backed by PDE grid differentiation."""
 
@@ -597,7 +727,14 @@ class TestSnowballRiskEndpoints:
 
 
 class TestCnFdmGreeksRouting:
-    """/api/cn_fdm: snowball Greeks rerouted, shark fin left on the legacy path."""
+    """/api/cn_fdm: every number now comes from a reviewed engine.
+
+    The route was the last one serving legacy output. Its snowball Greeks went
+    first, its shark fin followed in Phase 3c, and the snowball price on the
+    ``calc_greeks=false`` branch was the final holdout -- retired here. The
+    class docstring claimed the shark fin was still legacy long after it was
+    not, which is its own small lesson about comments that describe intentions.
+    """
 
     SNOWBALL = {
         "product_type": "snowball",

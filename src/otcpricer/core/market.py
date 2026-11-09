@@ -145,3 +145,26 @@ class EquityMarket:
             basis_pa=self.basis_pa + carry_abs,
             q=max(self.q + div_abs, 0.0),
         )
+
+    def as_dict(self) -> dict[str, float | str]:
+        """Flat dict for API responses and reports.
+
+        Reports the carry and the drift as well as the three inputs that make
+        them, because the sum is what both engines actually read: ``q`` and
+        ``basis_pa`` reach a price only through :attr:`carry`, so a response
+        listing them separately without their sum invites a reader to treat
+        them as two exposures.
+        """
+        return {
+            "S": self.S,
+            "r": self.r,
+            "sigma": self.sigma,
+            "q": self.q,
+            "basis_pa": self.basis_pa,
+            "carry": self.carry,
+            "drift": self.drift,
+            "carry_note": (
+                "carry = q + basis_pa is the single quantity the engines "
+                "read; dV/dq and dV/dbasis_pa are the same derivative."
+            ),
+        }

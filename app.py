@@ -53,13 +53,15 @@ from openpyxl.styles import Alignment, Font, PatternFill
 sys.path.insert(0, os.path.dirname(__file__))
 
 from bs_pricing import bs_price, calc_implied_volatility, monte_carlo_price, validate_params
-from cn_fdm import CN_FDM
 from greeks_calc import calc_delta, calc_gamma, calc_rho, calc_theta, calc_vega
 
 from otcpricer.core.exceptions import MarketDataError, OtcPricerError
 
-# Corrected snowball engines. The legacy cn_fdm.CN_FDM is still imported above
-# for the shark-fin path, which has not been migrated yet.
+# cn_fdm.CN_FDM is gone. Its snowball price was the last legacy number any
+# route could still serve -- reachable through /api/cn_fdm with
+# calc_greeks=false -- and that branch now runs the reviewed engine. The two
+# compatibility layers above stay: bs_pricing and greeks_calc are thin
+# forwarders onto otcpricer.models.bsm and agree with it bit for bit.
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import BarrierKind, KIStrikeMode, OptionType
 from otcpricer.engines.barrier import (
@@ -2139,14 +2141,14 @@ def cn_fdm_price_api():
         r = float(d["r"])
         sigma = float(d["sigma"])
         q = float(d.get("q", 0.0))
-        KO_pct = float(d.get("KO_pct", 1.05))
-        KI_pct = float(d.get("KI_pct", 0.75))
-        coupon_pa = float(d.get("coupon_pa", 0.15))
-        obs_freq = int(d.get("obs_freq", 12))
-        ki_obs_freq = int(d.get("ki_obs_freq", 252))
+        # The shark fin reads KO_pct here; the snowball reads it inside
+        # _parse_snowball_request, which is now the only place that defaults
+        # it. Two defaults for one field used to live here -- 1.05 locally and
+        # 1.03 in the parser -- so a request omitting KO_pct was priced at
+        # 1.03 and reported at 1.05.
+        KO_pct = float(d.get("KO_pct", 1.03))
         rebate = float(d.get("rebate", 0.0))
         K_strike = float(d.get("K_strike", S0))
-        N = min(int(d.get("N", 400)), 600)
         mc_paths = min(int(d.get("mc_paths", 50000)), 200000)
         calc_g = bool(d.get("calc_greeks", True))
     except (KeyError, TypeError, ValueError) as e:
@@ -2157,28 +2159,14 @@ def cn_fdm_price_api():
     if T <= 0 or sigma <= 0 or S0 <= 0:
         return jsonify({"error": "S0, T and sigma must be positive"}), 400
 
-    try:
-        cn = CN_FDM(
-            product_type=product_type,
-            S0=S0,
-            T=T,
-            r=r,
-            sigma=sigma,
-            q=q,
-            KO_pct=KO_pct,
-            KI_pct=KI_pct,
-            coupon_pa=coupon_pa,
-            obs_freq=obs_freq,
-            ki_obs_freq=ki_obs_freq,
-            rebate=rebate,
-            K_strike=K_strike,
-            N=N,
-            M_per_year=252,
-            mc_paths=mc_paths,
-            seed=42,
-        )
+    # What the response echoes, and where it comes from. The old version
+    # rebuilt this block by re-reading the request body, which is how it came
+    # to report a barrier the engine had not priced. Everything below is read
+    # off the objects that were actually priced instead.
+    echoed: dict[str, object] = {}
 
-        if calc_g and product_type == "snowball":
+    try:
+        if product_type == "snowball":
             # Snowball Greeks now come from the corrected engines. The legacy
             # three-method output reported Resimulation FD, Pathwise and
             # Likelihood Ratio deltas of -8.4e-05, +1.0e-05 and +9.0e-06 on the
@@ -2191,6 +2179,21 @@ def cn_fdm_price_api():
             # does not apply here. Reporting null with a reason is more useful
             # than a number that looks like the other two.
             risk_terms, risk_market = _parse_snowball_request(d)
+            echoed = {**risk_terms.describe(), **risk_market.as_dict()}
+
+        if product_type == "snowball" and not calc_g:
+            # The last legacy snowball price. It ignored the lock-up, the
+            # knock-in strike mode and the basis, and its PDE and Monte Carlo
+            # struck the knock-in put at different levels -- so the two halves
+            # of one class were pricing different contracts. Reviewed engine
+            # now, same as every other snowball route.
+            price = price_snowball_pde(
+                risk_terms,
+                risk_market,
+                PDEConfig(space_nodes=1600, steps_per_year=1008),
+            ).price
+            greeks_out = {}
+        elif product_type == "snowball":
             pde_risk = snowball_risk_pde(
                 risk_terms,
                 risk_market,
@@ -2250,6 +2253,7 @@ def cn_fdm_price_api():
             fin_market = EquityMarket(S=S0, r=r, sigma=sigma, q=q)
             fin_result = price_shark_fin_pde(fin_terms, fin_market, SHARK_FIN_PDE_CONFIG)
             price = fin_result.price
+            echoed = {**fin_terms.as_dict(), **fin_market.as_dict()}
             greeks_out = (
                 {
                     # The legacy three-method output is gone. Those numbers came
@@ -2277,10 +2281,13 @@ def cn_fdm_price_api():
                 if calc_g
                 else {}
             )
-        else:
-            price = cn.price()
-            greeks_out = {}
+        else:  # pragma: no cover - product_type is validated above
+            raise AssertionError(f"unreachable product_type {product_type!r}")
 
+    except OtcPricerError as e:
+        # A structurally impossible trade is the caller's error, not a crash.
+        # It used to land in the blanket handler below and come back as a 500.
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"CN-FDM solver error: {e}"}), 500
 
@@ -2321,24 +2328,27 @@ def cn_fdm_price_api():
             "pathwise": greeks_out.get("pathwise"),
             "likelihood": greeks_out.get("likelihood"),
             "greek_notes": greeks_out.get("notes"),
-            "method": "Crank-Nicolson FDM + Glasserman&Broadie MC Greeks",
+            "method": (
+                "Crank-Nicolson FDM"
+                if product_type == "shark_fin"
+                else "Crank-Nicolson FDM + Monte Carlo cross-check"
+            ),
             "product_type": product_type,
+            # Read off the objects that were priced, not re-parsed from the
+            # request. That is what makes the echo trustworthy, and it is also
+            # how lockup_months, ki_strike_mode and basis_pa reach a response
+            # for the first time -- they have been priced since Phase 1 and
+            # were invisible here.
             "params": {
-                "S0": S0,
-                "T": T,
-                "r": r,
-                "sigma": sigma,
-                "q": q,
-                "KO": round(S0 * KO_pct, 4),
-                "KI": round(S0 * KI_pct, 4) if product_type == "snowball" else None,
-                "KO_pct": KO_pct,
-                "KI_pct": KI_pct,
-                "coupon_pa": coupon_pa,
-                "obs_freq": obs_freq,
-                "ki_obs_freq": ki_obs_freq,
-                "rebate": rebate,
-                "K_strike": K_strike,
+                **echoed,
                 "mc_paths": mc_paths,
+                "echo_note": (
+                    "Read from the priced SnowballTerms/EquityMarket rather "
+                    "than re-parsed from the request. The previous version "
+                    "re-read the body with a different KO_pct default, so a "
+                    "request omitting it was priced at 1.03 and reported at "
+                    "1.05."
+                ),
             },
         }
     )
