@@ -2432,7 +2432,12 @@ def _wind_panel():
 
 def _panel_rate_curve(as_of):
     """The real government curve for one panel date."""
-    return rate_curve_from_panel(_wind_panel(), _panel_date(as_of))
+    # The date is parsed before the panel is touched, and the order matters.
+    # Python evaluates arguments left to right, so folding both into one call
+    # reported a missing data file for a malformed date -- the caller's error
+    # described as someone else's problem. Caught by tests/test_irs.py.
+    moment = _panel_date(as_of)
+    return rate_curve_from_panel(_wind_panel(), moment)
 
 
 # ─────────────────────────────────────────────────────────

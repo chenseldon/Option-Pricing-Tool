@@ -554,6 +554,16 @@ class TestThroughTheApi:
     }
     SURFACE = {"underlying": "510300", "source": "snapshot"}
 
+    #: A grid small enough to keep a wiring test in the default suite.
+    #:
+    #: The surface path defaults to LOCAL_VOL_PDE_CONFIG's 4800x8064, which
+    #: costs 17 to 30 seconds a call. That is the right default -- the flat
+    #: grid's error budget does not carry over -- but it is the wrong price to
+    #: pay for asking whether a flag reached the engine. Tests that assert a
+    #: measured *value* keep the real grid and are marked slow; tests that
+    #: assert *wiring* use this.
+    COARSE = {"space_nodes": 800, "steps_per_year": 1008}
+
     @pytest.fixture(scope="class")
     def client(self):  # noqa: ANN201
         if not SNAPSHOT_DIR.exists():
@@ -577,6 +587,7 @@ class TestThroughTheApi:
         assert "market.sigma" in body["volatility"]["note"]
         assert body["space_nodes"] < 2000
 
+    @pytest.mark.slow
     def test_a_surface_changes_the_price_by_42_percent(self, client) -> None:  # noqa: ANN001
         """The measurement that says the smile reaches the engine.
 
@@ -600,13 +611,13 @@ class TestThroughTheApi:
         tripling it would move the answer, and the move would look like a vega
         rather than like a grid artefact.
         """
-        base = client.post("/api/snowball_pde", json={**self.BODY, **self.SURFACE}).get_json()
-        tripled = client.post(
-            "/api/snowball_pde", json={**self.BODY, **self.SURFACE, "sigma": 0.60}
-        ).get_json()
+        request = {**self.BODY, **self.SURFACE, **self.COARSE}
+        base = client.post("/api/snowball_pde", json=request).get_json()
+        tripled = client.post("/api/snowball_pde", json={**request, "sigma": 0.60}).get_json()
         assert tripled["price"] == base["price"]
         assert tripled["space_nodes"] == base["space_nodes"]
 
+    @pytest.mark.slow
     def test_the_surface_path_gets_the_finer_grid(self, client) -> None:  # noqa: ANN001
         """Because the flat grid's error budget does not carry over.
 
@@ -634,8 +645,10 @@ class TestThroughTheApi:
         curvature scale depends on the variance level. The label is what stops
         them being compared as the same quantity.
         """
-        flat = client.post("/api/snowball_risk", json=self.BODY).get_json()
-        surface = client.post("/api/snowball_risk", json={**self.BODY, **self.SURFACE}).get_json()
+        flat = client.post("/api/snowball_risk", json={**self.BODY, **self.COARSE}).get_json()
+        surface = client.post(
+            "/api/snowball_risk", json={**self.BODY, **self.SURFACE, **self.COARSE}
+        ).get_json()
 
         assert flat["method"] == "pde-grid"
         assert surface["method"] == "pde-grid+ssvi-parallel-vega"
@@ -645,6 +658,7 @@ class TestThroughTheApi:
             assert name in surface, name
             assert np.isfinite(surface[name]), name
 
+    @pytest.mark.slow
     def test_the_quote_route_solves_on_a_surface(self, client) -> None:  # noqa: ANN001
         """And the affinity invariant still holds there.
 
@@ -662,6 +676,7 @@ class TestThroughTheApi:
         assert body["affinity_residual"] < 1e-12
         assert body["par_coupon_pct"] == pytest.approx(11.754, abs=0.05)
 
+    @pytest.mark.slow
     def test_the_smile_raises_the_quotable_coupon_by_eighty_percent(self, client) -> None:  # noqa: ANN001
         """Which puts it in the same league as the futures carry.
 
