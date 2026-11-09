@@ -79,7 +79,7 @@ What pays for the coupon, measured rather than asserted:
 | input | par coupon |
 |---|---|
 | zero carry, flat vol | 6.53% |
-| **CSI 1000 carry, measured +10.15%** | **15.04%** |
+| **CSI 1000 carry, measured +10.15%** | **15.02%** |
 | flat vol → fitted 510300 surface | 11.75% |
 
 So the futures discount more than **doubles** the quotable coupon and the smile

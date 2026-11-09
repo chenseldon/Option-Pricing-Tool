@@ -44,8 +44,9 @@ that terminate early. A knocked-out path pays at `t_ko` — measured expected
 knock-out time on the reference trade is **0.45 years**, not 1.0 — so a year of
 discounting was applied to payments made in six months.
 
-Each path is now discounted at its own payment date. That is one line, and it
-was most of the 18%.
+Each path is now discounted at its own payment date. How much of the 18% that
+one line was is no longer measurable — the legacy engine is deleted — so this
+is recorded as one of five causes rather than ranked among them.
 
 ### Knock-in was monitored on the knock-out dates
 
@@ -56,9 +57,26 @@ systematically too cheap and the note too valuable.
 ### The lock-up did not exist
 
 The legacy model observed knock-out from month one. With a three-month lock-up
-on a one-year note the schedule is **nine observations, not twelve** — and the
-three it was wrongly observing are the three where the note is closest to its
-strike, so they are the ones most likely to trigger.
+on a one-year note the schedule is **nine observations, not twelve**, and the
+three extra ones are the most expensive to get wrong — because a knock-out in
+month 1 pays a twelfth of the coupon while a knock-out in month 12 pays all of
+it. Measured:
+
+| lock-up | KO dates | price | P(knock out) | E[t_ko] |
+|---|---|---|---|---|
+| 0 months | 12 | 0.037122 | 73.2% | 0.2557 |
+| **3 months** (standard) | 9 | **0.062788** | 65.2% | 0.4440 |
+| 6 months | 6 | 0.089374 | 58.0% | 0.6445 |
+
+Ignoring the lock-up **understates the note by 41%**. The mechanism is in the
+last column rather than the fourth: the extra observations pull expected
+knock-out from month five back to month three, so the note terminates on almost
+no accrued coupon.
+
+I first wrote that the three extra dates were "the ones most likely to trigger".
+That is backwards — under a positive drift a later observation is *more* likely
+to sit above the barrier, not less. The table is what the claim should have been
+in the first place.
 
 ### A knocked-in note was modelled as a plain short put
 
@@ -178,20 +196,30 @@ that the relationship is linear. Here the affinity is the test.
 ## What actually pays for the coupon
 
 Three drivers, and two of them are now measured rather than assumed. At 20%
-volatility on the reference trade:
+volatility on the reference trade, all at `/api/snowball_quote`'s own
+**3200 × 2016** grid so the rows are comparable:
 
 | input | par coupon |
 |---|---|
-| zero carry | 6.53% |
-| IH carry, measured +1.83% | 7.63% |
-| IF carry, measured +3.40% | 8.70% |
-| **IM carry, measured +10.15%** | **15.04%** |
-| IH at a 2% premium | 5.50% |
-| flat vol → fitted 510300 surface | 6.53% → **11.75%** |
+| zero carry | 6.5276% |
+| IH carry, measured +1.83% | 7.6221% |
+| IF carry, measured +3.40% | 8.6891% |
+| **IM carry, measured +10.15%** | **15.0155%** |
+| IH at a 2% premium | 5.4928% |
 
-So the futures carry **more than doubles** the quotable coupon and the smile
-**adds 80%**. Neither is a refinement. A quote computed at a zero carry on a
-flat volatility is not a rough version of the real one.
+So the futures carry **more than doubles** the quotable coupon. The smile does
+something comparable: on the fitted 510300 surface the same note quotes
+**11.75%** against 6.53% flat, **+80%** — though that row cannot share the grid,
+because a Dupire surface needs 4800 × 8064 for the same accuracy and comparing
+it on the flat grid would be comparing discretisation errors.
+
+Neither is a refinement. A quote computed at a zero carry on a flat volatility
+is not a rough version of the real one.
+
+(The solver's own docstring quotes 6.54% and 15.04% for the first and fourth
+rows. Those are the same measurements at 1600 × 1008, where the par coupon runs
+2.4e-04 high — see the convergence table above. The difference between the two
+sets *is* that bias.)
 
 The carry relationship is also **not linear**: `d(par)/d(carry)` averages 0.599
 over `[0, 1.83%]` and 0.838 over `[0, 10.15%]`, with a local slope of 1.196 at
