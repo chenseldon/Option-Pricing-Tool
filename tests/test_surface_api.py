@@ -376,6 +376,7 @@ class TestExistingRoutesUnchanged:
         # measurement since Phase 4 too; neither was reachable.
         "/api/snowball_quote",
         "/api/carry",
+        "/api/snowball_report",
     }
 
     def test_every_prior_route_still_exists(self) -> None:

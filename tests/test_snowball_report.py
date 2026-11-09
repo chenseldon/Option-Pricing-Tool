@@ -32,11 +32,13 @@ from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
 from otcpricer.engines.pde import PDEConfig
 from otcpricer.engines.risk import compare_snowball_risk, snowball_risk_pde
 from otcpricer.marketdata.carry import TailCarry, measure_carry
+from otcpricer.marketdata.wind import WindPanel
 from otcpricer.products.snowball import SnowballTerms
 from otcpricer.products.snowball_quote import decompose_par_coupon, solve_par_coupon
 from otcpricer.reports.layout import WIDTH
 from otcpricer.reports.snowball_report import snowball_report
 from tests.test_carry import FakePanel, constant_carry_panel
+from tests.test_wind import WIND_DIR, needs_panel
 
 #: Matches a hyphen that ``textwrap`` broke a word across, e.g. "bit-" at the
 #: end of one line and "identical" at the start of the next.
@@ -264,3 +266,180 @@ class TestRendering:
         assert text.startswith("=")
         assert text.endswith("=" * WIDTH)
         assert "THE QUOTE" not in text
+
+
+# ---------------------------------------------------------------------------
+# Through the API
+# ---------------------------------------------------------------------------
+
+
+class TestTheReportEndpoint:
+    """Everything here was already reachable piece by piece.
+
+    What the route adds is the ordering, and the ordering is the argument. It
+    also adds one behaviour worth testing on its own: a carry measurement that
+    could not be taken is reported *in* the response rather than raised, so a
+    checkout without the institutional panel still gets the report -- which is
+    exactly the case the leading section is written for.
+    """
+
+    BODY = {
+        "S": 5000.0,
+        "S0": 5000.0,
+        "T": 1.0,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.15,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.0,
+        "basis_pa": 0.1015,
+        "space_nodes": 600,
+        "steps_per_year": 504,
+        "n_paths": 20000,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_it_renders_the_default_sections(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/snowball_report", json=self.BODY).get_json()
+        assert body["sections"] == {
+            "carry": False,
+            "quote": True,
+            "outcomes": True,
+            "reconciliation": False,
+        }
+        text = body["report"]
+        assert "SNOWBALL QUOTE REPORT" in text
+        assert "CARRY COVERAGE -- READ THIS FIRST" in text
+        assert "THE QUOTE" in text
+        assert "VALUE AND OUTCOMES" in text
+        assert "TWO-ENGINE RECONCILIATION" not in text
+
+    def test_carry_leads_even_when_it_was_not_measured(self, client) -> None:  # noqa: ANN001
+        """The one section that does not disappear with its input.
+
+        Its absence is the most important thing a reader could learn about the
+        quote, so an omitted heading would be worse than an empty one.
+        """
+        body = client.post("/api/snowball_report", json=self.BODY).get_json()
+        assert body["sections"]["carry"] is False
+        flat = unwrapped(body["report"])
+        assert "supplied by the caller" in body["report"]
+        assert "assumption over the whole life" in flat
+        assert body["report"].index("CARRY COVERAGE") < body["report"].index("THE QUOTE")
+
+    def test_carry_without_a_tail_is_refused_in_the_response(self, client) -> None:  # noqa: ANN001
+        """Reported, not raised -- the rest of the report is still worth having.
+
+        Raising would hide the quote, the Greeks and the outcomes behind one
+        missing field, and the field in question is a modelling choice rather
+        than a malformed request.
+        """
+        body = client.post(
+            "/api/snowball_report",
+            json={**self.BODY, "carry_as_of": "2024-12-25"},
+        ).get_json()
+        assert body["sections"]["carry"] is False
+        assert "tail" in body["carry_error"]
+        assert "84%" in body["carry_error"]
+        # And the report is still there.
+        assert "THE QUOTE" in body["report"]
+
+    def test_a_carry_underlying_without_a_future_says_so(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_report",
+            json={
+                **self.BODY,
+                "carry_as_of": "2024-12-25",
+                "carry_underlying": "510050",
+                "tail": "hold_last",
+            },
+        ).get_json()
+        assert body["sections"]["carry"] is False
+        assert "no index future" in body["carry_error"]
+
+    def test_the_sections_can_be_declined(self, client) -> None:  # noqa: ANN001
+        """Each costs solves, and the crosscheck costs the most by far."""
+        body = client.post(
+            "/api/snowball_report",
+            json={**self.BODY, "quote": False, "mc": False},
+        ).get_json()
+        assert body["sections"] == {
+            "carry": False,
+            "quote": False,
+            "outcomes": False,
+            "reconciliation": False,
+        }
+        assert "THE QUOTE" not in body["report"]
+        assert "path statistics, not a price" in unwrapped(body["report"])
+        # Risk always prints: it is the one argument the report requires.
+        assert "RISK" in body["report"]
+
+    def test_the_reconciliation_is_opt_in_and_names_its_weakness(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_report",
+            json={**self.BODY, "quote": False, "mc": False, "crosscheck": True},
+        ).get_json()
+        assert body["sections"]["reconciliation"] is True
+        flat = unwrapped(body["report"])
+        assert "TWO-ENGINE RECONCILIATION" in body["report"]
+        assert "agreement rather than as confirmation" in flat
+        for name in ("delta", "vega", "rho", "carry_rho", "gamma", "theta"):
+            assert name in body["report"], name
+
+    def test_it_says_which_volatility_produced_the_numbers(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/snowball_report", json=self.BODY).get_json()
+        assert body["volatility"]["vol_model"] == "flat"
+        assert "market.sigma" in body["volatility"]["note"]
+
+    def test_impossible_terms_are_a_client_error(self, client) -> None:  # noqa: ANN001
+        response = client.post("/api/snowball_report", json={**self.BODY, "KI_pct": 1.10})
+        assert response.status_code == 400
+
+    def test_every_rendered_line_still_fits_the_width(self, client) -> None:  # noqa: ANN001
+        """The report is a terminal format, and the route does not change that."""
+        body = client.post(
+            "/api/snowball_report", json={**self.BODY, "crosscheck": True}
+        ).get_json()
+        too_long = [line for line in body["report"].splitlines() if len(line) > WIDTH]
+        assert not too_long, too_long
+
+
+@needs_panel
+class TestTheReportEndpointWithTheBoard:
+    """With the panel configured, the carry section carries a measurement."""
+
+    @pytest.fixture
+    def client(self, monkeypatch):  # noqa: ANN001, ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        monkeypatch.setattr(app, "_WIND_PANEL", WindPanel(WIND_DIR))
+        return app.app.test_client()
+
+    def test_it_measures_the_board_and_leads_with_the_coverage(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_report",
+            json={
+                **TestTheReportEndpoint.BODY,
+                "S": 6094.69,
+                "S0": 6094.69,
+                "carry_as_of": "2024-12-25",
+                "carry_underlying": "MO",
+                "tail": "hold_last",
+                "mc": False,
+            },
+        ).get_json()
+
+        assert body["carry_error"] is None
+        assert body["sections"]["carry"] is True
+        text = body["report"]
+        assert "IM / 000852.SH" in text
+        assert "48.5% of the note's life" in text
+        assert "52% of this note's carry is not measured" in unwrapped(text)

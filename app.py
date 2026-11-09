@@ -103,6 +103,7 @@ from otcpricer.products.snowball_quote import (
 )
 from otcpricer.reports.heston_report import heston_report
 from otcpricer.reports.local_vol_report import local_vol_report, round_trip
+from otcpricer.reports.snowball_report import snowball_report
 from otcpricer.reports.surface_report import surface_report
 
 app = Flask(__name__)
@@ -1994,6 +1995,150 @@ def snowball_risk():
         "basis": "fraction of notional",
     }
     return jsonify(payload)
+
+
+@app.route("/api/snowball_report", methods=["POST"])
+def snowball_report_route():
+    """The quote report for a snowball, as plain text.
+
+    Everything this assembles was already reachable piece by piece. What the
+    report adds is the *ordering*, and the ordering is the argument: carry
+    coverage leads, because 48% of a one-year note's carry and 84% of a
+    three-year note's is unmeasured while the carry itself more than doubles
+    the quotable coupon. A reader who stops after the first screen should come
+    away knowing the quote's weakest input rather than its headline.
+
+    Each section costs solves, so each is opt-in -- with one exception. The
+    carry section prints even with nothing measured, and says the carry is an
+    assumption over the note's whole life. An omitted heading would read as
+    "nothing to report here", which is the opposite of true.
+
+    Request
+    -------
+    The /api/snowball payload, plus:
+
+    ``underlying`` / ``source``
+        Price against a fitted Dupire surface instead of ``sigma``.
+    ``carry_as_of``
+        Measure carry off the futures board on that date. Needs the Wind
+        panel and an underlying with an index future (``IO``, ``HO``, ``MO``).
+    ``carry_underlying``
+        Which board to measure, when it differs from the pricing surface's
+        underlying. Defaults to ``underlying``, then to ``MO``.
+    ``tail``
+        Required whenever ``carry_as_of`` is given: it governs the majority of
+        the carry in the quote.
+    ``quote``
+        Solve for the par coupon and include it. Default true.
+    ``mc``
+        Include the outcome probabilities, which are path statistics and so
+        come from the simulation rather than the grid. Default true.
+    ``crosscheck``
+        Run both risk engines and include the reconciliation. The most
+        expensive section by far. Default false.
+    """
+    try:
+        d = request.get_json(force=True)
+        terms, market = _parse_snowball_request(d)
+        fitted, local_vol = _snowball_local_vol(d, market)
+        config = _snowball_grid(d, local_vol)
+        want_quote = bool(d.get("quote", True))
+        want_mc = bool(d.get("mc", True))
+        want_crosscheck = bool(d.get("crosscheck", False))
+        n_paths = min(int(d.get("n_paths", 200000)), 500000)
+        carry_as_of = d.get("carry_as_of")
+        carry_code = str(d.get("carry_underlying", d.get("underlying", "MO")))
+        carry_tail = d.get("tail")
+    except (KeyError, TypeError, ValueError, OtcPricerError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    measurement = None
+    carry_error = None
+    if carry_as_of is not None:
+        try:
+            futures_for = resolve_underlying(carry_code)
+            if not futures_for.futures_root or not futures_for.index_code:
+                raise MarketDataError(
+                    f"{futures_for.code} has no index future sharing its expiry "
+                    f"calendar; pass carry_underlying as IO, HO or MO"
+                )
+            if carry_tail is None:
+                raise MarketDataError(
+                    "carry_as_of needs 'tail' -- it governs 52% of a one-year "
+                    "note's carry and 84% of a three-year note's, so there is "
+                    "no default"
+                )
+            measurement = measure_carry(
+                _wind_panel(),
+                futures_for.futures_root,
+                futures_for.index_code,
+                _panel_date(carry_as_of),
+                tail=TailCarry(str(carry_tail).lower()),
+                rate=market.r,
+            )
+        except (MarketDataError, ValueError) as e:
+            # Reported in the response rather than raised. A report whose carry
+            # could not be measured is still worth printing -- that is exactly
+            # the case its leading section is written for -- and failing the
+            # whole request would hide the rest behind a missing data file.
+            carry_error = str(e)
+
+    try:
+        risk = snowball_risk_pde(terms, market, config, local_vol=local_vol)
+        solution = (
+            solve_par_coupon(terms, market, config, local_vol=local_vol)
+            if want_quote
+            else None
+        )
+        split = (
+            decompose_par_coupon(terms, market, config, local_vol=local_vol)
+            if want_quote
+            else None
+        )
+        simulated = (
+            price_snowball_mc(
+                terms, market, MonteCarloConfig(paths=n_paths, seed=42), local_vol=local_vol
+            )
+            if want_mc
+            else None
+        )
+        comparison = (
+            compare_snowball_risk(
+                terms,
+                market,
+                pde_config=config,
+                mc_config=MonteCarloConfig(paths=n_paths, seed=42),
+                local_vol=local_vol,
+            )
+            if want_crosscheck
+            else None
+        )
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    text = snowball_report(
+        terms,
+        market,
+        risk,
+        carry=measurement,
+        solution=solution,
+        decomposition=split,
+        mc=simulated,
+        comparison=comparison,
+    )
+    return jsonify(
+        {
+            "report": text,
+            "sections": {
+                "carry": measurement is not None,
+                "quote": solution is not None,
+                "outcomes": simulated is not None,
+                "reconciliation": comparison is not None,
+            },
+            "carry_error": carry_error,
+            "volatility": _vol_model_note(local_vol, fitted),
+        }
+    )
 
 
 @app.route("/api/snowball_risk_crosscheck", methods=["POST"])
