@@ -303,7 +303,7 @@ time — all three had been priced since Phase 1 and were invisible.
 | Affinity in the coupon | Collinear to 7.8e-16 across six coupons; enforced per call |
 | Par coupon | Monte Carlo reprices to zero at the solved coupon, 0.54σ |
 | Knocked-in surface | Both engines, 0.13% relative — first cross-check of that state |
-| Local volatility | Constant-surface degenerate reduces to the flat engine to 1e-9 |
+| Local volatility | Constant-surface degenerate reduces to the flat engine to **8.3e-17** on the price and 2.7e-15 across the whole surface — and because the two paths land on the same grid node for node, that isolates the band slicing and node offsets from discretisation rather than letting it mask them |
 | Carry | Futures board, [`futures_carry.md`](../data/futures_carry.md) |
 
 The hardest gate is `tests/test_snowball_local_vol.py`'s
