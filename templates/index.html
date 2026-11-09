@@ -320,6 +320,9 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
       <input type="number" id="sb-r" value="2.5" step="0.1"/></div>
     <div class="fg"><label id="lbl-sb-q">Dividend Yield (%)</label>
       <input type="number" id="sb-q" value="0" step="0.1"/></div>
+    <div class="fg"><label id="lbl-sb-basis">Futures Carry 贴水 (%/yr)</label>
+      <input type="number" id="sb-basis" value="0" step="0.5"/>
+      <div class="hint" style="margin-top:3px" id="lbl-sb-basis-hint">Total carry from the futures discount. Positive = future below spot. Measured at +10.2%/yr on the CSI 1000 board, where it more than doubles the quotable coupon.</div></div>
     <div class="fg"><label id="lbl-sb-T">Tenor (Years)</label>
       <input type="number" id="sb-T" value="1" step="0.25"/></div>
     <div class="fg"><label id="lbl-sb-ko">Knock-Out Level (%)</label>
@@ -809,6 +812,58 @@ python app.py
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+      <!-- Snowball Par Coupon Quote -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-quote-hdr">💰 Par Coupon — what this note can carry</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-quote-hint">Solves for the coupon that makes the note worth par — the number a desk actually quotes. Exact rather than iterated: the price is affine in the coupon, so this comes from three solves and the collinearity is measured on every call. The Coupon Rate input above is ignored here; it is the unknown.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballQuote()" id="btn-sb-quote" data-i18n="btn_run_quote">▶ Solve Par Coupon</button>
+          <div id="sb-quote-results" style="display:none">
+            <div class="metric-grid" style="margin-top:8px;margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-par">Par Coupon</div><div class="metric-val" id="sb-q-par">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-ann">Coupon Annuity</div><div class="metric-val" id="sb-q-ann">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-ki">Knock-In Leg</div><div class="metric-val" id="sb-q-ki">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-aff">Affinity Residual</div><div class="metric-val" id="sb-q-aff">—</div></div>
+            </div>
+            <div class="panel-title" style="margin-top:6px;margin-bottom:6px" id="lbl-sb-q-split-hdr">📊 What pays for it</div>
+            <div class="metric-grid" style="margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-vol">Volatility</div><div class="metric-val" id="sb-q-vol">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-carry">Futures Carry</div><div class="metric-val" id="sb-q-carry">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-share">Carry Share</div><div class="metric-val" id="sb-q-share">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-mc">MC Check (z)</div><div class="metric-val" id="sb-q-mc">—</div></div>
+            </div>
+            <p class="hint" id="sb-q-note">—</p>
+          </div>
+        </div>
+      </div>
+      <!-- Snowball Risk + Two-Engine Reconciliation -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-recon-hdr">⚖ Greeks &amp; Two-Engine Reconciliation</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-recon-hint">Six Greeks from the Crank-Nicolson surface, each checked against an independent Monte Carlo with common random numbers. The budget is built from the simulation's own measured standard error rather than from a chosen tolerance, so a pass carried by a wide interval is visibly weaker than one with both engines tight.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballRecon()" id="btn-sb-recon" data-i18n="btn_run_recon">▶ Run Both Engines</button>
+          <div id="sb-recon-results" style="display:none">
+            <div class="tscroll">
+              <table class="dtable" style="font-size:11px">
+                <thead><tr>
+                  <th style="text-align:left">Greek</th>
+                  <th>PDE (production)</th>
+                  <th>Monte Carlo</th>
+                  <th>Gap</th>
+                  <th>Budget</th>
+                  <th>Agree</th>
+                </tr></thead>
+                <tbody id="sb-recon-body"></tbody>
+              </table>
+            </div>
+            <p class="hint" id="sb-recon-note">—</p>
           </div>
         </div>
       </div>
@@ -1634,6 +1689,21 @@ const I18N = {
     lbl_sb_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
     lbl_sb_cnfdm_hint:'Re-price the Snowball using Crank-Nicolson FDM (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.',
     lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
+    lbl_3greeks:'📐 Three-Method Greeks Comparison',
+    // Phase 5: the par coupon panel
+    lbl_sb_basis:'Futures Carry 贴水 (%/yr)',
+    lbl_sb_basis_hint:'Total carry from the futures discount. Positive = future below spot. Measured at +10.2%/yr on the CSI 1000 board, where it more than doubles the quotable coupon.',
+    lbl_sb_quote_hdr:'💰 Par Coupon — what this note can carry',
+    lbl_sb_quote_hint:'Solves for the coupon that makes the note worth par — the number a desk actually quotes. Exact rather than iterated: the price is affine in the coupon, so this comes from three solves and the collinearity is measured on every call. The Coupon Rate input above is ignored here; it is the unknown.',
+    btn_run_quote:'▶ Solve Par Coupon',
+    lbl_sb_q_par:'Par Coupon', lbl_sb_q_ann:'Coupon Annuity',
+    lbl_sb_q_ki:'Knock-In Leg', lbl_sb_q_aff:'Affinity Residual',
+    lbl_sb_q_split_hdr:'📊 What pays for it',
+    lbl_sb_q_vol:'Volatility', lbl_sb_q_carry:'Futures Carry',
+    lbl_sb_q_share:'Carry Share', lbl_sb_q_mc:'MC Check (z)',
+    lbl_sb_recon_hdr:'⚖ Greeks & Two-Engine Reconciliation',
+    lbl_sb_recon_hint:"Six Greeks from the Crank-Nicolson surface, each checked against an independent Monte Carlo with common random numbers. The budget is built from the simulation's own measured standard error rather than from a chosen tolerance, so a pass carried by a wide interval is visibly weaker than one with both engines tight.",
+    btn_run_recon:'▶ Run Both Engines',
     lbl_sf_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
     lbl_sf_cnfdm_hint:'Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. PDE-based validation and full Greeks.',
     lbl_sf_cnfdm_price:'CN-FDM Price', lbl_sf_cnfdm_vs:'vs. Haug Analytical',
@@ -1729,6 +1799,21 @@ const I18N = {
     lbl_sb_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
     lbl_sb_cnfdm_hint:'使用Crank-Nicolson有限差分法（BS偏微分方程+Rannacher平滑）重新定价雪球，提供独立验证及完整希腊字母。',
     lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
+    lbl_3greeks:'📐 三种方法希腊字母对比',
+    // Phase 5：票息求解面板
+    lbl_sb_basis:'期货贴水 carry (%/年)',
+    lbl_sb_basis_hint:'期货贴水带来的总 carry。正数表示期货低于现货。中证1000盘面实测约 +10.2%/年，在该水平下可报票息翻倍以上。',
+    lbl_sb_quote_hdr:'💰 票息求解 —— 这笔票子能报多少',
+    lbl_sb_quote_hint:'求使价格为零的票息，也就是交易台真正报出的那个数。是解析而非迭代：价格对票息精确仿射，所以只需三次求解，而且每次调用都会实测共线性残差。上方的「票息」输入在这里被忽略 —— 它就是待求的未知量。',
+    btn_run_quote:'▶ 求解票息',
+    lbl_sb_q_par:'可报票息', lbl_sb_q_ann:'票息年金',
+    lbl_sb_q_ki:'敲入腿现值', lbl_sb_q_aff:'仿射残差',
+    lbl_sb_q_split_hdr:'📊 票息由什么支付',
+    lbl_sb_q_vol:'波动率贡献', lbl_sb_q_carry:'贴水贡献',
+    lbl_sb_q_share:'贴水占比', lbl_sb_q_mc:'MC 复核 (z)',
+    lbl_sb_recon_hdr:'⚖ 希腊字母与两引擎对账',
+    lbl_sb_recon_hint:'六个希腊字母取自 Crank-Nicolson 解曲面，每一个都由独立的蒙特卡洛（共同随机数）交叉校验。容差由模拟自身实测的标准误构成，而不是挑一个数 —— 所以「靠宽区间过关」与「两个引擎都很紧」在表上一眼可辨。',
+    btn_run_recon:'▶ 运行两个引擎',
     lbl_sf_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
     lbl_sf_cnfdm_hint:'使用Crank-Nicolson有限差分法重新定价鲨鱼鳍（向上敲出看涨期权），提供PDE独立验证及完整希腊字母。',
     lbl_sf_cnfdm_price:'CN-FDM理论价格', lbl_sf_cnfdm_vs:'对比Haug解析公式',
@@ -1822,6 +1907,15 @@ function switchLang(lang) {
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
     'lbl-sb-cnfdm-hdr':'lbl_sb_cnfdm_hdr','lbl-sb-cnfdm-hint':'lbl_sb_cnfdm_hint',
     'lbl-sb-cnfdm-price':'lbl_sb_cnfdm_price','lbl-sb-cnfdm-method':'lbl_sb_cnfdm_method',
+    // Phase 5: the par coupon panel
+    'lbl-sb-basis':'lbl_sb_basis','lbl-sb-basis-hint':'lbl_sb_basis_hint',
+    'lbl-sb-quote-hdr':'lbl_sb_quote_hdr','lbl-sb-quote-hint':'lbl_sb_quote_hint',
+    'lbl-sb-q-par':'lbl_sb_q_par','lbl-sb-q-ann':'lbl_sb_q_ann',
+    'lbl-sb-q-ki':'lbl_sb_q_ki','lbl-sb-q-aff':'lbl_sb_q_aff',
+    'lbl-sb-q-split-hdr':'lbl_sb_q_split_hdr',
+    'lbl-sb-q-vol':'lbl_sb_q_vol','lbl-sb-q-carry':'lbl_sb_q_carry',
+    'lbl-sb-q-share':'lbl_sb_q_share','lbl-sb-q-mc':'lbl_sb_q_mc',
+    'lbl-sb-recon-hdr':'lbl_sb_recon_hdr','lbl-sb-recon-hint':'lbl_sb_recon_hint',
     'lbl-sf-cnfdm-hdr':'lbl_sf_cnfdm_hdr','lbl-sf-cnfdm-hint':'lbl_sf_cnfdm_hint',
     'lbl-sf-cnfdm-price':'lbl_sf_cnfdm_price','lbl-sf-cnfdm-vs':'lbl_sf_cnfdm_vs',
     'lbl-sf-vanilla':'lbl_sf_vanilla','lbl-sf-disc':'lbl_sf_disc','lbl-sf-rebate-pv':'lbl_sf_rebate_pv',
@@ -1919,11 +2013,12 @@ async function calcSnowball(){
   const ki  = +$('sb-ki').value / 100, cpn = +$('sb-cpn').value / 100;
   const freq= +$('sb-freq').value, sp  = +$('sb-spread').value / 100;
   const n   = +$('sb-paths').value;
+  const basis = +$('sb-basis').value / 100;
   if(!S||!sig||!T){showErr('Fill all Snowball parameters.'); return;}
   try{
     const res = await fetch('/api/snowball',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({S,sigma:sig,r,q,T,KO_pct:ko,KI_pct:ki,coupon_pa:cpn,obs_freq:freq,spread:sp,n_paths:n})});
+      body: JSON.stringify({S,sigma:sig,r,q,T,KO_pct:ko,KI_pct:ki,coupon_pa:cpn,obs_freq:freq,spread:sp,n_paths:n,basis_pa:basis})});
     const d = await res.json();
     if(d.error){showErr(d.error); return;}
     $('sb-mid').textContent = fmt(d.mid*100, 3)+'%';
@@ -1937,6 +2032,126 @@ async function calcSnowball(){
     $('sb-ki-lv').textContent = fmt(d.params.KI, 1);
     lastStructResults['snowball'] = {bid:fmt(d.bid*100,3)+'%', mid:fmt(d.mid*100,3)+'%', ask:fmt(d.ask*100,3)+'%', ko_prob:fmt(d.ko_prob*100,1)+'%', ki_prob:fmt(d.ki_prob*100,1)+'%'};
   }catch(e){showErr('Snowball error: '+e.message);}
+}
+
+// ========== SNOWBALL PAR COUPON ==========
+// The contract, read once. Every snowball call below sends the same shape,
+// and the coupon is deliberately absent from the quote payload: it is the
+// unknown there, and sending it would invite the reader to think it mattered.
+function snowballBody(){
+  return {
+    S:   +$('sb-S').value,
+    S0:  +$('sb-S').value,
+    sigma: +$('sb-sig').value / 100,
+    r:   +$('sb-r').value / 100,
+    q:   +$('sb-q').value / 100,
+    T:   +$('sb-T').value,
+    KO_pct: +$('sb-ko').value / 100,
+    KI_pct: +$('sb-ki').value / 100,
+    obs_freq: +$('sb-freq').value,
+    basis_pa: +$('sb-basis').value / 100,
+  };
+}
+
+async function calcSnowballQuote(){
+  const btn = $('btn-sb-quote');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Solving…'; }
+  try{
+    const res = await fetch('/api/snowball_quote',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(snowballBody())});
+    const d = await res.json();
+    if(d.error){ showErr('Par coupon: ' + d.error); return; }
+
+    $('sb-q-par').textContent = fmt(d.par_coupon_pct, 3) + '%';
+    $('sb-q-ann').textContent = fmt(d.coupon_annuity, 4);
+    $('sb-q-ki').textContent  = fmt(d.knock_in_value, 5);
+    // Scientific, because it is a machine-precision residual rather than a
+    // price. Rounding it to four places would print 0.0000 and hide what it
+    // is for.
+    $('sb-q-aff').textContent = d.affinity_residual.toExponential(1);
+
+    if(d.decomposition){
+      $('sb-q-vol').textContent   = fmt(d.decomposition.volatility_part_pct, 3) + '%';
+      $('sb-q-carry').textContent = fmt(d.decomposition.basis_part_pct, 3) + '%';
+      $('sb-q-share').textContent = fmt(d.decomposition.basis_share * 100, 1) + '%';
+    } else {
+      $('sb-q-vol').textContent = $('sb-q-carry').textContent = $('sb-q-share').textContent = '—';
+    }
+
+    const mcEl = $('sb-q-mc');
+    if(d.mc_verification){
+      const z = d.mc_verification.z_score;
+      mcEl.textContent = fmt(z, 2) + (d.mc_verification.passes ? ' ✓' : ' ✗');
+      mcEl.className = 'metric-val ' + (d.mc_verification.passes ? 'pos' : 'neg');
+    } else {
+      mcEl.textContent = '—'; mcEl.className = 'metric-val';
+    }
+
+    const grid = d.grid;
+    $('sb-q-note').textContent =
+      `${d.method} on a ${grid.space_nodes}×${grid.steps_per_year} grid. ` +
+      `The residual at the solved coupon is ${d.residual.toExponential(1)} — machine ` +
+      `precision, because the solve is exact rather than converged to a tolerance. ` +
+      `Volatility model: ${d.volatility.vol_model}.`;
+
+    $('sb-quote-results').style.display = '';
+  }catch(e){ showErr('Par coupon error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Solve Par Coupon'; } }
+}
+
+async function calcSnowballRecon(){
+  const btn = $('btn-sb-recon');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Running both engines…'; }
+  try{
+    const body = snowballBody();
+    body.coupon_pa = +$('sb-cpn').value / 100;   // risk is taken at a stated coupon
+    body.n_paths = 200000;
+    const res = await fetch('/api/snowball_risk_crosscheck',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ showErr('Reconciliation: ' + d.error); return; }
+
+    // Ordering is fixed rather than taken from the response, so theta and
+    // carry_rho -- the two that only acquired a second engine in Phase 4 --
+    // sit where a reader will look for them.
+    const order = ['delta','gamma','vega','theta','rho','carry_rho'];
+    const symbols = {delta:'Δ Delta', gamma:'Γ Gamma', vega:'ν Vega',
+                     theta:'Θ Theta', rho:'ρ Rho', carry_rho:'⊂ Carry Rho'};
+    const rows = [];
+    for(const name of order){
+      const v = d.verdicts[name];
+      if(!v) continue;
+      const ok = v.within_budget;
+      const decimals = name === 'gamma' ? 9 : 7;
+      rows.push(
+        `<tr><td style="text-align:left;font-weight:600">${symbols[name]}</td>` +
+        `<td>${fmt(v.pde, decimals)}</td>` +
+        `<td>${fmt(v.mc, decimals)}</td>` +
+        `<td>${v.gap.toExponential(1)}</td>` +
+        `<td>${v.budget.toExponential(1)}</td>` +
+        `<td class="${ok ? 'pos' : 'neg'}">${ok ? 'yes' : 'NO'}</td></tr>`
+      );
+    }
+    $('sb-recon-body').innerHTML = rows.join('');
+
+    // Theta is the weakest row and the easiest to over-read, so its own
+    // caveat goes under the table rather than only in the JSON.
+    const theta = d.verdicts.theta;
+    let note = d.agree ? 'Every Greek is inside its budget.' : 'At least one Greek is outside its budget.';
+    if(theta && theta.mc_error_share_of_value != null){
+      note += ` Theta is the weakest: three sampling errors come to ` +
+              `${fmt(theta.mc_error_share_of_value * 100, 0)}% of its value, and the two ` +
+              `estimates are difference quotients over horizons four times apart — so read ` +
+              `that row as agreement rather than as confirmation.`;
+    }
+    note += ` Volatility model: ${d.volatility.vol_model}.`;
+    $('sb-recon-note').textContent = note;
+
+    $('sb-recon-results').style.display = '';
+  }catch(e){ showErr('Reconciliation error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Run Both Engines'; } }
 }
 
 // ========== SHARK FIN PRICING ==========
@@ -2066,8 +2281,9 @@ async function calcCnFdm(productType){
       const ki  = +$('sb-ki').value / 100;
       const cpn = +$('sb-cpn').value / 100;
       const freq = +$('sb-freq').value;
+      const basis = +$('sb-basis').value / 100;
       payload = { product_type:'snowball', S0:S, sigma:sig, r, q, T,
-                  KO_pct: ko, KI_pct: ki,
+                  KO_pct: ko, KI_pct: ki, basis_pa: basis,
                   coupon_pa: cpn, obs_freq: freq, mc_paths: 50000 };
     } else {
       const S      = +$('sf-S').value;
