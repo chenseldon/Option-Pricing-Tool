@@ -94,6 +94,12 @@ from otcpricer.models.surface import fit_surface
 from otcpricer.products.irs import flat_curve, price_swap
 from otcpricer.products.shark_fin import CONTINUOUS, SharkFinTerms
 from otcpricer.products.snowball import SnowballTerms
+from otcpricer.products.snowball_quote import (
+    PAR_COUPON_PDE_CONFIG,
+    decompose_par_coupon,
+    solve_par_coupon,
+    verify_par_coupon_mc,
+)
 from otcpricer.reports.heston_report import heston_report
 from otcpricer.reports.local_vol_report import local_vol_report, round_trip
 from otcpricer.reports.surface_report import surface_report
@@ -1620,6 +1626,109 @@ def snowball_pde():
             },
         }
     )
+
+
+@app.route("/api/snowball_quote", methods=["POST"])
+def snowball_quote():
+    """Solve for the coupon that makes a snowball worth par.
+
+    This is the question a desk actually asks. It does not ask what a note is
+    worth at a 20% coupon; it asks what coupon the note can carry -- and that
+    number *is* the quote. Every other snowball route takes ``coupon_pa`` as an
+    input, so until now nothing here could answer it.
+
+    Exact, not iterated
+    -------------------
+    The price is exactly affine in the coupon, because the knock-out and
+    knock-in events depend only on the spot path against fixed barriers and
+    never on the coupon, while every coupon-bearing term is linear in it. So
+    ``price(c) = A*c + B`` and the answer is ``-B/A`` from a handful of solves
+    rather than from a root search. ``affinity_residual`` in the response is
+    that property *measured on this request*: a third solve at the midpoint,
+    which must be collinear with the other two to machine precision.
+
+    Why the grid is finer than the pricing routes'
+    ----------------------------------------------
+    The par coupon inherits the grid's first-order convergence. At 1600x1008
+    it comes out 2.4e-04 high -- 1.4 Monte Carlo standard errors at 400,000
+    paths, so visible rather than negligible. The default here is therefore
+    3200x2016, four times the work of /api/snowball_pde. Pass ``space_nodes``
+    and ``steps_per_year`` to trade accuracy for latency, knowing the cost.
+
+    Request
+    -------
+    The /api/snowball payload, minus ``coupon_pa`` (it is the unknown and is
+    ignored if present), plus:
+
+    ``target``
+        The price to solve to. 0 is a note struck at par.
+    ``knocked_in``
+        Solve for a note that has already breached its barrier.
+    ``decompose``
+        Also solve at a zero carry, to split the quote into what the
+        volatility buys and what the futures discount buys. Costs a second
+        solve set. Default true.
+    ``verify_mc``
+        Reprice at the solved coupon on the Monte Carlo, as an independent
+        check that the finite-difference price itself is right. Costs 400,000
+        paths. Default true.
+    """
+    try:
+        d = request.get_json(force=True)
+        terms, market = _parse_snowball_request(d)
+        config = PDEConfig(
+            space_nodes=int(d.get("space_nodes", PAR_COUPON_PDE_CONFIG.space_nodes)),
+            steps_per_year=int(d.get("steps_per_year", PAR_COUPON_PDE_CONFIG.steps_per_year)),
+        )
+        target = float(d.get("target", 0.0))
+        knocked_in = bool(d.get("knocked_in", False))
+        want_split = bool(d.get("decompose", True))
+        want_mc = bool(d.get("verify_mc", True))
+        mc_paths = min(int(d.get("mc_paths", 400000)), 1000000)
+    except (KeyError, TypeError, ValueError, OtcPricerError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        solution = solve_par_coupon(
+            terms, market, config, target=target, knocked_in=knocked_in
+        )
+        split = (
+            decompose_par_coupon(terms, market, config, knocked_in=knocked_in)
+            if want_split
+            else None
+        )
+        verification = (
+            verify_par_coupon_mc(
+                solution,
+                terms,
+                market,
+                MonteCarloConfig(paths=mc_paths, seed=42),
+                knocked_in=knocked_in,
+            )
+            if want_mc
+            else None
+        )
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    payload = {
+        **solution.as_dict(),
+        "decomposition": None if split is None else split.as_dict(),
+        "mc_verification": verification,
+        "grid": {
+            "space_nodes": config.space_nodes,
+            "steps_per_year": config.steps_per_year,
+            "note": (
+                "The par coupon converges first-order with the grid: 7.2902%, "
+                "7.1441%, 7.1187%, 7.1069%, 7.1009% on the reference trade as "
+                "it doubles from 400x252, for a Richardson limit near 7.0948%. "
+                "At 1600x1008 the quote is 2.4e-04 high, which is 1.4 Monte "
+                "Carlo standard errors -- hence the finer default here."
+            ),
+        },
+        "params": {**terms.describe(), **market.as_dict()},
+    }
+    return jsonify(payload)
 
 
 @app.route("/api/snowball_crosscheck", methods=["POST"])

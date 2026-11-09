@@ -834,3 +834,182 @@ class TestCnFdmGreeksRouting:
         # The daily price sits above the continuous closed form, as it must.
         assert body["price"] > body["haug_price"] > 0.0
         assert body["price"] / body["haug_price"] == pytest.approx(1.223, rel=0.02)
+
+
+class TestSnowballQuoteEndpoint:
+    """The question a desk actually asks, which no route could answer.
+
+    Every other snowball route takes ``coupon_pa`` as an input. The solver has
+    existed and been validated since Phase 4 -- affinity residual 7.8e-16 --
+    and had no caller outside its own test file, which means the project could
+    price a quote but not produce one.
+    """
+
+    PAYLOAD = {
+        "S": 5000,
+        "T": 1.0,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "r": 0.02,
+        "sigma": 0.20,
+        "q": 0.0,
+    }
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_it_quotes_the_measured_carry(self, client) -> None:  # noqa: ANN001
+        """15.02% at the CSI 1000's measured carry, against 6.53% at none.
+
+        Both at the endpoint's own 3200x2016 default, which is why these sit
+        slightly below the 15.04%/6.54% measured at 1600x1008 in the solver's
+        own tests -- the finer grid removes the 2.4e-04 upward bias rather
+        than disagreeing with it.
+        """
+        body = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "basis_pa": 0.1015, "verify_mc": False},
+        ).get_json()
+        assert body["par_coupon_pct"] == pytest.approx(15.016, abs=0.02)
+
+        flat = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "verify_mc": False, "decompose": False},
+        ).get_json()
+        assert flat["par_coupon_pct"] == pytest.approx(6.528, abs=0.02)
+        assert body["par_coupon"] / flat["par_coupon"] == pytest.approx(2.30, abs=0.03)
+
+    def test_the_affinity_invariant_is_reported_per_request(self, client) -> None:  # noqa: ANN001
+        """Not a documented property -- a number measured on this call.
+
+        The solver takes a third solve at the midpoint purely so the affinity
+        it relies on is checked rather than assumed, and the endpoint passes
+        that measurement through. A caller can see the quote is exact instead
+        of being told so.
+        """
+        body = client.post(
+            "/api/snowball_quote", json={**self.PAYLOAD, "verify_mc": False}
+        ).get_json()
+        assert body["affinity_residual"] < 1e-12
+        assert abs(body["residual"]) < 1e-12
+        assert "machine precision" in body["note"]
+
+    def test_the_split_says_what_pays_for_the_coupon(self, client) -> None:  # noqa: ANN001
+        """At the measured CSI 1000 carry the futures discount is the majority."""
+        body = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "basis_pa": 0.1015, "verify_mc": False},
+        ).get_json()
+        split = body["decomposition"]
+        assert split["basis_share"] == pytest.approx(0.565, abs=0.01)
+        assert split["volatility_part_pct"] == pytest.approx(6.528, abs=0.02)
+        assert "interact through the drift" in split["note"]
+
+    def test_the_simulation_confirms_the_solved_coupon(self, client) -> None:  # noqa: ANN001
+        """Which is what establishes the finite-difference price itself.
+
+        The solver is exact *given* the PDE price. Only a different engine
+        repricing at the same coupon can say the PDE price was right, so the
+        verification is on by default rather than opt-in.
+        """
+        body = client.post(
+            "/api/snowball_quote", json={**self.PAYLOAD, "basis_pa": 0.1015}
+        ).get_json()
+        check = body["mc_verification"]
+        assert check["passes"], check
+        assert abs(check["z_score"]) < 3.0
+        assert check["paths"] == 400000
+        assert "independent engine" in check["note"]
+
+    def test_the_expensive_pieces_can_be_declined(self, client) -> None:  # noqa: ANN001
+        """A caller should pay for what it wants, and the grid is the default
+        that costs the most: four times /api/snowball_pde's work."""
+        body = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "verify_mc": False, "decompose": False},
+        ).get_json()
+        assert body["mc_verification"] is None
+        assert body["decomposition"] is None
+        assert body["grid"]["space_nodes"] == 3200
+        assert body["grid"]["steps_per_year"] == 2016
+
+        coarse = client.post(
+            "/api/snowball_quote",
+            json={
+                **self.PAYLOAD,
+                "verify_mc": False,
+                "decompose": False,
+                "space_nodes": 800,
+                "steps_per_year": 504,
+            },
+        ).get_json()
+        assert coarse["grid"]["space_nodes"] == 800
+        # And the coarse grid is measurably higher, as the note in the
+        # response says it will be.
+        assert coarse["par_coupon"] > body["par_coupon"]
+        assert "Richardson limit" in coarse["grid"]["note"]
+
+    def test_a_target_other_than_par_is_honoured(self, client) -> None:  # noqa: ANN001
+        """A note sold above par carries less coupon."""
+        at_par = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "verify_mc": False, "decompose": False},
+        ).get_json()["par_coupon"]
+        above = client.post(
+            "/api/snowball_quote",
+            json={
+                **self.PAYLOAD,
+                "target": 0.01,
+                "verify_mc": False,
+                "decompose": False,
+            },
+        ).get_json()["par_coupon"]
+        assert above > at_par
+
+    def test_a_knocked_in_note_can_still_be_quoted(self, client) -> None:  # noqa: ANN001
+        """The operational case: a breached note being restruck."""
+        body = client.post(
+            "/api/snowball_quote",
+            json={
+                **self.PAYLOAD,
+                "knocked_in": True,
+                "verify_mc": False,
+                "decompose": False,
+            },
+        ).get_json()
+        assert body["par_coupon"] > 0.0
+        assert body["affinity_residual"] < 1e-12
+
+    def test_the_echo_shows_the_contract_that_was_solved(self, client) -> None:  # noqa: ANN001
+        body = client.post(
+            "/api/snowball_quote",
+            json={**self.PAYLOAD, "basis_pa": 0.1015, "verify_mc": False},
+        ).get_json()
+        params = body["params"]
+        assert params["ko_barrier"] == pytest.approx(5150.0)
+        assert params["carry"] == pytest.approx(0.1015)
+        assert params["lockup_months"] == 3
+
+    def test_an_unquotable_note_is_refused_with_a_reason(self, client) -> None:  # noqa: ANN001
+        """A note that can neither knock out nor survive clean has no coupon
+        that reaches par, and dividing by its annuity would hand back inf."""
+        response = client.post(
+            "/api/snowball_quote",
+            json={
+                **self.PAYLOAD,
+                "KO_pct": 5.0,
+                "KI_pct": 4.0,
+                "verify_mc": False,
+                "decompose": False,
+            },
+        )
+        assert response.status_code == 400
+        assert "error" in response.get_json()
+
+    def test_impossible_terms_are_a_client_error(self, client) -> None:  # noqa: ANN001
+        response = client.post("/api/snowball_quote", json={**self.PAYLOAD, "KI_pct": 1.10})
+        assert response.status_code == 400
