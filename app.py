@@ -83,7 +83,8 @@ from otcpricer.engines.risk import (
 # Volatility surface (Phase 2a). Offline by default: core.config ships with
 # source="snapshot", so these endpoints answer from data/snapshots unless a
 # request explicitly asks for the live feed.
-from otcpricer.marketdata.contracts import SUPPORTED_UNDERLYINGS
+from otcpricer.marketdata.carry import TailCarry, measure_carry
+from otcpricer.marketdata.contracts import SUPPORTED_UNDERLYINGS, resolve_underlying
 from otcpricer.marketdata.forward import DEFAULT_RATE
 from otcpricer.marketdata.rates import rate_curve_from_panel
 from otcpricer.marketdata.snapshots import list_snapshots
@@ -2105,38 +2106,161 @@ def otc_forward():
 _WIND_PANEL = None
 
 
-def _panel_rate_curve(as_of):
-    """The real government curve for one panel date.
+def _panel_date(as_of):
+    """Parse a panel date, refusing anything else by shape.
 
-    Raises MarketDataError when the panel is not configured, which is the
-    normal case for a checkout without the institutional data.
+    Raises:
+        MarketDataError: on anything that is not ``YYYY-MM-DD``.
     """
-    global _WIND_PANEL
     from datetime import date as _date
-
-    from otcpricer.core.config import get_settings
-    from otcpricer.marketdata.wind import WindPanel
 
     try:
         year, month, day = (int(part) for part in str(as_of).split("-"))
-        moment = _date(year, month, day)
+        return _date(year, month, day)
     except (TypeError, ValueError):
         raise MarketDataError(f"as_of must look like YYYY-MM-DD, got {as_of!r}") from None
+
+
+def _wind_panel():
+    """The one WindPanel for this process.
+
+    Raises:
+        MarketDataError: when the panel is not configured, which is the normal
+            case for a checkout without the institutional data. Reported as a
+            missing configuration rather than surfaced as a solver failure.
+    """
+    global _WIND_PANEL
+    from otcpricer.core.config import get_settings
+    from otcpricer.marketdata.wind import WindPanel
 
     if _WIND_PANEL is None:
         directory = get_settings().data.wind_dir
         if not directory:
             raise MarketDataError(
-                "as_of needs the Wind panel, which is not configured; set "
-                "OTCPRICER_WIND_DIR, or omit as_of to use a flat r_disc"
+                "this needs the Wind panel, which is not configured; set "
+                "OTCPRICER_WIND_DIR to the directory holding the six files"
             )
         _WIND_PANEL = WindPanel(directory)
-    return rate_curve_from_panel(_WIND_PANEL, moment)
+    return _WIND_PANEL
+
+
+def _panel_rate_curve(as_of):
+    """The real government curve for one panel date."""
+    return rate_curve_from_panel(_wind_panel(), _panel_date(as_of))
 
 
 # ─────────────────────────────────────────────────────────
 # API: Interest Rate Swap (IRS) — Simplified DCF
 # ─────────────────────────────────────────────────────────
+
+
+@app.route("/api/carry", methods=["POST"])
+def carry():
+    """Measure total carry off one root's listed index futures.
+
+    A snowball coupon is paid for by volatility, the futures discount and cash
+    management. ``basis_pa`` was a user input defaulting to zero, so the second
+    of those was absent from every price this project produced -- while 725
+    days of index futures sat in the panel being used only to validate
+    forwards. This is that measurement, exposed.
+
+    The board shows a drift, not a basis
+    ------------------------------------
+    ``log(F/S)/tau = r - q - basis`` is one observable against three unknowns:
+    the same forward is consistent with ``q=3%, basis=0`` and with ``q=0,
+    basis=3%``. So what is reported is total carry, ``r - drift``, which is the
+    one quantity both engines read -- ``dV/dq`` and ``dV/dbasis_pa`` are the
+    same derivative. Feed it back as ``q=0, basis_pa=carry`` with the same
+    rate and the rate cancels exactly.
+
+    Half the note's life is not measured
+    ------------------------------------
+    The listed contracts reach 0.4984 years on average, so a one-year note is
+    48.5% measured and a three-year note 16.2%. ``tail`` is therefore a
+    **required** field with no default: it governs the majority of the carry in
+    any quote this feeds, and choosing it silently is how a model comes to
+    hold a number nobody picked. ``measured_fraction_1y`` and
+    ``measured_fraction_3y`` lead the payload for the same reason.
+
+    Request
+    -------
+    ``underlying``
+        ``IO``, ``HO`` or ``MO``. The futures root and settling index are
+        taken from the contract registry rather than from the request, so
+        there is one source for the pairing.
+    ``as_of``
+        ``YYYY-MM-DD``. Required: the panel holds 725 dates and there is no
+        sensible default among them.
+    ``tail``
+        ``zero``, ``hold_last`` or ``explicit``. Required.
+    ``tail_carry``
+        The number, required for and only accepted with ``explicit``.
+    ``rate``
+        Rate the carry is quoted against. Only labels the number; the forwards
+        are invariant to it under ``hold_last``.
+
+    The panel is institutional data and is not committed to this repository,
+    so a deployment without it gets a 400 naming the environment variable
+    rather than a 500.
+    """
+    try:
+        d = request.get_json(force=True)
+        underlying = resolve_underlying(str(d.get("underlying", "MO")))
+        if not underlying.futures_root or not underlying.index_code:
+            raise MarketDataError(
+                f"{underlying.code} has no index future sharing its expiry calendar, "
+                f"so its carry cannot be measured this way; the CFFEX index options "
+                f"IO, HO and MO can"
+            )
+        as_of = _panel_date(d["as_of"])
+        tail = TailCarry(str(d.get("tail", "")).lower())
+        tail_carry = d.get("tail_carry")
+        rate = float(d.get("rate", DEFAULT_RATE))
+    except ValueError as e:
+        return jsonify(
+            {
+                "error": f"Invalid parameters: {e}",
+                "hint": (
+                    "tail is required and must be one of 'zero', 'hold_last' or "
+                    "'explicit'. It governs 52% of a one-year note's carry and 84% "
+                    "of a three-year note's, so there is deliberately no default."
+                ),
+            }
+        ), 400
+    except (KeyError, TypeError, MarketDataError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        measurement = measure_carry(
+            _wind_panel(),
+            underlying.futures_root,
+            underlying.index_code,
+            as_of,
+            tail=tail,
+            tail_carry=None if tail_carry is None else float(tail_carry),
+            rate=rate,
+        )
+    except MarketDataError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify(
+        {
+            **measurement.as_dict(),
+            "underlying": underlying.code,
+            "average_carry_1y": round(measurement.average_carry_to(1.0), 8),
+            "average_carry_3y": round(measurement.average_carry_to(3.0), 8),
+            "feed_as": {
+                "q": 0.0,
+                "basis_pa": round(measurement.average_carry_to(1.0), 8),
+                "r": rate,
+                "note": (
+                    "For a one-year note. Pass these three into any snowball "
+                    "route and its forward reproduces the futures board over "
+                    "the measured part of the curve."
+                ),
+            },
+        }
+    )
 
 
 @app.route("/api/irs", methods=["POST"])

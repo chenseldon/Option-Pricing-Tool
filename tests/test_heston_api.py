@@ -45,6 +45,16 @@ EXPLICIT = {
     "rho": -0.7,
 }
 
+#: Steps a year for the snowball smoke tests.
+#:
+#: 252, and it has to be at least that. These tests ran at 63 for speed, which
+#: the engine used to accept by silently collapsing the 252 daily knock-in
+#: dates onto 63 steps -- so they were pricing a note with a quarter of the
+#: monitoring they described, and a less-monitored note is worth strictly more.
+#: The schedule-fidelity check now refuses that, and the fix is to price the
+#: contract rather than to lower the contract to the grid.
+SNOWBALL_STEPS = 252
+
 
 class TestEuropean:
     def test_reproduces_the_quantlib_checked_price(self, client: Any) -> None:
@@ -210,7 +220,7 @@ class TestSnowball:
                 "r": 0.02,
                 "q": 0.01,
                 "paths": 20_000,
-                "steps_per_year": 63,
+                "steps_per_year": SNOWBALL_STEPS,
                 **EXPLICIT,
             },
         ).get_json()
@@ -223,7 +233,7 @@ class TestSnowball:
     def test_returns_the_statistics_a_desk_quotes(self, client: Any) -> None:
         payload = client.post(
             "/api/heston/snowball",
-            json={"paths": 20_000, "steps_per_year": 63, **EXPLICIT},
+            json={"paths": 20_000, "steps_per_year": SNOWBALL_STEPS, **EXPLICIT},
         ).get_json()
 
         for key in ("price", "std_error", "ci95", "ko_prob", "ki_prob", "ki_no_ko_prob"):
@@ -234,19 +244,41 @@ class TestSnowball:
 
     def test_a_higher_coupon_is_worth_more(self, client: Any) -> None:
         """A monotonicity the model cannot be allowed to break."""
-        base = {"paths": 20_000, "steps_per_year": 63, "seed": 3, **EXPLICIT}
+        base = {"paths": 20_000, "steps_per_year": SNOWBALL_STEPS, "seed": 3, **EXPLICIT}
         low = client.post("/api/heston/snowball", json={**base, "coupon_pa": 0.10}).get_json()
         high = client.post("/api/heston/snowball", json={**base, "coupon_pa": 0.30}).get_json()
         assert high["price"] > low["price"]
 
     def test_echoes_the_terms_and_the_step_count(self, client: Any) -> None:
-        """The step count matters: under QE it is an accuracy parameter."""
+        """The step count matters: under QE it is an accuracy parameter.
+
+        504 rather than the 126 this used to pass, for the same reason as
+        SNOWBALL_STEPS -- and it is still not the default, which is what the
+        echo is being tested on.
+        """
         payload = client.post(
             "/api/heston/snowball",
-            json={"paths": 20_000, "steps_per_year": 126, "ko_pct": 1.05, **EXPLICIT},
+            json={"paths": 20_000, "steps_per_year": 504, "ko_pct": 1.05, **EXPLICIT},
         ).get_json()
-        assert payload["steps_per_year"] == 126
+        assert payload["steps_per_year"] == 504
         assert payload["terms"]["ko_pct"] == 1.05
+
+    def test_a_grid_too_coarse_for_the_daily_knock_in_is_refused(self, client: Any) -> None:
+        """What the four tests above were silently relying on.
+
+        A snowball's knock-in is monitored daily, so 63 steps cannot hold its
+        schedule: 189 of the 252 dates collide. The engine used to drop them
+        and price a note with a quarter of the monitoring -- worth strictly
+        more, and with no symptom. Now it says so, and says what grid works.
+        """
+        response = client.post(
+            "/api/heston/snowball",
+            json={"paths": 2_000, "steps_per_year": 63, **EXPLICIT},
+        )
+        assert response.status_code == 400
+        error = response.get_json()["error"]
+        assert "knock-in dates collide" in error
+        assert "steps_per_year >= 252" in error
 
     @pytest.mark.parametrize(
         ("body", "fragment"),

@@ -371,6 +371,11 @@ class TestExistingRoutesUnchanged:
         "/api/heston/calibrate",
         "/api/heston/european",
         "/api/heston/snowball",
+        # Phase 5: the quoting and carry capabilities, which existed and had
+        # no caller. The solver has been validated since Phase 4 and the carry
+        # measurement since Phase 4 too; neither was reachable.
+        "/api/snowball_quote",
+        "/api/carry",
     }
 
     def test_every_prior_route_still_exists(self) -> None:

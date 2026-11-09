@@ -478,3 +478,186 @@ class TestAgainstTheRealBoard:
         """The option quotes run one day past the futures quotes."""
         with pytest.raises(MarketDataError, match="no IF futures settled"):
             measure_carry(panel, "IF", "000300.SH", date(2026, 6, 29), tail=TailCarry.HOLD_LAST)
+
+
+# ---------------------------------------------------------------------------
+# The endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestTheCarryEndpoint:
+    """The measurement, exposed. It had no caller outside this file.
+
+    Two behaviours matter more than the numbers. ``tail`` is required, because
+    it governs 52% of a one-year note's carry and 84% of a three-year note's --
+    and the test below shows that choice moving the three-year carry by a
+    factor of six. And a checkout without the institutional panel gets a 400
+    naming the environment variable rather than a 500, because an absent data
+    file is a configuration fact, not a solver failure.
+    """
+
+    PAYLOAD = {"underlying": "MO", "as_of": "2024-12-25", "tail": "hold_last", "rate": 0.02}
+
+    @pytest.fixture
+    def client(self, monkeypatch):  # noqa: ANN001, ANN201
+        import app
+
+        app.app.config.update(TESTING=True)
+        # The route reads its panel from the module-level cache, which is what
+        # that cache is for: 34 MB of parquet parsed once per process. Setting
+        # it directly is also how these tests avoid depending on the
+        # environment variable a deployment would use.
+        if WIND_DIR is not None:
+            monkeypatch.setattr(app, "_WIND_PANEL", WindPanel(WIND_DIR))
+        return app.app.test_client()
+
+    @pytest.fixture
+    def bare_client(self, monkeypatch):  # noqa: ANN001, ANN201
+        """A client with no panel, which is the normal checkout."""
+        import app
+
+        app.app.config.update(TESTING=True)
+        monkeypatch.setattr(app, "_WIND_PANEL", None)
+        monkeypatch.delenv("OTCPRICER_WIND_DIR", raising=False)
+
+        from otcpricer.core.config import get_settings
+
+        get_settings.cache_clear()
+        monkeypatch.setattr(
+            "otcpricer.core.config.get_settings",
+            lambda: _settings_without_wind(get_settings),
+        )
+        return app.app.test_client()
+
+    # -- the required choice ------------------------------------------------
+
+    def test_the_tail_is_required(self, client) -> None:  # noqa: ANN001
+        """No default, and the refusal says why rather than just refusing."""
+        response = client.post("/api/carry", json={"underlying": "MO", "as_of": "2024-12-25"})
+        assert response.status_code == 400
+        body = response.get_json()
+        assert "tail is required" in body["hint"]
+        assert "84%" in body["hint"]
+
+    def test_an_unknown_tail_is_refused(self, client) -> None:  # noqa: ANN001
+        response = client.post("/api/carry", json={**self.PAYLOAD, "tail": "guess"})
+        assert response.status_code == 400
+
+    def test_two_sources_for_the_tail_are_refused(self, client) -> None:  # noqa: ANN001
+        """The defect pattern this phase keeps finding, caught at the edge."""
+        response = client.post("/api/carry", json={**self.PAYLOAD, "tail_carry": 0.05})
+        assert response.status_code == 400
+        assert "nobody chose" in response.get_json()["error"]
+
+    # -- degradation --------------------------------------------------------
+
+    def test_without_the_panel_it_names_the_variable(self, bare_client) -> None:  # noqa: ANN001
+        """A missing institutional data file is configuration, not a crash.
+
+        This is the path a fresh checkout takes, so it is the one most likely
+        to be hit by someone who has never seen the panel.
+        """
+        response = bare_client.post("/api/carry", json=self.PAYLOAD)
+        assert response.status_code == 400
+        assert "OTCPRICER_WIND_DIR" in response.get_json()["error"]
+
+    def test_a_date_the_board_does_not_cover_says_so(self, client) -> None:  # noqa: ANN001
+        """The option quotes run one day past the futures quotes."""
+        response = client.post("/api/carry", json={**self.PAYLOAD, "as_of": "2026-06-29"})
+        assert response.status_code == 400
+        assert "no IM futures settled" in response.get_json()["error"]
+
+    def test_a_malformed_date_is_refused_by_shape(self, client) -> None:  # noqa: ANN001
+        response = client.post("/api/carry", json={**self.PAYLOAD, "as_of": "25/12/2024"})
+        assert response.status_code == 400
+
+    def test_an_underlying_without_a_future_is_refused(self, client) -> None:  # noqa: ANN001
+        """The ETF options have no index future sharing their expiry calendar,
+        so the interpolation-free measurement is simply unavailable for them."""
+        response = client.post("/api/carry", json={**self.PAYLOAD, "underlying": "510050"})
+        assert response.status_code == 400
+        assert "no index future" in response.get_json()["error"]
+
+    # -- the measurement ----------------------------------------------------
+
+    @needs_panel
+    def test_the_three_roots_come_back_as_measured(self, client) -> None:  # noqa: ANN001
+        """And the futures root comes from the registry, not the request.
+
+        MO -> IM, IO -> IF, HO -> IH, with the settling index taken from the
+        same entry, so the pairing has one source.
+        """
+        expected = {"MO": ("IM", 0.1015), "IO": ("IF", 0.0340), "HO": ("IH", 0.0183)}
+        for code, (root, far_carry) in expected.items():
+            body = client.post("/api/carry", json={**self.PAYLOAD, "underlying": code}).get_json()
+            assert body["root"] == root
+            assert body["far_carry"] == pytest.approx(far_carry, abs=5e-4), code
+
+    @needs_panel
+    def test_the_measured_fraction_leads(self, client) -> None:  # noqa: ANN001
+        """48.5% for a one-year note, 16.2% for a three-year one."""
+        body = client.post("/api/carry", json=self.PAYLOAD).get_json()
+        assert body["measured_fraction_1y"] == pytest.approx(0.4849, abs=1e-3)
+        assert body["measured_fraction_3y"] == pytest.approx(0.1616, abs=1e-3)
+        assert body["observed_reach"] == pytest.approx(0.4849, abs=1e-3)
+
+    @needs_panel
+    def test_the_tail_choice_moves_the_three_year_carry_six_fold(self, client) -> None:  # noqa: ANN001
+        """Which is the measurement that justifies making it required.
+
+        Measured on the CSI 1000 board: 10.15% a year under hold_last against
+        1.64% under zero. Not a refinement -- a different trade.
+        """
+        held = client.post("/api/carry", json=self.PAYLOAD).get_json()
+        zero = client.post("/api/carry", json={**self.PAYLOAD, "tail": "zero"}).get_json()
+
+        assert held["average_carry_3y"] == pytest.approx(0.10154, abs=5e-4)
+        assert zero["average_carry_3y"] == pytest.approx(0.01641, abs=5e-4)
+        assert held["average_carry_3y"] / zero["average_carry_3y"] > 5.0
+
+        # Inside the measured range they agree, because the tail is beyond it.
+        assert held["far_carry"] == pytest.approx(zero["far_carry"], abs=1e-12)
+
+    @needs_panel
+    def test_the_sse_50_is_at_a_premium_and_the_payload_shows_it(self, client) -> None:  # noqa: ANN001
+        """The state core/market.py used to refuse outright.
+
+        Its carry is positive only because the rate lifts it: the drift the
+        board actually shows is positive, meaning the future trades above the
+        index.
+        """
+        body = client.post("/api/carry", json={**self.PAYLOAD, "underlying": "HO"}).get_json()
+        assert body["contract_drifts"][-1] > 0.0
+        assert body["far_carry"] > 0.0
+        assert body["far_carry"] == pytest.approx(0.02 - body["contract_drifts"][-1], abs=1e-8)
+
+    @needs_panel
+    def test_it_says_what_to_feed_back_into_a_pricing_route(self, client) -> None:  # noqa: ANN001
+        """q=0 and basis_pa=carry, with the same rate, because the engines read
+        only the sum and the rate cancels."""
+        body = client.post("/api/carry", json=self.PAYLOAD).get_json()
+        feed = body["feed_as"]
+        assert feed["q"] == 0.0
+        assert feed["r"] == 0.02
+        assert feed["basis_pa"] == pytest.approx(body["average_carry_1y"], abs=1e-12)
+
+    @needs_panel
+    def test_the_payload_says_the_board_shows_a_drift(self, client) -> None:  # noqa: ANN001
+        body = client.post("/api/carry", json=self.PAYLOAD).get_json()
+        assert "rather than a basis" in body["note"]
+        assert len(body["contract_drifts"]) == len(body["contract_carries"])
+        for drift, carry in zip(body["contract_drifts"], body["contract_carries"], strict=True):
+            assert drift + carry == pytest.approx(0.02, abs=1e-8)
+
+
+def _settings_without_wind(loader):  # noqa: ANN001, ANN202
+    """A settings object whose wind_dir is empty, for the degradation test."""
+    from dataclasses import replace as _replace
+
+    settings = loader()
+    try:
+        return _replace(settings, data=_replace(settings.data, wind_dir=""))
+    except TypeError:  # pydantic model rather than a dataclass
+        return settings.model_copy(
+            update={"data": settings.data.model_copy(update={"wind_dir": ""})}
+        )
