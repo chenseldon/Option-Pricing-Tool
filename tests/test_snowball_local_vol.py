@@ -524,3 +524,166 @@ class TestRiskUnderLocalVolatility:
                 local_vol=inverted,
                 vol_bump=0.10,
             )
+
+
+# ---------------------------------------------------------------------------
+# Through the API
+# ---------------------------------------------------------------------------
+
+
+class TestThroughTheApi:
+    """The engines have taken ``local_vol=`` since Phase 2b and no route passed it.
+
+    So the smile was reachable for a European option and unreachable for the
+    product it matters most to -- a barrier payoff is concentrated at one spot
+    level, which is exactly where a flat number cannot speak. Measured through
+    the API on the committed 510300 snapshot, it moves the price by 42% and the
+    quotable coupon by 80%.
+    """
+
+    BODY = {
+        "S": 2.85,
+        "S0": 2.85,
+        "T": 1.0,
+        "KO_pct": 1.03,
+        "KI_pct": 0.75,
+        "coupon_pa": 0.20,
+        "r": 0.02,
+        "q": 0.0,
+        "sigma": 0.20,
+    }
+    SURFACE = {"underlying": "510300", "source": "snapshot"}
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        if not SNAPSHOT_DIR.exists():
+            pytest.skip("no snapshots committed")
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def test_absence_of_underlying_keeps_the_flat_path(self, client) -> None:  # noqa: ANN001
+        """Opt-in by presence, and that matters more than it looks.
+
+        ``market.sigma`` is this project's default pricing basis and several
+        anchors are pinned to it exactly -- including FLAT_PRICE at the top of
+        this file, which is asserted with ``==``. A surface that leaked into
+        the default path would break them, so the switch is the presence of a
+        key rather than a flag with a default.
+        """
+        body = client.post("/api/snowball_pde", json=self.BODY).get_json()
+        assert body["volatility"]["vol_model"] == "flat"
+        assert "market.sigma" in body["volatility"]["note"]
+        assert body["space_nodes"] < 2000
+
+    def test_a_surface_changes_the_price_by_42_percent(self, client) -> None:  # noqa: ANN001
+        """The measurement that says the smile reaches the engine.
+
+        A price that matched the flat one would mean the surface was being
+        fitted and discarded.
+        """
+        flat = client.post("/api/snowball_pde", json=self.BODY).get_json()
+        surface = client.post("/api/snowball_pde", json={**self.BODY, **self.SURFACE}).get_json()
+
+        assert surface["volatility"]["vol_model"] == "dupire-local"
+        assert surface["volatility"]["underlying"] == "510300"
+        assert surface["price"] == pytest.approx(0.03851, abs=5e-4)
+        relative = (surface["price"] - flat["price"]) / abs(flat["price"])
+        assert relative == pytest.approx(-0.417, abs=0.02)
+
+    def test_the_surface_path_does_not_read_market_sigma(self, client) -> None:  # noqa: ANN001
+        """Asserted on the price, not on the docstring.
+
+        On this path the surface supplies the diffusion. If ``sigma`` were read
+        anywhere -- and it would be, through the flat grid's padding rule --
+        tripling it would move the answer, and the move would look like a vega
+        rather than like a grid artefact.
+        """
+        base = client.post("/api/snowball_pde", json={**self.BODY, **self.SURFACE}).get_json()
+        tripled = client.post(
+            "/api/snowball_pde", json={**self.BODY, **self.SURFACE, "sigma": 0.60}
+        ).get_json()
+        assert tripled["price"] == base["price"]
+        assert tripled["space_nodes"] == base["space_nodes"]
+
+    def test_the_surface_path_gets_the_finer_grid(self, client) -> None:  # noqa: ANN001
+        """Because the flat grid's error budget does not carry over.
+
+        The fitted variance term structure is rough enough that the same
+        accuracy needs LOCAL_VOL_PDE_CONFIG's 4800x8064. Defaulting a surface
+        request to 1600x1008 would return a number whose error is an order of
+        magnitude larger with nothing saying so.
+        """
+        body = client.post("/api/snowball_pde", json={**self.BODY, **self.SURFACE}).get_json()
+        assert body["space_nodes"] >= 4800
+        assert body["time_steps"] >= 8000
+
+        # And an explicit override is still honoured.
+        coarse = client.post(
+            "/api/snowball_pde",
+            json={**self.BODY, **self.SURFACE, "space_nodes": 1600, "steps_per_year": 2016},
+        ).get_json()
+        assert coarse["space_nodes"] < 2000
+
+    def test_the_risk_route_labels_which_vega_it_took(self, client) -> None:  # noqa: ANN001
+        """A flat vega and a surface vega are different derivatives.
+
+        One bumps a scalar; the other shifts the whole implied surface at the
+        money, which also changes curvature at every maturity because SSVI's
+        curvature scale depends on the variance level. The label is what stops
+        them being compared as the same quantity.
+        """
+        flat = client.post("/api/snowball_risk", json=self.BODY).get_json()
+        surface = client.post("/api/snowball_risk", json={**self.BODY, **self.SURFACE}).get_json()
+
+        assert flat["method"] == "pde-grid"
+        assert surface["method"] == "pde-grid+ssvi-parallel-vega"
+        assert surface["volatility"]["vol_model"] == "dupire-local"
+        # All six Greeks survive the surface path.
+        for name in ("delta", "gamma", "vega", "theta", "rho", "carry_rho"):
+            assert name in surface, name
+            assert np.isfinite(surface[name]), name
+
+    def test_the_quote_route_solves_on_a_surface(self, client) -> None:  # noqa: ANN001
+        """And the affinity invariant still holds there.
+
+        That is the part worth checking rather than assuming: the solver's
+        exactness rests on the price being affine in the coupon, and a surface
+        changes every coefficient in the operator. It does not change the
+        coupon's linearity, and the residual says so to machine precision.
+        """
+        body = client.post(
+            "/api/snowball_quote",
+            json={**self.BODY, **self.SURFACE, "verify_mc": False, "decompose": False},
+        ).get_json()
+
+        assert body["method"] == "affine-exact+dupire-local"
+        assert body["affinity_residual"] < 1e-12
+        assert body["par_coupon_pct"] == pytest.approx(11.754, abs=0.05)
+
+    def test_the_smile_raises_the_quotable_coupon_by_eighty_percent(self, client) -> None:  # noqa: ANN001
+        """Which puts it in the same league as the futures carry.
+
+        6.53% flat against 11.75% on the surface. The direction follows from
+        the skew: local volatility at the 75% knock-in is well above the
+        at-the-money level, so the short put leg is worth more, the note is
+        worth less to the client, and the desk can quote more coupon for the
+        same price.
+        """
+        flat = client.post(
+            "/api/snowball_quote",
+            json={**self.BODY, "verify_mc": False, "decompose": False},
+        ).get_json()["par_coupon"]
+        surface = client.post(
+            "/api/snowball_quote",
+            json={**self.BODY, **self.SURFACE, "verify_mc": False, "decompose": False},
+        ).get_json()["par_coupon"]
+
+        assert surface > flat
+        assert (surface - flat) / flat == pytest.approx(0.80, abs=0.03)
+
+    def test_an_unsupported_underlying_is_a_client_error(self, client) -> None:  # noqa: ANN001
+        response = client.post("/api/snowball_pde", json={**self.BODY, "underlying": "159915"})
+        assert response.status_code == 400
+        assert "not supported" in response.get_json()["error"]

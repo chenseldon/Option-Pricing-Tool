@@ -72,7 +72,7 @@ from otcpricer.engines.barrier import (
 from otcpricer.engines.european import price_european_pde
 from otcpricer.engines.fourier import price_heston_european
 from otcpricer.engines.mc import MonteCarloConfig, price_snowball_mc
-from otcpricer.engines.pde import PDEConfig, price_snowball_pde
+from otcpricer.engines.pde import LOCAL_VOL_PDE_CONFIG, PDEConfig, price_snowball_pde
 from otcpricer.engines.risk import (
     SnowballRisk,
     compare_snowball_risk,
@@ -1504,6 +1504,102 @@ def _parse_snowball_request(d, spot_key="S"):
     return terms, market
 
 
+def _snowball_local_vol(d, market):
+    """A Dupire surface for a snowball request, or ``None`` for the flat path.
+
+    The engines have taken ``local_vol=`` since Phase 2b, with 26 tests behind
+    it, and no route ever passed it -- so the smile was reachable for European
+    options and unreachable for the product it matters most to. A barrier
+    payoff is concentrated at one spot level, so it depends on the volatility
+    *there* rather than on an average, and a flat number cannot express that.
+
+    Opt-in by the presence of ``underlying``. Absence keeps the flat path
+    byte-for-byte, which matters: ``market.sigma`` is the project's default
+    pricing basis and several anchors are pinned to it exactly.
+
+    What the surface is anchored on is taken from the market being priced
+    rather than asked for separately:
+
+    ``rate``
+        ``market.r``, so the surface and the discounting agree.
+    ``spot``
+        ``market.S``. The surface is scale-free -- it works in log-moneyness
+        -- but its forward curve needs a level, and the level that matters is
+        the one the note is being valued at.
+    ``tail_drift``
+        ``market.drift``, the caller's own ``r - q - basis``. Not the implied
+        carry extrapolated: the options stop at about five months while the
+        note runs one to three years, and carrying a -5% implied carry out to
+        three years would drop the forward 14% on five-month evidence.
+
+    Returns:
+        ``(fitted, local_vol)`` or ``(None, None)``.
+    """
+    if "underlying" not in d:
+        return None, None
+    underlying, source_kind, snapshot, _ = _surface_request(d)
+    return _cached_local_vol(
+        underlying,
+        source_kind,
+        snapshot,
+        market.r,
+        market.S,
+        market.drift,
+    )
+
+
+def _snowball_grid(d, local_vol, *, nodes=1600, steps=1008):
+    """The grid for a snowball solve, which depends on which path it takes.
+
+    The flat grid's budget does not carry over to a Dupire surface: the fitted
+    variance term structure is rough enough that the same accuracy needs
+    :data:`~otcpricer.engines.pde.LOCAL_VOL_PDE_CONFIG`'s 4800x8064. Defaulting
+    a surface request to the flat grid would hand back a number whose error is
+    an order of magnitude larger with nothing saying so.
+    """
+    if local_vol is None:
+        return PDEConfig(
+            space_nodes=int(d.get("space_nodes", nodes)),
+            steps_per_year=int(d.get("steps_per_year", steps)),
+        )
+    return PDEConfig(
+        space_nodes=int(d.get("space_nodes", LOCAL_VOL_PDE_CONFIG.space_nodes)),
+        steps_per_year=int(d.get("steps_per_year", LOCAL_VOL_PDE_CONFIG.steps_per_year)),
+    )
+
+
+def _vol_model_note(local_vol, fitted):
+    """What produced the volatility, for the response.
+
+    A price is never reported without this. The flat and surface numbers are
+    not interchangeable -- measured on the 510300 surface a 1-year up-and-out
+    call moves 94% between them -- and a response that looked identical either
+    way would invite them to be compared as if they were the same quantity.
+    """
+    if local_vol is None:
+        return {
+            "vol_model": "flat",
+            "note": (
+                "market.sigma, the project's default pricing basis. Pass "
+                "'underlying' to price against a fitted Dupire surface instead."
+            ),
+        }
+    return {
+        "vol_model": "dupire-local",
+        "underlying": fitted.underlying_code,
+        "as_of": str(fitted.as_of),
+        "source": fitted.source,
+        "atm_vol": round(float(local_vol.atm_total_vol(1.0)), 8),
+        "note": (
+            "Dupire local volatility on an SSVI fit. market.sigma is not read "
+            "on this path. A barrier payoff is concentrated at one spot level, "
+            "so the smile matters here more than anywhere else in the project: "
+            "measured on 510300, a 1-year up-and-out call moves 94% between "
+            "the flat and surface answers."
+        ),
+    }
+
+
 @app.route("/api/snowball", methods=["POST"])
 def snowball():
     """
@@ -1539,13 +1635,16 @@ def snowball():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
+        fitted, local_vol = _snowball_local_vol(d, market)
         spread = float(d.get("spread", 0.02))
         n_paths = min(int(d.get("n_paths", 50000)), 500000)
     except (KeyError, TypeError, ValueError, OtcPricerError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        result = price_snowball_mc(terms, market, MonteCarloConfig(paths=n_paths, seed=42))
+        result = price_snowball_mc(
+            terms, market, MonteCarloConfig(paths=n_paths, seed=42), local_vol=local_vol
+        )
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1600,15 +1699,13 @@ def snowball_pde():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
-        config = PDEConfig(
-            space_nodes=int(d.get("space_nodes", 1600)),
-            steps_per_year=int(d.get("steps_per_year", 1008)),
-        )
+        fitted, local_vol = _snowball_local_vol(d, market)
+        config = _snowball_grid(d, local_vol)
     except (KeyError, TypeError, ValueError, OtcPricerError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        result = price_snowball_pde(terms, market, config)
+        result = price_snowball_pde(terms, market, config, local_vol=local_vol)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1618,6 +1715,7 @@ def snowball_pde():
             "method": "Crank-Nicolson FDM (barrier- and observation-aligned grid)",
             "space_nodes": result.space_nodes,
             "time_steps": result.time_steps,
+            "volatility": _vol_model_note(local_vol, fitted),
             "params": {
                 "KO": terms.ko_barrier,
                 "KI": terms.ki_barrier,
@@ -1677,9 +1775,12 @@ def snowball_quote():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
-        config = PDEConfig(
-            space_nodes=int(d.get("space_nodes", PAR_COUPON_PDE_CONFIG.space_nodes)),
-            steps_per_year=int(d.get("steps_per_year", PAR_COUPON_PDE_CONFIG.steps_per_year)),
+        fitted, local_vol = _snowball_local_vol(d, market)
+        config = _snowball_grid(
+            d,
+            local_vol,
+            nodes=PAR_COUPON_PDE_CONFIG.space_nodes,
+            steps=PAR_COUPON_PDE_CONFIG.steps_per_year,
         )
         target = float(d.get("target", 0.0))
         knocked_in = bool(d.get("knocked_in", False))
@@ -1691,10 +1792,17 @@ def snowball_quote():
 
     try:
         solution = solve_par_coupon(
-            terms, market, config, target=target, knocked_in=knocked_in
+            terms,
+            market,
+            config,
+            target=target,
+            knocked_in=knocked_in,
+            local_vol=local_vol,
         )
         split = (
-            decompose_par_coupon(terms, market, config, knocked_in=knocked_in)
+            decompose_par_coupon(
+                terms, market, config, knocked_in=knocked_in, local_vol=local_vol
+            )
             if want_split
             else None
         )
@@ -1705,6 +1813,7 @@ def snowball_quote():
                 market,
                 MonteCarloConfig(paths=mc_paths, seed=42),
                 knocked_in=knocked_in,
+                local_vol=local_vol,
             )
             if want_mc
             else None
@@ -1727,6 +1836,7 @@ def snowball_quote():
                 "Carlo standard errors -- hence the finer default here."
             ),
         },
+        "volatility": _vol_model_note(local_vol, fitted),
         "params": {**terms.describe(), **market.as_dict()},
     }
     return jsonify(payload)
@@ -1759,14 +1869,34 @@ def snowball_crosscheck():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
+        fitted, local_vol = _snowball_local_vol(d, market)
         n_paths = min(int(d.get("n_paths", 200000)), 500000)
     except (KeyError, TypeError, ValueError, OtcPricerError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
+    # The refinement pair scales with the path: a Dupire surface needs the
+    # finer grids for the same accuracy, and halving a grid that was already
+    # too coarse would make the Richardson step measure the wrong thing.
+    if local_vol is None:
+        grids = (
+            PDEConfig(space_nodes=800, steps_per_year=504),
+            PDEConfig(space_nodes=1600, steps_per_year=1008),
+        )
+    else:
+        grids = (
+            PDEConfig(
+                space_nodes=LOCAL_VOL_PDE_CONFIG.space_nodes // 2,
+                steps_per_year=LOCAL_VOL_PDE_CONFIG.steps_per_year // 2,
+            ),
+            LOCAL_VOL_PDE_CONFIG,
+        )
+
     try:
-        mc = price_snowball_mc(terms, market, MonteCarloConfig(paths=n_paths, seed=42))
-        coarse = price_snowball_pde(terms, market, PDEConfig(space_nodes=800, steps_per_year=504))
-        fine = price_snowball_pde(terms, market, PDEConfig(space_nodes=1600, steps_per_year=1008))
+        mc = price_snowball_mc(
+            terms, market, MonteCarloConfig(paths=n_paths, seed=42), local_vol=local_vol
+        )
+        coarse = price_snowball_pde(terms, market, grids[0], local_vol=local_vol)
+        fine = price_snowball_pde(terms, market, grids[1], local_vol=local_vol)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1797,6 +1927,7 @@ def snowball_crosscheck():
                 "coarse": {"space_nodes": coarse.space_nodes, "time_steps": coarse.time_steps},
                 "fine": {"space_nodes": fine.space_nodes, "time_steps": fine.time_steps},
             },
+            "volatility": _vol_model_note(local_vol, fitted),
         }
     )
 
@@ -1837,27 +1968,29 @@ def snowball_risk():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
+        fitted, local_vol = _snowball_local_vol(d, market)
         knocked_in = bool(d.get("knocked_in", False))
-        config = PDEConfig(
-            space_nodes=int(d.get("space_nodes", 1600)),
-            steps_per_year=int(d.get("steps_per_year", 1008)),
-        )
+        config = _snowball_grid(d, local_vol)
     except (KeyError, TypeError, ValueError, OtcPricerError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        risk = snowball_risk_pde(terms, market, config, knocked_in=knocked_in)
+        risk = snowball_risk_pde(
+            terms, market, config, knocked_in=knocked_in, local_vol=local_vol
+        )
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
     payload = risk.as_dict()
     payload["knocked_in"] = knocked_in
+    payload["volatility"] = _vol_model_note(local_vol, fitted)
     payload["units"] = {
         "delta": "per index point",
         "gamma": "per index point squared",
         "vega": "per 1 percentage point of volatility",
         "theta": "per calendar day",
         "rho": "per 1 percentage point of rate",
+        "carry_rho": "per 1 percentage point of carry (q + basis_pa)",
         "basis": "fraction of notional",
     }
     return jsonify(payload)
@@ -1887,18 +2020,26 @@ def snowball_risk_crosscheck():
     try:
         d = request.get_json(force=True)
         terms, market = _parse_snowball_request(d)
+        fitted, local_vol = _snowball_local_vol(d, market)
         mc_paths = min(int(d.get("n_paths", 200000)), 500000)
     except (KeyError, TypeError, ValueError, OtcPricerError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
+        # The grid is left to compare_snowball_risk, which already picks
+        # LOCAL_VOL_PDE_CONFIG when a surface is supplied -- the flat grid's
+        # error budget does not carry over to a Dupire surface, and that
+        # choice belongs with the budget rather than here.
         comparison = compare_snowball_risk(
-            terms, market, mc_config=MonteCarloConfig(paths=mc_paths, seed=42)
+            terms,
+            market,
+            mc_config=MonteCarloConfig(paths=mc_paths, seed=42),
+            local_vol=local_vol,
         )
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
-    return jsonify(comparison.as_dict())
+    return jsonify({**comparison.as_dict(), "volatility": _vol_model_note(local_vol, fitted)})
 
 
 # ─────────────────────────────────────────────────────────
