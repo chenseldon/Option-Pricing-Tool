@@ -8,6 +8,12 @@ QuantLib and against finite differences of the price, and documented in
 `src/otcpricer/models/bsm.py`. This file is about the path-dependent products,
 where the sensitivities are genuinely hard.
 
+Flat volatility is the default basis throughout, and since Phase 2b the same
+Greeks can be taken against a fitted Dupire surface — reachable from the API
+since Phase 5. Where the two differ the difference is noted; where a sensitivity
+means something different on the surface path, that is said rather than
+smoothed over.
+
 ---
 
 ## Conventions
@@ -22,6 +28,7 @@ rescaling:
 | Vega | ∂V/∂σ | per **1 percentage point** of volatility |
 | Theta | ∂V/∂t | per **calendar day** |
 | Rho | ∂V/∂r | per **1 percentage point** of rate |
+| Carry rho | ∂V/∂carry | per **1 percentage point** of carry |
 
 All values are fractions of notional, so a snowball gamma lands around 1e-07.
 That is why the API serialises risk to 12 decimal places: the 8 used for prices
@@ -91,6 +98,90 @@ theta_per_day = (V(dt) − V(0)) / dt / 365
 
 Verified against the zero-coupon anchor, where theta must equal `r·V/365`:
 agreement to 1.9e-05 relative.
+
+#### The simulation can do it too, by moving the valuation date
+
+The paragraph above is the reason a *maturity-bumped* theta is wrong, and it
+still stands. What it does not rule out is moving the **valuation date**, which
+changes no term of the contract at all: the schedule and the coupon accrual stay
+written from inception, so a knock-out at `t` still pays `coupon_pa · t` and the
+monthly dates stay where the term sheet put them. Only the simulation's start,
+the surviving observations and the discounting origin move.
+
+So `price_snowball_mc` takes `t0`, and theta — the last Greek with no
+independent confirmation — now has a second engine:
+
+```
+PDE   +0.00025218
+MC    +0.00027274 ± 7.28e-05       gap 0.28 standard errors
+```
+
+The step is one of the simulation's own steps, so `dt` is identical in both runs
+and the seasoned run reuses every increment but the first. That makes the
+difference a genuinely **paired** estimator.
+
+Which matters, because the obvious error bound is useless here. Quadrature on
+the two runs' separate standard errors describes a pair of independent runs that
+were never performed: it came to **347%** of theta's value at 252 steps a year
+and **12,412%** at 1008 — numbers that say nothing about the estimate. The error
+is therefore computed from the per-path difference, with antithetic pairs
+averaged first.
+
+That estimator is then checked against reality rather than trusted: run it over
+several seeds and the seed-to-seed standard deviation must match the error each
+run claims for itself. Measured **8.05e-05 observed against 7.28e-05 claimed**,
+and the error halves as the path count quadruples. A quadrature bound would fail
+that check by a factor of four.
+
+Read the row with its caveat, though. The two numbers are difference quotients
+of the same derivative over horizons **four times apart** — the PDE steps by its
+grid's `dt` (1/1008 y), the simulation by one of its own (1/252 y) — so an O(h)
+gap is expected before either is wrong. And three sampling errors come to about
+80% of the value at 200,000 paths, against 27% for delta. The comparison
+publishes `mc_error_share_of_value` so a reader can tell agreement from
+confirmation.
+
+### Carry rho, and why there is only one of it
+
+`q` and `basis_pa` reach both engines only through their sum, `market.carry`.
+So `dV/dq` and `dV/dbasis_pa` are not two close numbers — they are one number
+computed twice, and the two bumped prices come back **bit-identical**, asserted
+with `==` rather than a tolerance.
+
+Reporting both would manufacture an independence the model does not have, and a
+desk hedging each separately would double-count the same exposure. One Greek is
+reported.
+
+It is not `−rho`, and the gap is the discounting. `rho` moves the discount
+factor *and* the drift; `carry_rho` moves the drift only, so their sum isolates
+the discounting half:
+
+```
+rho        = +0.002729
+carry_rho  = -0.003080      (drift half: +0.003080)
+sum        = -0.000351      (discounting half)
+```
+
+The drift is **8.8×** the discounting on the reference trade, and
+`carry_rho/rho` is −1.129 rather than −1. If it were −1 the Greek would be
+redundant; that ratio is how far from redundant it is.
+
+Why it is worth having at all: the carry is now measured rather than assumed,
+and the measurement **moves**. Across the CFFEX panel the spot-to-far carry has
+a standard deviation of 2.1% to 3.9% a year, against a policy rate that moved
+about 70bp over the same three years. It is the larger of the two drift
+exposures by an order of magnitude, and it had no sensitivity until Phase 4.
+
+It lives on `SnowballRisk` rather than in `Greeks`, which is a fixed five-field
+record shared with the vanilla products. A futures basis is not a vanilla
+concept.
+
+On the local-volatility path the drift comes from the surface, so the surface is
+shifted too — by `with_carry_shift`, not `with_rate_shift`. The distinction is
+sharper than it looks: `ForwardCurve` stores a rate and a drift and its carry is
+their difference, so a rate shift moves both together and leaves the carry
+*exactly* unchanged. Using it would have returned a clean zero while every other
+Greek looked right.
 
 ### Why the holder's theta is positive
 
@@ -297,12 +388,23 @@ and no test asserts it as one.
 
 ## Not covered
 
-- **Shark fin.** Still on the legacy `cn_fdm.py`, and its Greeks carry the
-  caveats they always did. Its prices have not been cross-validated the way the
-  snowball's have, so giving it Greeks first would be the wrong order.
+- **Shark fin Greeks.** Its *price* is now cross-validated — Phase 3c migrated
+  it to `engines/barrier.py`, found that the shipped analytic was wrong for
+  every down barrier, and `cn_fdm.py` has since been deleted. But it still has
+  no Greeks. The legacy three-method output was removed rather than carried
+  forward, because it came from the same code whose snowball deltas were wrong
+  in sign and was never validated for a barrier at all.
+- **Heston Greeks.** A Heston snowball prices and has no sensitivities. That is
+  deliberate: it is already the one price in this project with a single engine,
+  and giving it Greeks would add five more numbers with nothing to check them
+  against.
 - **Vanna, volga, and cross-gammas.** Not implemented. The PDE surface supports
   them, but there has been no call for them yet.
-- **Volatility surface risk.** Everything here assumes a single flat
-  volatility, so vega is a parallel shift of that one number. Once a surface is
-  fitted, the meaningful question becomes bucketed vega — sensitivity to each
-  region of the surface separately — and this file will need extending.
+- **Bucketed vega.** The flat path's vega is a parallel shift of one number; the
+  surface path's is a parallel shift of the whole implied surface at the money,
+  which also changes curvature at every maturity because SSVI's curvature scale
+  depends on the variance level. **They are different derivatives**, and the
+  `method` field on every response says which one was taken so they are not
+  compared as the same quantity. Sensitivity to each *region* of the surface
+  separately is the meaningful question once a surface is fitted, and is not
+  answered here.

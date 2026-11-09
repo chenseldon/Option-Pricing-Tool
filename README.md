@@ -38,7 +38,14 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
   Crank-Nicolson solution surface. The solver already evaluates the value at
   every node, so they cost nothing beyond the price and carry no sampling noise
 - **Theta from two adjacent time steps** of the same solve, which keeps the
-  observation schedule fixed (bumping the tenor would delete a knock-out date)
+  observation schedule fixed (bumping the tenor would delete a knock-out date).
+  The simulation can now do it too, by advancing the **valuation date** instead
+  of the maturity — which changes no term of the contract — so theta finally
+  has a second engine, agreeing at 0.28 standard errors
+- **Carry rho**, one Greek and deliberately not two: `q` and `basis_pa` reach
+  the engines only through their sum, so the two bumped prices come back
+  *bit-identical*. Reporting both would manufacture an independence the model
+  does not have
 - **Monte Carlo resimulation with common random numbers** as an independent
   cross-check, with a per-Greek verdict against a measured error budget
 - **Spot delta, not re-struck delta**: barriers stay where they were struck
@@ -49,17 +56,45 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
 | Product | Pricing Model | Greeks |
 |---|---|---|
 | **Snowball / Autocallable (雪球)** | Monte Carlo path simulation + Crank-Nicolson PDE, agreeing to ~2 MC confidence widths | PDE grid differentiation, cross-checked against MC resimulation |
-| **Shark Fin / Barrier Option (鲨鱼鳍)** | Rubinstein-Reiner closed-form (UOC/DOP) + CN-FDM PDE validation | 3-Method MC Greeks |
+| **Shark Fin / Barrier Option (鲨鱼鳍)** | Haug closed-form for a continuous barrier (matching QuantLib to 3.5e-14) + a discretely-monitored PDE, with monitoring frequency a **required** field | None — the legacy 3-method output was withdrawn rather than carried forward |
 | **OTC Equity Forward (场外远期)** | Cost-of-carry: F = S·e^((r−q)T) with funding/dividend decomposition | Analytical Δ = ±e^(−qT) |
 | **Interest Rate Swap (利率互换)** | Flat-curve DCF; full cash flow schedule + DV01 sensitivity | DV01 per +1bp |
 
 All products output **Bid / Mid / Ask** with configurable spread (bps).
+
+#### The snowball quotes itself
+
+A desk does not ask what a note is worth at a 20% coupon; it asks what coupon
+the note can carry. `/api/snowball_quote` answers that, and **exactly** rather
+than by root-finding: the price is affine in the coupon, because the knock-out
+and knock-in events depend only on the spot path against fixed barriers and
+never on the coupon. So `price(c) = A·c + B` and the par coupon is `−B/A`.
+
+The affinity is not assumed. A third solve at the midpoint measures the
+collinearity on every call — **7.8e-16** on the reference trade — and the
+solver raises rather than return a confident wrong answer if it ever breaks.
+
+What pays for the coupon, measured rather than asserted:
+
+| input | par coupon |
+|---|---|
+| zero carry, flat vol | 6.53% |
+| **CSI 1000 carry, measured +10.15%** | **15.04%** |
+| flat vol → fitted 510300 surface | 11.75% |
+
+So the futures discount more than **doubles** the quotable coupon and the smile
+adds **80%**. Neither is a refinement.
 
 > **Structured-product Greeks** come from differencing the Crank-Nicolson
 > solution surface, cross-checked against Monte Carlo resimulation with common
 > random numbers and anchored to two closed-form cases. See
 > [*Model Validation*](#-model-validation) and
 > [`docs/models/greeks.md`](docs/models/greeks.md).
+>
+> **The snowball itself** — the five ways its price was wrong, the affine
+> coupon solve, what actually pays for the coupon, and why a grid that cannot
+> hold the observation schedule is now refused rather than coarsened — is in
+> [`docs/models/snowball.md`](docs/models/snowball.md).
 >
 > Pathwise differentiation is deliberately **not** offered: it requires a
 > Lipschitz payoff, and a snowball's payoff jumps at both barriers. The
@@ -124,6 +159,37 @@ Two defects the data caught, both of which would have passed silently:
 
 > Details, including the futures forward check and the two findings only a
 > panel could produce, are in [`docs/data/wind_panel.md`](docs/data/wind_panel.md).
+
+### 📉 Futures carry, measured off the board
+
+`basis_pa` was a user input defaulting to **zero**, so the second of a
+snowball's three coupon sources was absent from every price — while 725 days of
+CFFEX index futures sat in the panel being used only to validate forwards.
+
+What the board shows is a **drift**, not a basis: `log(F/S)/τ = r − q − basis`
+is one observable against three unknowns, so nothing there separates the
+dividend yield from the financing spread. What is reported is total carry,
+`r − drift`, which is the single quantity both engines read.
+
+Two facts govern the design, and both are measured:
+
+- **The board reaches 0.4984 years on average.** A one-year note is 48.5%
+  measured and a three-year note 16.2%, so the tail rule is a **required**
+  choice with no default — on the CSI 1000 it moves the three-year carry
+  between 1.64% and 10.15%, a factor of six.
+- **The front contract cannot be annualised.** Its implied drift has a standard
+  deviation of 0.473 inside 0.03 years against 0.026 for the stable aggregate,
+  and reaches −563% a year. Contracts inside 0.05 years are rejected and
+  counted.
+
+Carry is negative on 8–10% of IF and IH days, and IH futures trade *above*
+their index on 40.9% of them — which is why `basis_pa ≥ 0` had to go. The CSI
+1000 is the exception and the interesting one: positive on **every** panel day,
+averaging 10.35%.
+
+> Full measurements, the error I made in the carry convention, and what is
+> deliberately not measured are in
+> [`docs/data/futures_carry.md`](docs/data/futures_carry.md).
 
 ### 🌡 Dupire Local Volatility
 
@@ -295,7 +361,6 @@ spot level rather than averaged:
 ├── app.py                      # Flask backend — pricing API endpoints
 ├── bs_pricing.py               # Compatibility layer over otcpricer.models.bsm
 ├── greeks_calc.py              # Compatibility layer over otcpricer.models.bsm
-├── cn_fdm.py                   # Legacy FDM (still used by the shark-fin path)
 ├── visualization.py            # Matplotlib charts (CLI use, PNG export)
 ├── main.py                     # CLI entry point (demo + interactive)
 ├── templates/index.html        # Single-page frontend (ECharts, no build step)
@@ -748,10 +813,19 @@ a stated reason rather than a plausible-looking number.
 **Vanilla Greeks are unaffected** — those are closed-form, checked against
 QuantLib and against finite differences, and carry the regression anchors above.
 
-**Shark fin** still runs on the legacy `cn_fdm.py`, including its Greeks. Its
-closed-form and PDE prices have not been cross-checked the way the snowball's
-now are, so giving it Greeks before its prices are validated would be the wrong
-order of work.
+**Shark fin has no Greeks.** Its *prices* are now validated — the migration to
+`engines/barrier.py` found that the shipped closed form was wrong for every
+**down** barrier, by 1.7 to 5.5 on prices of order 1 to 8, despite carrying a
+comment claiming validation to 0.01%; it had only ever been checked on an
+up-and-out call. All sixteen cases now match QuantLib to 3.5e-14. But the
+legacy three-method Greeks were *withdrawn* rather than carried forward, because
+they came from the same code whose snowball deltas were wrong in sign and were
+never validated for a barrier at all. `cn_fdm.py` has since been deleted.
+
+**Heston has no Greeks, and its snowball has one engine.** The only number in
+this project without a second engine. Its partner would be a two-dimensional
+PDE with a cross-derivative term and an ADI solver, which is not built — and the
+response says so in a field rather than leaving it to be assumed.
 
 **66% of a three-year horizon is extrapolated.** Improved from 86.5% by the
 move to index options reaching 1.008 years, but not solved — it remains the
