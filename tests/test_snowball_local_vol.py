@@ -47,6 +47,29 @@ CONFIG = PDEConfig(space_nodes=1600, steps_per_year=1008)
 #: repeated here so a regression in the flat path is caught in this file too.
 FLAT_PRICE = 0.0683263509055402
 
+#: How far the anchor is allowed to move, and why it is not zero.
+#:
+#: This was asserted with ``==`` for five phases, which quietly made it a claim
+#: about the platform's maths library rather than about this code. CI's first
+#: run on Linux returned ``0.06832635090554043`` against the ``0.0683263509055402``
+#: recorded on Windows -- **16 ULP apart, 3.25e-15 relative**.
+#:
+#: The cause was isolated rather than guessed: numpy 2.2.6 on *Windows*
+#: reproduces the Windows value bit for bit, so the difference is the platform's
+#: ``exp``/``log`` and BLAS, not the numpy version and not the engine. Over a
+#: 1600x1008 Crank-Nicolson solve, 16 ULP of accumulated rounding between two
+#: libm implementations is unremarkable.
+#:
+#: 1e-13 is thirty times the measured spread, which leaves the anchor doing the
+#: job it was written for -- any change to the grid, the coefficients or the
+#: stepping moves this price by orders of magnitude more than 3e-15 -- while no
+#: longer requiring Windows and Linux to round identically.
+#:
+#: What stays exact is the comparison that is actually platform-independent:
+#: the flat and local-volatility paths evaluated on the *same* machine must
+#: agree bit for bit, and they do, on CI as well as here.
+FLAT_PRICE_TOLERANCE = 1e-13
+
 
 class TestDegenerateEquivalence:
     def test_constant_local_vol_reproduces_the_flat_engine(self) -> None:
@@ -117,8 +140,31 @@ class TestDegenerateEquivalence:
 
 class TestFlatPathUnchanged:
     def test_default_still_takes_the_scalar_path(self) -> None:
-        """The hard constraint of the phase, asserted rather than assumed."""
-        assert price_snowball_pde(TERMS, MARKET, CONFIG).price == FLAT_PRICE
+        """The hard constraint of the phase, asserted rather than assumed.
+
+        To a tolerance rather than bit for bit, and the reason is recorded on
+        :data:`FLAT_PRICE_TOLERANCE`: the literal is 16 ULP apart between
+        Windows and Linux, which is the platform's maths library rather than
+        this engine. The tolerance is thirty times that measured spread, so a
+        real change still fails it by orders of magnitude.
+        """
+        price = price_snowball_pde(TERMS, MARKET, CONFIG).price
+        assert price == pytest.approx(FLAT_PRICE, rel=FLAT_PRICE_TOLERANCE)
+
+    def test_the_anchor_is_tight_enough_to_catch_a_real_change(self) -> None:
+        """Because a tolerance is only as good as what it still rejects.
+
+        A one-node change to the grid is about the smallest edit anyone would
+        make to the flat path, and it has to be caught. Measured: it moves the
+        price by roughly 1e-05, which is eight orders of magnitude outside the
+        tolerance -- so relaxing the comparison from bit-exact cost nothing
+        the anchor was there for.
+        """
+        nudged = price_snowball_pde(
+            TERMS, MARKET, PDEConfig(space_nodes=CONFIG.space_nodes + 8, steps_per_year=1008)
+        ).price
+        assert nudged != pytest.approx(FLAT_PRICE, rel=FLAT_PRICE_TOLERANCE)
+        assert abs(nudged - FLAT_PRICE) > 1e3 * FLAT_PRICE * FLAT_PRICE_TOLERANCE
 
     def test_the_two_grids_agree_on_geometry_under_a_constant_surface(self) -> None:
         """The geometry was extracted to be shared; this pins the extraction."""
@@ -577,10 +623,10 @@ class TestThroughTheApi:
         """Opt-in by presence, and that matters more than it looks.
 
         ``market.sigma`` is this project's default pricing basis and several
-        anchors are pinned to it exactly -- including FLAT_PRICE at the top of
-        this file, which is asserted with ``==``. A surface that leaked into
-        the default path would break them, so the switch is the presence of a
-        key rather than a flag with a default.
+        anchors are pinned to it -- including FLAT_PRICE at the top of this
+        file. A surface that leaked into the default path would break them by
+        orders of magnitude, so the switch is the presence of a key rather
+        than a flag with a default.
         """
         body = client.post("/api/snowball_pde", json=self.BODY).get_json()
         assert body["volatility"]["vol_model"] == "flat"

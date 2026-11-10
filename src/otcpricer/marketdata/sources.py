@@ -125,11 +125,20 @@ class AkshareSource:
         ) from last_error
 
     def fetch(self, underlying_code: str) -> OptionChain:
-        """Pull every available expiry for one underlying."""
-        import akshare as ak
+        """Pull every available expiry for one underlying.
 
+        The symbol is resolved against the registry *before* the feed library
+        is imported. That ordering is the whole point of the registry: an
+        unsupported symbol is refused without a network library, let alone a
+        request. The import used to come first, so on a machine without
+        akshare a bad symbol produced ``ModuleNotFoundError`` instead of a
+        message naming the symbols that are supported -- and the test for it
+        is called "refused before any request".
+        """
         underlying = resolve_underlying(underlying_code)
         sina_symbol = _sina_symbol(underlying)
+
+        import akshare as ak
 
         expiry_tags = self._retry(
             f"expiry list for {underlying.code}",
