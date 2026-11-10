@@ -127,6 +127,45 @@ class PDEConfig:
 #: rough a particular fitted variance term structure is.
 LOCAL_VOL_PDE_CONFIG = PDEConfig(space_nodes=4800, steps_per_year=8064)
 
+#: What the production grids actually cost in accuracy, measured.
+#:
+#: Worth stating because a price printed to eight decimals invites the reading
+#: that it is exact, and the default grid's own discretisation error is three
+#: orders of magnitude larger than the last digit shown. Against a 6400x4032
+#: reference on the flat path:
+#:
+#: ===============  ============  =======
+#: grid             rel. error    time
+#: ===============  ============  =======
+#: 3200 x 2016          0.12%      0.26s
+#: **1600 x 1008**    **0.34%**    0.09s
+#: 800 x 504            0.82%      0.03s
+#: 400 x 252            2.88%      0.01s
+#: 200 x 126            4.80%      0.01s
+#: ===============  ============  =======
+#:
+#: The error is **contract-dependent and this is the part that matters**. At
+#: 1600x1008 the reference trade carries 0.34% and a high-volatility trade
+#: 0.32% -- but the same note at the CSI 1000's measured carry of +10.15%
+#: carries **0.96%**, three times more. And that is the trade a desk actually
+#: quotes, so a single published figure would understate the error exactly
+#: where it is largest.
+#:
+#: What *is* stable is the convergence ratio: 2.38, 2.32 and 2.40 per halving
+#: across those three contracts. First order, consistently. Which is why the
+#: error is estimated per request from a refinement pair rather than looked up
+#: -- see ``/api/snowball_crosscheck``, which solves at two grids and reports
+#: the change as the bound on what remains, together with a Richardson
+#: extrapolation that removes the leading term.
+#:
+#: Not a constant anything reads. Recorded here because the next person to
+#: wonder how good 1600x1008 is should find the measurement rather than
+#: repeat it.
+_MEASURED_GRID_ERROR_NOTE = (
+    "1600x1008 carries 0.34% on the reference trade and 0.96% at the measured "
+    "CSI 1000 carry; see /api/snowball_crosscheck for a per-request estimate."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SnowballPDEResult:

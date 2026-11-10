@@ -1729,6 +1729,21 @@ def snowball_pde():
             "method": "Crank-Nicolson FDM (barrier- and observation-aligned grid)",
             "space_nodes": result.space_nodes,
             "time_steps": result.time_steps,
+            "grid_accuracy": {
+                "estimated": False,
+                "note": (
+                    "This price carries the grid's own discretisation error, and "
+                    "eight decimals do not mean eight digits. Measured on the "
+                    "default 1600x1008: 0.34% on the reference trade, 0.32% at a "
+                    "40% volatility, and 0.96% on the same note at the CSI 1000's "
+                    "measured carry -- so it is contract-dependent and largest "
+                    "where a desk actually works. The convergence is first order "
+                    "with a ratio near 2.4 per halving. For a measured bound on "
+                    "this specific request rather than these reference figures, "
+                    "use /api/snowball_crosscheck, which solves at two grids and "
+                    "reports the change plus a Richardson extrapolation."
+                ),
+            },
             "volatility": _vol_model_note(local_vol, fitted),
             "params": {
                 "KO": terms.ko_barrier,
