@@ -25,6 +25,7 @@ authentication.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
@@ -515,3 +516,111 @@ class TestTheDocumentedDependencies:
             cap = re.search(r"<\s*([0-9.]+)", canonical[name.lower()])
             if cap:
                 assert cap.group(1) in version, f"{name}: the <{cap.group(1)} cap is not shown"
+
+
+class TestReproducibilityUnderConcurrency:
+    """A seeded endpoint has to stay seeded once more than one thread exists.
+
+    ``/api/mc_distribution`` carried ``np.random.seed(42)`` so that the same
+    request returns the same histogram. Against the process-global generator it
+    did not: seeding and drawing are two separate calls, so two concurrent
+    requests can both seed before either draws, and the second continues the
+    stream instead of starting it.
+
+    Measured before the fix, eight threads against this route: **53 of 96
+    requests matched the seeded result** -- 45% of callers got a histogram the
+    seed was there to rule out. After switching to a per-request
+    ``default_rng``, 96 of 96.
+
+    This is a defect the project created for itself. Under the single-threaded
+    Flask development server it could not happen; it became reachable the
+    moment this phase put eight waitress threads in front of the application,
+    which is exactly the class of bug a deployment change introduces and no
+    pricing test can see.
+
+    It was also the **last** global-``np.random`` site in the codebase -- every
+    engine uses ``default_rng`` already. That is the only reason this was a
+    reproducibility bug and not a pricing one: nothing else was downstream of
+    the global state it was stamping on once per request.
+    """
+
+    BODY = {
+        "option_type": "c",
+        "S": 5500,
+        "K": 5500,
+        "T": 0.25,
+        "r": 0.02,
+        "sigma": 0.2,
+        "q": 0.01,
+    }
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def client(cls):  # noqa: ANN206
+        import app
+
+        app.app.config.update(TESTING=True)
+        return app.app.test_client()
+
+    def _histogram(self, client) -> str:  # noqa: ANN001
+        """A digest rather than the histogram.
+
+        Fifty bins times eight threads is 1,798 lines of pytest output on a
+        failure, which buries the one number that matters. The comparison only
+        ever asks whether two runs are identical, so a digest answers it.
+        """
+        response = client.post("/api/mc_distribution", json=self.BODY)
+        assert response.status_code == 200, response.data[:200]
+        counts = response.get_json()["counts"]
+        return hashlib.sha256(repr(counts).encode()).hexdigest()[:16]
+
+    def test_it_is_reproducible_sequentially(self, client) -> None:  # noqa: ANN001
+        """The property the seed was added for, and the one that always held --
+        so a test that stopped here would have proved nothing."""
+        assert self._histogram(client) == self._histogram(client)
+
+    @pytest.mark.slow
+    def test_it_is_reproducible_across_concurrent_requests(self, client) -> None:  # noqa: ANN001
+        """The property that did not hold, with the threads the server runs.
+
+        Eight, because that is ``ServerSettings.threads``. A barrier rather
+        than a plain start, so the requests genuinely overlap instead of
+        happening to serialise and proving nothing.
+        """
+        import threading
+
+        baseline = self._histogram(client)
+        workers = 8
+        barrier = threading.Barrier(workers)
+        results: list[str] = [""] * workers
+
+        def run(slot: int) -> None:
+            barrier.wait()
+            results[slot] = self._histogram(client)
+
+        threads = [threading.Thread(target=run, args=(i,)) for i in range(workers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        matched = sum(1 for r in results if r == baseline)
+        assert matched == workers, (
+            f"{matched} of {workers} concurrent requests matched the seeded "
+            f"result; the endpoint is drawing from shared generator state"
+        )
+
+    def test_the_route_does_not_touch_the_global_generator(self) -> None:
+        """Said as a property of the source, because the behavioural test above
+        is a race and a race can pass by luck.
+
+        ``np.random.seed`` also mutates state for everything else in the
+        process. Every engine here uses ``default_rng``, so this is the
+        invariant that keeps it that way.
+        """
+        source = (ROOT / "app.py").read_text(encoding="utf-8")
+        for banned in ("np.random.seed(", "np.random.standard_normal("):
+            assert banned not in source, (
+                f"{banned} is back in app.py; use a local np.random.default_rng(seed) instead"
+            )
+        assert "np.random.default_rng(42)" in source
