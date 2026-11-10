@@ -29,10 +29,40 @@ import pytest
 PAGE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
 
 #: Keys the page asks for by attribute, e.g. ``data-i18n="btn_run_quote"``.
-_ATTRIBUTE_KEYS = re.compile(r'data-i18n="([a-z0-9_]+)"')
+#:
+#: Upper case is allowed in a key and twelve of them use it -- ``lbl_sb_S``,
+#: ``lbl_sf_H``, ``lbl_ir_T`` and the rest, named after the symbol they label.
+#: These patterns matched ``[a-z0-9_]`` until the id-map tests below went
+#: looking and found twelve keys that no test in this file could see. All
+#: twelve were in fact defined in both languages, so nothing was broken -- but
+#: the balance check had been passing over them, which means it would not have
+#: caught one going missing from a dictionary either.
+_ATTRIBUTE_KEYS = re.compile(r'data-i18n="([A-Za-z0-9_]+)"')
 #: Keys the page asks for through the id->key map, e.g. ``'lbl-sb-q-par':'lbl_sb_q_par'``.
-_MAPPED_KEYS = re.compile(r"'[a-z0-9\-]+'\s*:\s*'([a-z0-9_]+)'")
+_MAPPED_KEYS = re.compile(r"'[a-z0-9\-]+'\s*:\s*'([A-Za-z0-9_]+)'")
 
+
+
+def _id_map(page: str) -> dict[str, str]:
+    """The id->key map, by brace matching.
+
+    Not a page-wide regex for quoted pairs: the script is full of unrelated
+    ones (``? 'pos' : 'neg'``, display values, chart options) and an earlier
+    version of this parser reported fifteen of them as broken mappings.
+    """
+    opening = page.index("{", page.index("const idMap = {"))
+    depth = 0
+    for index in range(opening, len(page)):
+        if page[index] == "{":
+            depth += 1
+        elif page[index] == "}":
+            depth -= 1
+            if depth == 0:
+                block = page[opening : index + 1]
+                break
+    else:  # pragma: no cover - an unbalanced page would fail earlier
+        raise AssertionError("unbalanced braces in idMap")
+    return dict(re.findall(r"'([^']+)'\s*:\s*'([^']+)'", block))
 
 @pytest.fixture(scope="module")
 def page() -> str:
@@ -51,7 +81,7 @@ def _dictionary(page: str, language: str) -> set[str]:
     keys: set[str] = set()
     for block in _language_blocks(page, language):
         # Several keys share a line, so this cannot anchor at a line start.
-        keys |= set(re.findall(r"[{,\s]([a-z0-9_]+)\s*:\s*['\"]", block))
+        keys |= set(re.findall(r"[{,\s]([A-Za-z0-9_]+)\s*:\s*['\"]", block))
     return keys
 
 
@@ -192,7 +222,7 @@ class TestThePageStillServes:
         be unique within a language, since a duplicate silently wins."""
         for language in ("en", "cn"):
             for block in _language_blocks(page, language):
-                keys = re.findall(r"[{,\s]([a-z0-9_]+)\s*:\s*['\"]", block)
+                keys = re.findall(r"[{,\s]([A-Za-z0-9_]+)\s*:\s*['\"]", block)
                 duplicates = {key for key in keys if keys.count(key) > 1}
                 assert not duplicates, f"{language} defines {sorted(duplicates)} more than once"
 
@@ -200,3 +230,124 @@ class TestThePageStillServes:
 def test_json_is_imported_for_a_reason() -> None:
     """Guard against the import being dropped as unused by a future cleanup."""
     assert json.dumps({"ok": True}) == '{"ok": true}'
+
+
+class TestTheModelsTab:
+    """Phase 6's addition: two phases of volatility work made visible.
+
+    Everything here was reachable only through the API, which in practice meant
+    the flat-volatility number was the only one anyone saw.
+    """
+
+    def test_the_tab_buttons_and_the_panel_keys_are_in_the_same_order(
+        self, page: str
+    ) -> None:
+        """The page's most fragile line, and a comment is not enough.
+
+        ``switchMain`` highlights buttons with ``Object.keys(PANELS)[i]`` against
+        the ``.mtab`` node list -- by **index**. So a tab inserted into one and
+        not the other does not fail cleanly: the correct panel still shows,
+        because that lookup is by key, while the highlight lands on a different
+        button. It reads as a rendering glitch rather than as the structural
+        mistake it is, which is exactly the kind of thing that survives a visual
+        pass.
+        """
+        buttons = re.findall(
+            r'class="mtab[^"]*"[^>]*onclick="switchMain\(.([a-z]+).\)', page
+        )
+        block = page[page.index("const PANELS={") :]
+        keys = re.findall(r"([a-z]+):", block[: block.index("}")])
+
+        assert buttons, "the tab buttons did not parse"
+        assert buttons == keys, f"buttons {buttons} against PANELS {keys}"
+
+    def test_every_panel_a_key_names_exists(self, page: str) -> None:
+        """A key pointing at a missing id throws on the click and nothing moves."""
+        ids = set(re.findall(r'id="([^"]+)"', page))
+        block = page[page.index("const PANELS={") :]
+        for panel in re.findall(r"'(panel-[a-z]+)'", block[: block.index("}")]):
+            assert panel in ids, panel
+
+    def test_the_surface_panel_calls_both_of_its_routes(self, page: str) -> None:
+        """The fit for the diagnostics, the query for the grid it draws."""
+        assert "/api/vol_surface/fit" in page
+        assert "/api/vol_surface/query" in page
+        assert "function calcSurface()" in page
+        assert "async function drawSurfaceHeatmap(" in page
+
+    def test_the_surface_samples_around_its_own_forward(self, page: str) -> None:
+        """SSVI is parameterised in k = log(K/F).
+
+        A strike grid centred on spot samples the wrong part of the surface --
+        the same mistake, in a different place, as the spot/forward mismatch
+        Phase 2 took out of the engine. So the panel probes for the surface's
+        reference forward first and builds the grid from that.
+        """
+        assert "reference_forward" in page
+        body = page[page.index("async function drawSurfaceHeatmap(") :]
+        body = body[: body.index("\nasync function")]
+        assert "F * Math.exp(k)" in body, "the strike grid is not built from the forward"
+
+    def test_the_local_vol_panel_calls_both_of_its_routes(self, page: str) -> None:
+        assert "/api/local_vol/surface" in page
+        assert "/api/local_vol/validate" in page
+        assert "function calcLocalVol()" in page
+        assert "async function calcLocalVolRoundTrip()" in page
+
+    def test_the_extrapolated_share_reaches_the_reader(self, page: str) -> None:
+        """The largest single assumption behind any long-dated price.
+
+        86.5% of a three-year horizon is beyond the last quoted expiry on the
+        committed 510300 snapshot, and no amount of grid refinement touches it.
+        It belongs in the metric row beside the fit quality, not in a footnote,
+        so both panels have to read the field rather than only mention it in
+        prose.
+        """
+        assert "extrapolated_fraction" in page
+        assert "'lv-extrap'" in page and "'vs-extrap'" in page
+
+    def test_the_two_volatilities_are_not_confused(self, page: str) -> None:
+        """Local volatility is not implied volatility and the endpoint returns
+        both at the same points for exactly that reason. The heatmap draws the
+        local surface, so the tooltip has to name which is which and give the
+        implied value beside it -- otherwise the panel is an invitation to the
+        trap the endpoint was written to avoid.
+        """
+        body = page[page.index("function drawLocalVolHeatmap(") :]
+        body = body[: body.index("\nasync function")]
+        assert "d.implied_vol[i][j]" in body
+        assert "local ${p.data[2]}%" in body
+        assert "implied " in body
+
+    def test_the_round_trip_is_measured_against_the_fit_error(self, page: str) -> None:
+        """Dupire makes the round trip exact in continuous time, so any residual
+        is discretisation -- which makes the surface's own calibration error the
+        only budget that means anything. A panel reporting the error without the
+        budget would be reporting a number with no scale.
+        """
+        assert "calibration_rms_vol_points" in page
+        assert "worst_error_vol_points" in page
+        assert "share_of_budget" in page
+
+
+class TestTheIdMap:
+    """The second route into the dictionary, and the one with two failure modes.
+
+    An undefined key renders a raw identifier, which is at least visible. An id
+    that does not exist in the markup renders nothing at all: the label keeps
+    whatever the template hard-coded, so the page looks correct in English and
+    silently never translates. That one is invisible in both languages to
+    anyone who does not switch.
+    """
+
+    def test_every_key_it_names_is_defined_in_both_languages(self, page: str) -> None:
+        english, chinese = _dictionary(page, "en"), _dictionary(page, "cn")
+        mapped = set(_id_map(page).values())
+        assert mapped, "the id map did not parse"
+        assert mapped - english == set(), f"undefined in en: {sorted(mapped - english)}"
+        assert mapped - chinese == set(), f"undefined in cn: {sorted(mapped - chinese)}"
+
+    def test_every_id_it_names_exists_in_the_markup(self, page: str) -> None:
+        ids = set(re.findall(r'id="([^"]+)"', page))
+        absent = sorted(i for i in _id_map(page) if i not in ids)
+        assert absent == [], f"mapped but absent from the page: {absent}"
