@@ -359,7 +359,8 @@ class TestReporting:
 @needs_panel
 class TestAgainstTheRealBoard:
     @pytest.fixture(scope="class")
-    def panel(self) -> WindPanel:
+    @classmethod
+    def panel(cls) -> WindPanel:
         return WindPanel(WIND_DIR)
 
     def test_the_board_reaches_only_about_half_a_year(self, panel: WindPanel) -> None:

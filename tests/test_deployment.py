@@ -374,12 +374,14 @@ class TestTheDocumentedRouteTable:
     """
 
     @pytest.fixture(scope="class")
-    def documented(self) -> set[str]:
+    @classmethod
+    def documented(cls) -> set[str]:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         return set(re.findall(r"\| `(/api/[^`]*)` \| (?:POST|GET)", readme))
 
     @pytest.fixture(scope="class")
-    def registered(self) -> set[str]:
+    @classmethod
+    def registered(cls) -> set[str]:
         source = (ROOT / "app.py").read_text(encoding="utf-8")
         # Read from the source rather than from app.url_map: importing the
         # application pulls in the whole library, and this file's other tests
@@ -440,7 +442,8 @@ class TestTheDocumentedDependencies:
     _NOT_INSTALLED = frozenset({"*(self-built)*", "**ECharts 5**", "QuantLib", "pytest"})
 
     @pytest.fixture(scope="class")
-    def documented(self) -> dict[str, str]:
+    @classmethod
+    def documented(cls) -> dict[str, str]:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         table = readme[readme.index("## 🛠 Tech Stack") :]
         table = table[: table.index("\n---")]
@@ -453,11 +456,12 @@ class TestTheDocumentedDependencies:
         return {
             name: version
             for name, version in named
-            if name not in self._NOT_INSTALLED and name != "Library"
+            if name not in cls._NOT_INSTALLED and name != "Library"
         }
 
     @pytest.fixture(scope="class")
-    def required(self) -> dict[str, str]:
+    @classmethod
+    def required(cls) -> dict[str, str]:
         text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         found: dict[str, str] = {}
         for line in text.splitlines():

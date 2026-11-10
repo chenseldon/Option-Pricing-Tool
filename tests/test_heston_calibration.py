@@ -98,7 +98,8 @@ class TestTheSyntheticRoundTrip:
     """Generate from known parameters, fit, require them back."""
 
     @pytest.fixture(scope="class")
-    def fit(self, synthetic: list[np.ndarray]):  # type: ignore[no-untyped-def]
+    @classmethod
+    def fit(cls, synthetic: list[np.ndarray]):  # type: ignore[no-untyped-def]
         return calibrate_heston(MATURITIES, [MONEYNESS] * len(MATURITIES), synthetic, terms=192)
 
     def test_recovers_every_parameter(self, fit) -> None:  # type: ignore[no-untyped-def]
@@ -220,7 +221,8 @@ class TestAgainstRealChains:
     """Where the comparison with SSVI actually happens."""
 
     @pytest.fixture(scope="class")
-    def akshare_comparison(self):  # type: ignore[no-untyped-def]
+    @classmethod
+    def akshare_comparison(cls):  # type: ignore[no-untyped-def]
         from otcpricer.models.surface import fit_surface
 
         out = {}

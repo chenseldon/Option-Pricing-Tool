@@ -200,7 +200,8 @@ class TestFlaskApiRegression:
     """End-to-end through the HTTP layer, pinning the published numbers."""
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
@@ -388,7 +389,8 @@ class TestSnowballEndpoints:
     }
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
@@ -512,7 +514,8 @@ class TestTheLegacyEngineIsGone:
     }
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
@@ -632,7 +635,8 @@ class TestSnowballRiskEndpoints:
     }
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
@@ -751,7 +755,8 @@ class TestCnFdmGreeksRouting:
     }
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
@@ -856,7 +861,8 @@ class TestSnowballQuoteEndpoint:
     }
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)

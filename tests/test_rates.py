@@ -180,7 +180,8 @@ class TestAgainstQuantLib:
 @needs_panel
 class TestFromThePanel:
     @pytest.fixture(scope="class")
-    def panel(self):  # type: ignore[no-untyped-def]
+    @classmethod
+    def panel(cls):  # type: ignore[no-untyped-def]
         from otcpricer.marketdata.wind import WindPanel
 
         return WindPanel(WIND_DIR)

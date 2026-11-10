@@ -324,7 +324,8 @@ class TestSpotChecks:
     """
 
     @pytest.fixture(scope="class")
-    def picks(self, manifest) -> dict[str, tuple[str, str]]:  # type: ignore[no-untyped-def]
+    @classmethod
+    def picks(cls, manifest) -> dict[str, tuple[str, str]]:  # type: ignore[no-untyped-def]
         return {
             label: (pair[0], pair[1])
             for label, pair in manifest["spot_check_dates"].items()  # type: ignore[union-attr]

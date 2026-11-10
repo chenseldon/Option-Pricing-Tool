@@ -95,13 +95,15 @@ class TestArithmetic:
 @needs_panel
 class TestAgainstThePanel:
     @pytest.fixture(scope="class")
-    def panel(self):  # type: ignore[no-untyped-def]
+    @classmethod
+    def panel(cls):  # type: ignore[no-untyped-def]
         from otcpricer.marketdata.wind import WindPanel
 
         return WindPanel(WIND_DIR)
 
     @pytest.fixture(scope="class")
-    def reports(self, panel):  # type: ignore[no-untyped-def]
+    @classmethod
+    def reports(cls, panel):  # type: ignore[no-untyped-def]
         from otcpricer.marketdata.wind import WindPanelSource
 
         out = {}

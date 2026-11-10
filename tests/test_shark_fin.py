@@ -605,7 +605,8 @@ class TestOnTheLocalVolatilitySurface:
     """
 
     @pytest.fixture(scope="class")
-    def surface(self):  # type: ignore[no-untyped-def]
+    @classmethod
+    def surface(cls):  # type: ignore[no-untyped-def]
         from otcpricer.models.local_vol import local_vol_from_fitted
         from otcpricer.models.surface import fit_surface
 
@@ -615,7 +616,8 @@ class TestOnTheLocalVolatilitySurface:
             pytest.skip("no snapshots committed")
 
     @pytest.fixture(scope="class")
-    def flat_market(self, surface):  # type: ignore[no-untyped-def]
+    @classmethod
+    def flat_market(cls, surface):  # type: ignore[no-untyped-def]
         """Flat at the surface's own at-the-money level, so the comparison is fair.
 
         Comparing against an arbitrary volatility would measure the choice of

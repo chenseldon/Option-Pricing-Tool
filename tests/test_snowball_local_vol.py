@@ -611,7 +611,8 @@ class TestThroughTheApi:
     COARSE = {"space_nodes": 800, "steps_per_year": 1008}
 
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         if not SNAPSHOT_DIR.exists():
             pytest.skip("no snapshots committed")
         import app

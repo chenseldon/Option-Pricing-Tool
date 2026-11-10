@@ -509,7 +509,8 @@ class TestCoverage:
     """
 
     @pytest.fixture(scope="class")
-    def slice_counts(self, panel: WindPanel) -> list[int]:
+    @classmethod
+    def slice_counts(cls, panel: WindPanel) -> list[int]:
         counts = []
         for day in panel.trading_days:
             try:

@@ -198,7 +198,8 @@ class TestTheQuotingPanel:
 
 class TestThePageStillServes:
     @pytest.fixture(scope="class")
-    def client(self):  # noqa: ANN201
+    @classmethod
+    def client(cls):  # noqa: ANN201
         import app
 
         app.app.config.update(TESTING=True)
