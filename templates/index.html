@@ -45,6 +45,9 @@ input:focus{border-color:var(--blue)}
 .err-toast.show{display:block}
 .main-tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--bg3);flex-shrink:0;overflow-x:auto}
 .main-tabs::-webkit-scrollbar{height:0}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx2);cursor:pointer;user-select:none}
+.chk input{accent-color:var(--blu2);cursor:pointer;margin:0}
+.chk:hover{color:var(--tx)}
 .mtab{padding:9px 16px;background:transparent;border:none;color:var(--tx2);font-size:11.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
 .mtab:hover{color:var(--tx)}.mtab.on{color:var(--blu2);border-bottom-color:var(--blu2)}
 .tab-panel{flex:1;overflow-y:auto;padding:14px 18px;display:none}.tab-panel.on{display:block}
@@ -502,6 +505,7 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
   <div class="main-tabs">
     <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
     <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
+    <button class="mtab" onclick="switchMain('models')" data-i18n="tab_models">🌋 Models</button>
     <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
     <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
@@ -632,6 +636,54 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
   </div>
 
   <!-- PORTFOLIO TAB -->
+  <!-- MODELS TAB -->
+  <div class="tab-panel" id="panel-models">
+    <div class="tab-hdr"><h2 id="models-h2">🌋 Volatility Models</h2></div>
+    <p class="struct-hint" id="models-hint">
+      Everything the snowball and shark fin can be priced <i>against</i>, and the evidence for each. These were reachable only through the API until now, which meant the flat-volatility number was the only one anyone saw.
+    </p>
+
+    <!-- SSVI surface -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-vs-hdr">📈 SSVI Surface — fit, and whether it is arbitrage-free</span><span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="lbl-vs-hint">An arbitrage-free SSVI surface (Gatheral–Jacquier) fitted to a committed quote snapshot. The diagnostics come first: a surface that fits well and admits arbitrage is worse than one that fits worse and does not, because the arbitrage is what a barrier payoff will find.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:130px">
+            <label id="lbl-vs-und">Underlying</label>
+            <select id="vs-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:110px">
+            <label id="lbl-vs-rate">Rate (%)</label>
+            <input type="number" id="vs-rate" value="2" step="0.1"/>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSurface()" id="btn-vs" data-i18n="btn_run_fit">▶ Fit Surface</button>
+        </div>
+        <div id="vs-results" style="display:none">
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-rms">Fit RMS Error</div><div class="metric-val" id="vs-rms">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-bf">Butterfly Margin</div><div class="metric-val" id="vs-bf">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-cal">Calendar Margin</div><div class="metric-val" id="vs-cal">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-arb">Arbitrage-Free</div><div class="metric-val" id="vs-arb">—</div></div>
+          </div>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-exp">Expiries Fitted</div><div class="metric-val" id="vs-exp">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-reach">Longest Expiry</div><div class="metric-val" id="vs-reach">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-extrap">3y Extrapolated</div><div class="metric-val" id="vs-extrap">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-asof">As Of</div><div class="metric-val" style="font-size:11px" id="vs-asof">—</div></div>
+          </div>
+          <p class="hint" id="vs-note">—</p>
+          <div id="chart-surface" style="height:320px;margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /panel-models -->
+
   <div class="tab-panel" id="panel-portfolio">
     <div class="tab-hdr">
       <h2 id="port-h2">Portfolio Exposure Monitor</h2>
@@ -867,6 +919,34 @@ python app.py
           </div>
         </div>
       </div>
+      <!-- Snowball Quote Report -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-rep-hdr">📋 Quote Report — read top to bottom</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-rep-hint">The whole picture in the order it should be read. Carry coverage leads, because 48% of a one-year note's carry is unmeasured and 84% of a three-year note's — and the carry more than doubles the quotable coupon, so the largest input is also the least observed.</p>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <label class="chk"><input type="checkbox" id="sb-rep-quote" checked/> <span id="lbl-sb-rep-quote">Par coupon</span></label>
+            <label class="chk"><input type="checkbox" id="sb-rep-mc" checked/> <span id="lbl-sb-rep-mc">Outcome probabilities</span></label>
+            <label class="chk"><input type="checkbox" id="sb-rep-xc"/> <span id="lbl-sb-rep-xc">Two-engine reconciliation (slow)</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:150px">
+              <label id="lbl-sb-rep-asof">Measure carry on (YYYY-MM-DD)</label>
+              <input type="text" id="sb-rep-asof" placeholder="2024-12-25"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:130px">
+              <label id="lbl-sb-rep-tail">Carry beyond the board</label>
+              <select id="sb-rep-tail">
+                <option value="hold_last">hold_last</option>
+                <option value="zero">zero</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballReport()" id="btn-sb-rep" data-i18n="btn_run_report">▶ Build Report</button>
+          <div id="sb-rep-warn" class="hint" style="display:none;color:var(--yellow)"></div>
+          <pre id="sb-rep-out" style="display:none;background:#0b1420;border:1px solid #1c3a60;border-radius:4px;padding:12px;font-size:10.5px;line-height:1.45;color:#c6d6e8;overflow-x:auto;max-height:640px"></pre>
+        </div>
+      </div>
       <!-- Snowball Sensitivity -->
       <div class="analysis-block">
         <div class="analysis-hdr" onclick="toggleAnalysis(this)">
@@ -1022,7 +1102,7 @@ python app.py
 let currentFlag='c', currentProduct='call', currentLang='en';
 let tUnit='days', rUnit='pct', sUnit='pct', qUnit='pct';
 let positions=[], posIdCounter=1, lastResult=null, lastParams=null;
-let chartPrice=null, chartSmile=null, chartMC=null;
+let chartPrice=null, chartSmile=null, chartMC=null, chartSurface=null, chartLocalVol=null;
 let gcCharts={delta:null,gamma:null,vega:null,theta:null,rho:null};
 let smileRowCount=0;
 
@@ -1147,7 +1227,11 @@ function loadPreset(i){
 }
 
 // ========== TABS ==========
-const PANELS={pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
+// Order matters: switchMain pairs these keys with the .mtab buttons by
+// index, so this object and the button row have to stay in the same order.
+// Inserting a tab in one and not the other sends every later tab to the wrong
+// panel, silently.
+const PANELS={pricing:'panel-pricing',struct:'panel-struct',models:'panel-models',portfolio:'panel-portfolio',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
@@ -1156,6 +1240,8 @@ function switchMain(key){
     if(chartPrice) chartPrice.resize();
     if(chartSmile) chartSmile.resize();
     if(chartMC) chartMC.resize();
+    if(chartSurface) chartSurface.resize();
+    if(chartLocalVol) chartLocalVol.resize();
     Object.values(gcCharts).forEach(c=>c&&c.resize());
   });
 }
@@ -1690,6 +1776,25 @@ const I18N = {
     lbl_sb_cnfdm_hint:'Re-price the Snowball using Crank-Nicolson FDM (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.',
     lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
     lbl_3greeks:'📐 Three-Method Greeks Comparison',
+    tab_models:'🌋 Models',
+    models_h2:'🌋 Volatility Models',
+    models_hint:'Everything the snowball and shark fin can be priced <i>against</i>, and the evidence for each. These were reachable only through the API until now, which meant the flat-volatility number was the only one anyone saw.',
+    lbl_vs_hdr:'📈 SSVI Surface — fit, and whether it is arbitrage-free',
+    lbl_vs_hint:'An arbitrage-free SSVI surface (Gatheral–Jacquier) fitted to a committed quote snapshot. The diagnostics come first: a surface that fits well and admits arbitrage is worse than one that fits worse and does not, because the arbitrage is what a barrier payoff will find.',
+    btn_run_fit:'▶ Fit Surface',
+    lbl_vs_und:'Underlying', lbl_vs_rate:'Rate (%)',
+    lbl_vs_rms:'Fit RMS Error', lbl_vs_bf:'Butterfly Margin',
+    lbl_vs_cal:'Calendar Margin', lbl_vs_arb:'Arbitrage-Free',
+    lbl_vs_exp:'Expiries Fitted', lbl_vs_reach:'Longest Expiry',
+    lbl_vs_extrap:'3y Extrapolated', lbl_vs_asof:'As Of',
+    lbl_sb_rep_hdr:'📋 Quote Report — read top to bottom',
+    lbl_sb_rep_hint:"The whole picture in the order it should be read. Carry coverage leads, because 48% of a one-year note's carry is unmeasured and 84% of a three-year note's — and the carry more than doubles the quotable coupon, so the largest input is also the least observed.",
+    btn_run_report:'▶ Build Report',
+    lbl_sb_rep_quote:'Par coupon',
+    lbl_sb_rep_mc:'Outcome probabilities',
+    lbl_sb_rep_xc:'Two-engine reconciliation (slow)',
+    lbl_sb_rep_asof:'Measure carry on (YYYY-MM-DD)',
+    lbl_sb_rep_tail:'Carry beyond the board',
     // Phase 5: the par coupon panel
     lbl_sb_basis:'Futures Carry 贴水 (%/yr)',
     lbl_sb_basis_hint:'Total carry from the futures discount. Positive = future below spot. Measured at +10.2%/yr on the CSI 1000 board, where it more than doubles the quotable coupon.',
@@ -1800,6 +1905,25 @@ const I18N = {
     lbl_sb_cnfdm_hint:'使用Crank-Nicolson有限差分法（BS偏微分方程+Rannacher平滑）重新定价雪球，提供独立验证及完整希腊字母。',
     lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
     lbl_3greeks:'📐 三种方法希腊字母对比',
+    tab_models:'🌋 波动率模型',
+    models_h2:'🌋 波动率模型',
+    models_hint:'雪球与鲨鱼鳍可以<i>基于</i>什么来定价，以及每一样的证据。在此之前这些只能通过 API 触及，也就是说界面上能看到的只有平坦波动率那一个数。',
+    lbl_vs_hdr:'📈 SSVI 曲面 —— 拟合质量与是否无套利',
+    lbl_vs_hint:'对入库报价快照拟合的无套利 SSVI 曲面（Gatheral–Jacquier）。诊断先行：拟合得好但容许套利的曲面，比拟合略差而无套利的更糟 —— 因为障碍型payoff 恰恰会找到那个套利。',
+    btn_run_fit:'▶ 拟合曲面',
+    lbl_vs_und:'标的', lbl_vs_rate:'利率 (%)',
+    lbl_vs_rms:'拟合 RMS 误差', lbl_vs_bf:'蝶式边际',
+    lbl_vs_cal:'日历边际', lbl_vs_arb:'无套利',
+    lbl_vs_exp:'拟合到期数', lbl_vs_reach:'最远到期',
+    lbl_vs_extrap:'三年期外推占比', lbl_vs_asof:'数据日期',
+    lbl_sb_rep_hdr:'📋 报价报告 —— 请从头往下读',
+    lbl_sb_rep_hint:'把整件事按该读的顺序排好。贴水覆盖率领头：一年期雪球有 48% 的 carry 测不到，三年期是 84%，而 carry 能让可报票息翻倍以上 —— 最大的那个输入恰好也是最没被观测到的。',
+    btn_run_report:'▶ 生成报告',
+    lbl_sb_rep_quote:'可报票息',
+    lbl_sb_rep_mc:'结局概率',
+    lbl_sb_rep_xc:'两引擎对账（慢）',
+    lbl_sb_rep_asof:'按哪天测贴水 (YYYY-MM-DD)',
+    lbl_sb_rep_tail:'盘面之外的 carry',
     // Phase 5：票息求解面板
     lbl_sb_basis:'期货贴水 carry (%/年)',
     lbl_sb_basis_hint:'期货贴水带来的总 carry。正数表示期货低于现货。中证1000盘面实测约 +10.2%/年，在该水平下可报票息翻倍以上。',
@@ -1907,6 +2031,17 @@ function switchLang(lang) {
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
     'lbl-sb-cnfdm-hdr':'lbl_sb_cnfdm_hdr','lbl-sb-cnfdm-hint':'lbl_sb_cnfdm_hint',
     'lbl-sb-cnfdm-price':'lbl_sb_cnfdm_price','lbl-sb-cnfdm-method':'lbl_sb_cnfdm_method',
+    'models-h2':'models_h2','models-hint':'models_hint',
+    'lbl-vs-hdr':'lbl_vs_hdr','lbl-vs-hint':'lbl_vs_hint',
+    'lbl-vs-und':'lbl_vs_und','lbl-vs-rate':'lbl_vs_rate',
+    'lbl-vs-rms':'lbl_vs_rms','lbl-vs-bf':'lbl_vs_bf',
+    'lbl-vs-cal':'lbl_vs_cal','lbl-vs-arb':'lbl_vs_arb',
+    'lbl-vs-exp':'lbl_vs_exp','lbl-vs-reach':'lbl_vs_reach',
+    'lbl-vs-extrap':'lbl_vs_extrap','lbl-vs-asof':'lbl_vs_asof',
+    'lbl-sb-rep-hdr':'lbl_sb_rep_hdr','lbl-sb-rep-hint':'lbl_sb_rep_hint',
+    'lbl-sb-rep-quote':'lbl_sb_rep_quote','lbl-sb-rep-mc':'lbl_sb_rep_mc',
+    'lbl-sb-rep-xc':'lbl_sb_rep_xc','lbl-sb-rep-asof':'lbl_sb_rep_asof',
+    'lbl-sb-rep-tail':'lbl_sb_rep_tail',
     // Phase 5: the par coupon panel
     'lbl-sb-basis':'lbl_sb_basis','lbl-sb-basis-hint':'lbl_sb_basis_hint',
     'lbl-sb-quote-hdr':'lbl_sb_quote_hdr','lbl-sb-quote-hint':'lbl_sb_quote_hint',
@@ -2152,6 +2287,184 @@ async function calcSnowballRecon(){
     $('sb-recon-results').style.display = '';
   }catch(e){ showErr('Reconciliation error: ' + e.message); }
   finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Run Both Engines'; } }
+}
+
+// ========== VOLATILITY SURFACE ==========
+// Shared by the surface and local-volatility panels: the dark palette the
+// rest of the page uses, so a new chart does not look pasted in.
+const VOL_AXIS = {
+  axisLabel:{color:'#6b8db0',fontSize:10},
+  axisLine:{lineStyle:{color:'#1c3a60'}},
+  splitLine:{lineStyle:{color:'#0d1826'}},
+};
+
+function surfaceRequest(){
+  return {
+    underlying: $('vs-und').value,
+    source: 'snapshot',
+    r: +$('vs-rate').value / 100,
+  };
+}
+
+async function calcSurface(){
+  const btn = $('btn-vs');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Fitting…'; }
+  try{
+    const req = surfaceRequest();
+    const res = await fetch('/api/vol_surface/fit',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(req)});
+    const d = await res.json();
+    if(d.error){ showErr('Surface: ' + d.error); return; }
+
+    const cal = d.calibration, arb = d.arbitrage;
+
+    // Diagnostics before the picture. A surface that fits well and admits
+    // arbitrage is worse than one that fits worse and does not, because a
+    // barrier payoff is concentrated where the arbitrage would be.
+    $('vs-rms').textContent = fmt(cal.rms_vol_error * 100, 3) + ' vol pts';
+    $('vs-bf').textContent  = fmt(arb.min_butterfly, 3);
+    $('vs-cal').textContent = fmt(arb.min_calendar, 4);
+
+    const free = arb.arbitrage_free;
+    const arbEl = $('vs-arb');
+    arbEl.textContent = free ? 'yes' : 'NO';
+    arbEl.className = 'metric-val ' + (free ? 'pos' : 'neg');
+
+    const quoted = d.input.slices || cal.slices || [];
+    $('vs-exp').textContent = String(cal.slices ? cal.slices.length : quoted.length);
+    $('vs-asof').textContent = d.as_of + '  (' + d.source + ')';
+
+    // The extrapolation share is the largest single assumption behind any
+    // long-dated number, so it sits beside the fit quality rather than in a
+    // footnote.
+    const lastQuoted = cal.slices && cal.slices.length
+      ? Math.max(...cal.slices.map(sl => sl.maturity)) : null;
+    if(lastQuoted){
+      $('vs-reach').textContent = fmt(lastQuoted, 3) + ' y';
+      const share = Math.max(0, 1 - lastQuoted / 3.0);
+      const el = $('vs-extrap');
+      el.textContent = fmt(share * 100, 1) + '%';
+      el.className = 'metric-val ' + (share > 0.5 ? 'neg' : '');
+    } else {
+      $('vs-reach').textContent = '—';
+      $('vs-extrap').textContent = '—';
+    }
+
+    $('vs-note').textContent =
+      `${cal.n_points} quotes across ${cal.slices ? cal.slices.length : '?'} expiries, ` +
+      `RMS ${fmt(cal.rms_vol_error * 100, 3)} and worst ${fmt(cal.max_vol_error * 100, 3)} vol points. ` +
+      `${arb.n_checked.toLocaleString()} arbitrage checks, ${arb.n_violations} violations. ` +
+      (lastQuoted
+        ? `The quotes stop at ${fmt(lastQuoted, 2)} years while the notes run one to three, so a ` +
+          `three-year price is ${fmt(Math.max(0, 1 - lastQuoted / 3) * 100, 0)}% extrapolated — ` +
+          `no amount of grid refinement touches that.`
+        : '');
+
+    await drawSurfaceHeatmap(req, d.calibration);
+    $('vs-results').style.display = '';
+  }catch(e){ showErr('Surface error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Fit Surface'; } }
+}
+
+async function drawSurfaceHeatmap(req, cal){
+  // Sampled around the surface's own reference forward rather than around
+  // spot: the surface is parameterised in log-moneyness k = log(K/F), so a
+  // strike grid centred anywhere else would sample the wrong part of it.
+  const probe = await fetch('/api/vol_surface/query',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({...req, strikes:[1.0], maturities:[0.5]})});
+  const first = await probe.json();
+  if(first.error){ showErr('Surface query: ' + first.error); return; }
+  const F = first.reference_forward;
+
+  const moneyness = [-0.30,-0.22,-0.15,-0.08,-0.04,0,0.04,0.08,0.15,0.22,0.30];
+  const strikes = moneyness.map(k => +(F * Math.exp(k)).toFixed(6));
+  const maturities = [0.08,0.17,0.25,0.5,0.75,1.0,1.5,2.0,3.0];
+
+  const res = await fetch('/api/vol_surface/query',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({...req, strikes, maturities})});
+  const q = await res.json();
+  if(q.error){ showErr('Surface query: ' + q.error); return; }
+
+  const cells = [];
+  let lo = Infinity, hi = -Infinity;
+  for(let i=0;i<q.maturities.length;i++){
+    for(let j=0;j<q.moneyness.length;j++){
+      const v = q.implied_vol[i][j];
+      if(v==null || !isFinite(v)) continue;
+      cells.push([j, i, +(v*100).toFixed(2)]);
+      lo = Math.min(lo, v*100); hi = Math.max(hi, v*100);
+    }
+  }
+
+  const lastQuoted = Math.max(...q.quoted_maturities);
+  if(!chartSurface) chartSurface = echarts.init($('chart-surface'));
+  chartSurface.setOption({
+    backgroundColor:'transparent',
+    title:{text:`Implied Volatility (%) — ${q.underlying}, forward ${fmt(F,4)}`,
+           subtext:`dashed line: last quoted expiry at ${fmt(lastQuoted,2)}y — everything above it is extrapolated`,
+           textStyle:{color:'#d4e0ef',fontSize:12}, subtextStyle:{color:'#f7b731',fontSize:10},
+           left:'center', top:2},
+    grid:{left:70,right:80,top:56,bottom:46},
+    tooltip:{position:'top', formatter:p =>
+      `T = ${q.maturities[p.data[1]]}y<br/>k = ${fmt(q.moneyness[p.data[0]],3)}<br/>IV = ${p.data[2]}%` +
+      (q.maturities[p.data[1]] > lastQuoted ? '<br/><b>extrapolated</b>' : '')},
+    xAxis:{type:'category', data:q.moneyness.map(k=>fmt(k,2)), name:'log-moneyness k = log(K/F)',
+           nameLocation:'middle', nameGap:28, ...VOL_AXIS, splitArea:{show:false}},
+    yAxis:{type:'category', data:q.maturities.map(t=>fmt(t,2)), name:'maturity (y)',
+           nameLocation:'middle', nameGap:50, ...VOL_AXIS, splitArea:{show:false}},
+    visualMap:{min:Math.floor(lo), max:Math.ceil(hi), calculable:false, orient:'vertical',
+               right:8, top:'middle', textStyle:{color:'#6b8db0',fontSize:10},
+               inRange:{color:['#1a4a7a','#2e7ab8','#48b3d8','#8fd4a8','#f7e06b','#f7b731','#e8634a']}},
+    series:[{type:'heatmap', data:cells,
+             label:{show:true, color:'#0b1420', fontSize:9},
+             emphasis:{itemStyle:{borderColor:'#f7b731', borderWidth:2}},
+             markLine:{silent:true, symbol:'none',
+                       lineStyle:{color:'#f7b731', type:'dashed', width:1.5},
+                       data:[{yAxis: q.maturities.findIndex(t => t > lastQuoted) - 0.5}]}}]
+  });
+  chartSurface.resize();
+}
+
+// ========== SNOWBALL QUOTE REPORT ==========
+async function calcSnowballReport(){
+  const btn = $('btn-sb-rep');
+  const warn = $('sb-rep-warn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Building…'; }
+  warn.style.display = 'none';
+  try{
+    const body = snowballBody();
+    body.coupon_pa = +$('sb-cpn').value / 100;
+    body.quote = $('sb-rep-quote').checked;
+    body.mc    = $('sb-rep-mc').checked;
+    body.crosscheck = $('sb-rep-xc').checked;
+    body.n_paths = 100000;
+    const asOf = $('sb-rep-asof').value.trim();
+    if(asOf){
+      body.carry_as_of = asOf;
+      body.tail = $('sb-rep-tail').value;
+    }
+
+    const res = await fetch('/api/snowball_report',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ showErr('Report: ' + d.error); return; }
+
+    // A carry measurement that could not be taken is shown, not swallowed.
+    // The report still prints -- that is exactly the case its leading
+    // section is written for -- so hiding the reason would leave the reader
+    // wondering why the section says "supplied by the caller".
+    if(d.carry_error){
+      warn.textContent = 'Carry not measured: ' + d.carry_error;
+      warn.style.display = '';
+    }
+
+    $('sb-rep-out').textContent = d.report;
+    $('sb-rep-out').style.display = '';
+  }catch(e){ showErr('Report error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Build Report'; } }
 }
 
 // ========== SHARK FIN PRICING ==========
