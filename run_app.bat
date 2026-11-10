@@ -1,36 +1,59 @@
 @echo off
 rem ============================================================
-rem  Option Pricing Tool - Web App launcher
+rem  Option Pricing Tool - launcher
 rem
-rem  This project runs on the conda env "Quant1.0" (Python 3.12),
-rem  which is the ONLY env on this machine with py_vollib installed.
-rem  Plain `python app.py` falls back to Anaconda base (3.13) and
-rem  dies with: ModuleNotFoundError: No module named 'py_vollib'
+rem  Starts the production server (waitress, debugger off) via serve.py.
+rem
+rem  Usage:  run_app.bat
+rem          set OTCPRICER_PORT=5050 && run_app.bat
+rem          set OTCPRICER_PYTHON=C:\path\to\python.exe && run_app.bat
+rem
+rem  This used to activate the conda env "Quant1.0" and abort unless
+rem  py_vollib imported there. Both are stale: py_vollib was removed in
+rem  Phase 1 when the pricing moved to the project's own
+rem  otcpricer.models.bsm, so the gate was on a package the code does not
+rem  use -- and the env it insisted on is not the one the project is tested
+rem  against. Python 3.12 and 3.13 both work and both are tested.
+rem
+rem  It now tries each candidate interpreter against
+rem  scripts/check_deps.py and uses the first that can actually run the
+rem  app, rather than the first that merely exists.
 rem ============================================================
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 
-call D:\Anaconda3\condabin\conda.bat activate Quant1.0
-if errorlevel 1 (
-    echo [ERROR] Failed to activate conda env "Quant1.0".
-    echo         Fallback: D:\Anaconda3\condabin\conda.bat run --no-capture-output -n Quant1.0 python app.py
-    pause
-    exit /b 1
+if defined OTCPRICER_PYTHON (
+    call :try "%OTCPRICER_PYTHON%"
+    if not errorlevel 1 goto :run
 )
 
-python -c "import py_vollib" 2>nul
-if errorlevel 1 (
-    echo [ERROR] py_vollib not importable in Quant1.0.
-    echo         Fix with: pip install -r requirements.txt
-    pause
-    exit /b 1
+where python >nul 2>nul
+if not errorlevel 1 (
+    call :try python
+    if not errorlevel 1 goto :run
+)
+
+if exist "E:\anaconda\envs\Quant1.0\python.exe" (
+    call :try "E:\anaconda\envs\Quant1.0\python.exe"
+    if not errorlevel 1 goto :run
 )
 
 echo.
-echo ============================================================
-echo   Starting on http://127.0.0.1:5000     ^(Ctrl+C to stop^)
-echo ============================================================
-echo.
-python app.py
+echo [ERROR] No interpreter here can run the application.
+echo         Set one explicitly:  set OTCPRICER_PYTHON=C:\path\to\python.exe
+echo         Or install the dependencies:  python -m pip install -r requirements.txt
+pause
+exit /b 1
+
+:try
+rem Probe one candidate. Leaves PY set and errorlevel 0 when it passes.
+"%~1" scripts\check_deps.py
+if errorlevel 1 exit /b 1
+set "PY=%~1"
+exit /b 0
+
+:run
+rem -u so the banner appears immediately rather than sitting in a buffer.
+"%PY%" -u serve.py
 pause

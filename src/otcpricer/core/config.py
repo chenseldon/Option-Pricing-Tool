@@ -15,7 +15,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-__all__ = ["NumericalSettings", "DataSettings", "Settings", "get_settings"]
+__all__ = [
+    "DataSettings",
+    "NumericalSettings",
+    "ServerSettings",
+    "Settings",
+    "get_settings",
+]
 
 
 class NumericalSettings(BaseModel):
@@ -70,6 +76,51 @@ class DataSettings(BaseModel):
     )
 
 
+class ServerSettings(BaseModel):
+    """How the web application is served.
+
+    These exist because the entry point was ``app.run(debug=True, port=5000)``
+    -- the Flask development server with the debugger on. That is fine for
+    developing and is not something to hand to anyone else: the reloader
+    double-executes module state, the debugger exposes an interactive console
+    on any traceback, and the server is single-threaded, so one 10-second
+    report blocks every other request.
+
+    :mod:`serve` reads these. ``python app.py`` still runs the development
+    server deliberately, so the two paths cannot be confused.
+    """
+
+    model_config = {"frozen": True}
+
+    host: str = Field(
+        "127.0.0.1",
+        description=(
+            "Interface to bind. Loopback by default: this tool reports prices "
+            "with no authentication of any kind, so binding 0.0.0.0 is an "
+            "explicit decision rather than a default."
+        ),
+    )
+    port: int = Field(5000, ge=1, le=65535, description="Port to serve on")
+    threads: int = Field(
+        8,
+        ge=1,
+        description=(
+            "Waitress worker threads. Serves concurrent requests; it does not "
+            "make any single request faster -- the PDE time loop is Python "
+            "level and GIL-bound, measured at 0.55x speedup when the solves "
+            "within one request were threaded."
+        ),
+    )
+    debug: bool = Field(
+        False,
+        description=(
+            "Development server with the interactive debugger. False here and "
+            "overridable only through OTCPRICER_DEBUG, so production never "
+            "gets it by inheriting a default."
+        ),
+    )
+
+
 class Settings(BaseModel):
     """Top-level settings object."""
 
@@ -77,6 +128,7 @@ class Settings(BaseModel):
 
     numerical: NumericalSettings = Field(default_factory=NumericalSettings)
     data: DataSettings = Field(default_factory=DataSettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
     log_level: str = Field("INFO")
     log_format: str = Field("text")
 
@@ -91,6 +143,24 @@ def _env_float(name: str) -> float | None:
     """Read a float environment override, or ``None`` if unset."""
     raw = os.getenv(name)
     return None if raw is None else float(raw)
+
+
+def _env_bool(name: str) -> bool | None:
+    """Read a boolean environment override, or ``None`` if unset.
+
+    Only the listed spellings count as true. An unrecognised value is an
+    error rather than a silent false: ``OTCPRICER_DEBUG=no`` meaning "yes,
+    debug" would be the worst possible way to learn about this function.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    lowered = raw.strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off", ""}:
+        return False
+    raise ValueError(f"{name}={raw!r} is not a boolean; use one of 1/true/yes/on or 0/false/no/off")
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -130,9 +200,20 @@ def _build_settings() -> Settings:
             }
         )
     )
+    server = ServerSettings(
+        **_drop_none(
+            {
+                "host": os.getenv("OTCPRICER_HOST"),
+                "port": _env_int("OTCPRICER_PORT"),
+                "threads": _env_int("OTCPRICER_THREADS"),
+                "debug": _env_bool("OTCPRICER_DEBUG"),
+            }
+        )
+    )
     return Settings(
         numerical=numerical,
         data=data,
+        server=server,
         **_drop_none(
             {
                 "log_level": os.getenv("OTCPRICER_LOG_LEVEL"),

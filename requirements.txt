@@ -1,30 +1,62 @@
 # ============================================================
-#  Option Pricing Tool - pinned dependencies
+#  Option Pricing Tool - runtime dependencies
 #
-#  Target: Python 3.12  (py_vollib has no working wheel on 3.13)
-#  Verified working env on this machine: conda "Quant1.0"
-#      E:\anaconda\envs\Quant1.0\python.exe   (Python 3.12.13)
+#  Python 3.12 and 3.13 are both supported and both tested:
+#    - CI runs the suite on ubuntu with 3.12 and 3.13
+#    - development here is Windows with 3.13.9 (conda "Quant1.0")
 #
-#  Rebuild from scratch:
-#      conda create -n Quant1.0 python=3.12
-#      conda activate Quant1.0
+#  This file previously claimed 3.13 did not work, because py_vollib had no
+#  wheel for it. py_vollib is gone -- the pricing moved to the project's own
+#  otcpricer.models.bsm in Phase 1, and bs_pricing.py / greeks_calc.py are now
+#  thin compatibility layers over it that import nothing external. The pins
+#  outlived the dependency by four phases.
+#
+#  Install:
 #      pip install -r requirements.txt
-#
-#  Run:  run_app.bat   (Windows)   /   .\run_app.ps1   (PowerShell)
+#  Serve:
+#      python serve.py          (waitress, debugger off)
+#      run_app.ps1 / .bat       (same, with the interpreter pinned)
+#      python app.py            (Flask development server -- development only)
 # ============================================================
 
-# Pricing core - BSM analytical price, Greeks, IV solver
-py_vollib==1.0.7
-py_lets_be_rational==1.0.1
+# ---- Numerics -------------------------------------------------------------
+# Ranges rather than hard pins, because two version sets are verified rather
+# than one: numpy 2.3.5 / scipy 1.16.3 / pandas 2.3.3 here, and numpy 2.2.6 /
+# scipy 1.18.1 / pandas 3.1.1 on CI. Pinning either would make the other a
+# violation of this file while still passing every test.
+#
+# The <2.3 numpy cap this file used to carry came from numba and is stale:
+# numba 0.62.1 requires numpy<2.4, and its JIT paths run on 2.3.5. The cap
+# also belonged on the optional numba extra rather than on a core dependency,
+# since it forced every install down a minor version for a feature most
+# installs do not use.
+numpy>=2.2,<2.4
+scipy>=1.14
+pandas>=2.2
 
-# Numerics - Monte Carlo GBM, CN-FDM PDE solver
-numpy==2.2.6          # capped <2.3 by numba (see requirements-dev.txt)
-scipy==1.17.1
-pandas==2.3.3
+# ---- Web backend ----------------------------------------------------------
+Flask>=3.0
 
-# Web backend
-Flask==3.0.3
+# Serves the application. Not gunicorn: it does not run on Windows, which is
+# where this is developed and launched. See serve.py for what a production
+# server does and does not fix here.
+waitress>=3.0
 
-# Excel export (/api/export) and CLI chart output (main.py)
-openpyxl==3.1.5
-matplotlib==3.10.9
+# ---- Output ---------------------------------------------------------------
+openpyxl>=3.1          # /api/export
+matplotlib>=3.9        # main.py / visualization.py, CLI chart output
+
+# ---- Configuration -------------------------------------------------------
+pydantic>=2.9          # core/config.py settings and env overrides
+
+# ---- Market data ---------------------------------------------------------
+# Required to read the Wind panel, which is parquet. Undeclared until now: it
+# worked here only because conda happened to provide it, and CI never noticed
+# because the panel is institutional data that is not committed, so those
+# tests skip. Anyone who copied the data directory and installed from this
+# file got an ImportError instead.
+#
+# Only the Wind path needs it -- the committed snapshots are JSON -- so it is
+# also available as the `wind` extra in pyproject.toml for a library install
+# that does not want it.
+pyarrow>=16

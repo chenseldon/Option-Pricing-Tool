@@ -41,14 +41,37 @@ _DEFAULT_WIND_DIR = r"D:\Desk\国泰海通\实习研究项目\data_summerintern_
 
 
 def _wind_dir() -> Path | None:
+    """The panel directory, or ``None`` if the panel cannot actually be read.
+
+    Two conditions, not one. The files have to be there *and* a parquet engine
+    has to be installed -- four of the six files are parquet, and pandas needs
+    pyarrow or fastparquet to open them.
+
+    Checking only for the files is what this used to do, and it meant the gate
+    did not gate what it claimed. On a machine with the data directory and a
+    minimal install, every panel test *failed* with an ImportError from deep
+    inside pandas instead of skipping. Found while replicating CI's toolchain
+    in a bare virtualenv, which is exactly the situation a reader reproducing
+    this project would be in.
+    """
     path = Path(os.getenv("OTCPRICER_WIND_DIR") or _DEFAULT_WIND_DIR)
-    if all((path / name).exists() for name in WIND_FILES.values()):
-        return path
-    return None
+    if not all((path / name).exists() for name in WIND_FILES.values()):
+        return None
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        try:
+            import fastparquet  # noqa: F401
+        except ImportError:
+            return None
+    return path
 
 
 WIND_DIR = _wind_dir()
-needs_panel = pytest.mark.skipif(WIND_DIR is None, reason="Wind panel files not present")
+needs_panel = pytest.mark.skipif(
+    WIND_DIR is None,
+    reason="Wind panel absent, or no parquet engine to read it with (pip install pyarrow)",
+)
 
 
 # ---------------------------------------------------------------------------

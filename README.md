@@ -364,7 +364,9 @@ spot level rather than averaged:
 ├── visualization.py            # Matplotlib charts (CLI use, PNG export)
 ├── main.py                     # CLI entry point (demo + interactive)
 ├── templates/index.html        # Single-page frontend (ECharts, no build step)
-├── run_app.bat / run_app.ps1   # Launchers (pin the conda env)
+├── serve.py                    # Production entry point (waitress, debugger off)
+├── scripts/check_deps.py       # Can this interpreter run the app? Used by both launchers
+├── run_app.bat / run_app.ps1   # Launchers (pick the first interpreter that passes the probe)
 ├── pyproject.toml              # Package, ruff/mypy/pytest config
 └── requirements.txt            # Runtime deps (requirements-dev.txt for tests)
 ```
@@ -432,6 +434,19 @@ pip install -r requirements.txt
 
 > The pricing models are self-contained — there is no `py_vollib` dependency
 > any more, so the install that used to fail on Windows no longer applies.
+> `requirements.txt` kept pinning it for four phases after the code stopped
+> importing it, and both launchers aborted when it was absent; that is fixed.
+>
+> **Python 3.12 and 3.13 are both supported and both tested** — CI runs the
+> suite on each. This file previously claimed 3.13 did not work, which was true
+> only while `py_vollib` was a dependency.
+>
+> `pyarrow` is needed to read the Wind panel, which is parquet. It was an
+> undeclared dependency until now: it worked on the development machine only
+> because conda supplied it, and CI never noticed because the panel is
+> institutional data that is not committed, so those tests skip. Anyone who
+> copied the data directory and installed from `requirements.txt` got an
+> `ImportError` from inside pandas instead.
 >
 > For the test suite as well:
 > ```bash
@@ -446,10 +461,53 @@ pip install -r requirements.txt
 ### Web Interface (Recommended)
 
 ```bash
-python app.py
+python serve.py          # or:  .\run_app.ps1     /     run_app.bat
 ```
 
 Open **http://127.0.0.1:5000** in your browser.
+
+`serve.py` runs the app behind **waitress** with the debugger off. The entry
+point used to be `app.py`, which starts Flask's development server with
+`debug=True` — fine for development and wrong to hand anyone, because the
+debugger renders an interactive Python console on any unhandled traceback and
+this application authenticates nothing. `python app.py` still works and still
+starts that server, deliberately: two commands with visibly different names
+rather than one whose behaviour depends on a variable.
+
+Configuration is by environment variable, same `OTCPRICER_*` scheme as the rest
+of the project:
+
+| variable | default | |
+|---|---|---|
+| `OTCPRICER_HOST` | `127.0.0.1` | Loopback by default. Binding publicly is a decision, not a default — see below. |
+| `OTCPRICER_PORT` | `5000` | |
+| `OTCPRICER_THREADS` | `8` | Serves concurrent requests. Does **not** make any one request faster. |
+| `OTCPRICER_DEBUG` | unset | `1` switches to the development server, with a warning on stderr. |
+
+> **What the production server does not fix.** Said plainly, because a
+> production-looking server invites the assumption that the rest is production
+> too: there is **no authentication, no authorisation and no rate limiting**.
+> Anyone who can reach the port can price anything and can make the process
+> spend 30 seconds of CPU per request. There are no request timeouts and no
+> HTTPS. The default bind is loopback for exactly those reasons; put a
+> reverse proxy in front of it before it goes anywhere else.
+>
+> **Threads do not speed up a request.** Within one request the solves are
+> GIL-bound — the PDE time loop is Python-level — and threading them was
+> measured at **0.55×**, i.e. 1.8 times *slower*, on a 32-core machine.
+
+If a launcher cannot find a usable interpreter it says which ones it tried and
+what each was missing. To point it at a specific one:
+
+```bash
+set OTCPRICER_PYTHON=C:\path\to\python.exe   # or $env:OTCPRICER_PYTHON in PowerShell
+```
+
+To check an interpreter without starting anything:
+
+```bash
+python scripts/check_deps.py
+```
 
 **Workflow:**
 1. Select **Product Type** from the left sidebar (Call / Put / Snowball / Shark Fin / OTC Forward / IRS)

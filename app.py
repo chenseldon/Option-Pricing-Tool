@@ -52,6 +52,19 @@ from openpyxl.styles import Alignment, Font, PatternFill
 # Ensure sibling modules (bs_pricing, greeks_calc) are importable
 sys.path.insert(0, os.path.dirname(__file__))
 
+# The library lives under src/, so a clone that has not been installed cannot
+# import it. Appended rather than inserted: an installed copy wins, so a
+# developer running against a `pip install -e .` checkout does not silently
+# get this directory instead.
+#
+# Until now `python app.py` failed from a fresh clone with
+# "ModuleNotFoundError: No module named 'otcpricer'" -- the tests worked only
+# because pyproject sets pythonpath = ["src"] for pytest. For a tool meant to
+# be handed over, the entry point has to run.
+_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if os.path.isdir(_SRC) and _SRC not in sys.path:
+    sys.path.append(_SRC)
+
 from bs_pricing import bs_price, calc_implied_volatility, monte_carlo_price, validate_params
 from greeks_calc import calc_delta, calc_gamma, calc_rho, calc_theta, calc_vega
 
@@ -1801,9 +1814,7 @@ def snowball_quote():
             local_vol=local_vol,
         )
         split = (
-            decompose_par_coupon(
-                terms, market, config, knocked_in=knocked_in, local_vol=local_vol
-            )
+            decompose_par_coupon(terms, market, config, knocked_in=knocked_in, local_vol=local_vol)
             if want_split
             else None
         )
@@ -1976,9 +1987,7 @@ def snowball_risk():
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        risk = snowball_risk_pde(
-            terms, market, config, knocked_in=knocked_in, local_vol=local_vol
-        )
+        risk = snowball_risk_pde(terms, market, config, knocked_in=knocked_in, local_vol=local_vol)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -2068,12 +2077,18 @@ def snowball_report_route():
                     "note's carry and 84% of a three-year note's, so there is "
                     "no default"
                 )
+            # Everything cheap and local first, then the panel. The panel is
+            # the one thing a reader may not have, so an argument error must
+            # not be reported as a missing data file.
+            as_of_date = _panel_date(carry_as_of)
+            tail_rule = TailCarry(str(carry_tail).lower())
+            panel = _wind_panel()
             measurement = measure_carry(
-                _wind_panel(),
+                panel,
                 futures_for.futures_root,
                 futures_for.index_code,
-                _panel_date(carry_as_of),
-                tail=TailCarry(str(carry_tail).lower()),
+                as_of_date,
+                tail=tail_rule,
                 rate=market.r,
             )
         except (MarketDataError, ValueError) as e:
@@ -2086,14 +2101,10 @@ def snowball_report_route():
     try:
         risk = snowball_risk_pde(terms, market, config, local_vol=local_vol)
         solution = (
-            solve_par_coupon(terms, market, config, local_vol=local_vol)
-            if want_quote
-            else None
+            solve_par_coupon(terms, market, config, local_vol=local_vol) if want_quote else None
         )
         split = (
-            decompose_par_coupon(terms, market, config, local_vol=local_vol)
-            if want_quote
-            else None
+            decompose_par_coupon(terms, market, config, local_vol=local_vol) if want_quote else None
         )
         simulated = (
             price_snowball_mc(
@@ -2521,9 +2532,29 @@ def carry():
     except (KeyError, TypeError, MarketDataError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
+    # The tail/tail_carry combination is checked against the request alone, so
+    # a caller who supplied both gets told that -- not that the panel is
+    # missing. measure_carry would raise the same message, but only after its
+    # first argument had already been evaluated.
+    if tail is TailCarry.EXPLICIT and tail_carry is None:
+        return jsonify(
+            {"error": "TailCarry.EXPLICIT means the caller supplies the number; pass tail_carry"}
+        ), 400
+    if tail is not TailCarry.EXPLICIT and tail_carry is not None:
+        return jsonify(
+            {
+                "error": (
+                    f"tail_carry={tail_carry} was given alongside tail={tail}, which "
+                    f"computes its own. Two sources for one number is how a model ends "
+                    f"up quoting a carry nobody chose -- pass tail='explicit' to supply it."
+                )
+            }
+        ), 400
+
     try:
+        panel = _wind_panel()
         measurement = measure_carry(
-            _wind_panel(),
+            panel,
             underlying.futures_root,
             underlying.index_code,
             as_of,

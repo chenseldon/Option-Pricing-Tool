@@ -15,7 +15,11 @@ keywords = ["derivatives", "option-pricing", "volatility-surface", "snowball", "
 # Runtime deps only. The pricing models are self-contained: QuantLib is a
 # test-time benchmark (see requirements-dev.txt), never a runtime dependency.
 dependencies = [
-    "numpy>=2.0,<2.3",
+    # The <2.3 cap here came from numba and was stale by a minor version:
+    # numba 0.62.1 requires numpy<2.4 and its JIT paths run on 2.3.5. It also
+    # belonged on the numba extra rather than on a core dependency, since a
+    # cap for an optional feature forced every install down with it.
+    "numpy>=2.2,<2.4",
     "scipy>=1.14",
     "pandas>=2.2",
     "flask>=3.0",
@@ -27,6 +31,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "mypy>=1.11", "ruff", "pre-commit", "QuantLib>=1.38", "numba>=0.60"]
 data = ["akshare>=1.18"]
+# Reading the Wind panel needs a parquet engine. Separate from `data` because
+# the committed snapshots are JSON, so a library install that only uses those
+# does not need it -- but requirements.txt includes it, since an application
+# install should be able to read whatever data is present.
+wind = ["pyarrow>=16"]
+# Serving the application. requirements.txt pins it; here it is an extra, so
+# importing otcpricer as a library does not pull a web server.
+serve = ["waitress>=3.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

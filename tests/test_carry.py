@@ -561,8 +561,13 @@ class TestTheCarryEndpoint:
         assert response.status_code == 400
         assert "OTCPRICER_WIND_DIR" in response.get_json()["error"]
 
+    @needs_panel
     def test_a_date_the_board_does_not_cover_says_so(self, client) -> None:  # noqa: ANN001
-        """The option quotes run one day past the futures quotes."""
+        """The option quotes run one day past the futures quotes.
+
+        Needs the board: without it the route reports the missing panel first,
+        which is the correct answer to a different question.
+        """
         response = client.post("/api/carry", json={**self.PAYLOAD, "as_of": "2026-06-29"})
         assert response.status_code == 400
         assert "no IM futures settled" in response.get_json()["error"]

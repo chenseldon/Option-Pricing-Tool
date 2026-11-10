@@ -34,7 +34,9 @@ jobs:
           # The full dev extras can fail to resolve on a new Python (numba caps
           # numpy<2.3 and lags new releases), so install the tools the pipeline
           # actually needs separately and let the suite skip what is absent.
-          pip install pytest ruff mypy pydantic
+          # waitress is the production server; tests/test_deployment.py checks
+          # that an interpreter can actually start the app, so CI needs it.
+          pip install pytest ruff mypy pydantic waitress
           pip install QuantLib || echo "QuantLib unavailable; cross-validation tests will skip"
           pip install numba || echo "numba unavailable; JIT paths will fall back to numpy"
 
