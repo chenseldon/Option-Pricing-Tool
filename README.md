@@ -287,6 +287,51 @@ spot level rather than averaged:
 > Rannacher damping needing to follow *every* observation) are in
 > [`docs/models/barrier.md`](docs/models/barrier.md).
 
+### 📋 Quote Report (Structured tab)
+
+One call to `/api/snowball_report`, read top to bottom, with the sections that
+cost solves behind checkboxes. **Carry coverage leads** — 48% of a one-year
+note's carry and 84% of a three-year note's is beyond the futures board, and
+the carry more than doubles the quotable coupon, so the largest input is also
+the least observed. A carry measurement that fails is shown as the reason it
+failed rather than left as a blank where a number should be.
+
+### 🌋 Volatility Models tab
+
+Three panels for the three surfaces a snowball can be priced against. Until
+this tab existed they were reachable only through the API, which in practice
+meant the flat-volatility number was the only one anyone saw.
+
+**SSVI surface.** Diagnostics before the picture, deliberately: a surface that
+fits well and admits arbitrage is worse than one that fits worse and does not,
+because a barrier payoff is concentrated exactly where the arbitrage would be.
+Measured on the committed 510300 snapshot — 0.654 vol points RMS, butterfly
+margin 0.263, calendar 0.0336, 9,660 arbitrage checks, zero violations. The
+heatmap samples around the surface's **own reference forward**, not spot,
+because SSVI is parameterised in `k = log(K/F)`.
+
+**Dupire local volatility.** The surface the engines actually step through. The
+**extrapolated share leads** and moves with the horizon — 59.5% at one year,
+86.5% at three — because the assumption is not a property of the surface but of
+how far you ask, and no amount of grid refinement touches it. Beside it: the
+Dupire denominator's minimum (the division a non-arbitrage-free fit blows up),
+the clamped fraction, and the Péclet number. The round trip is a separate,
+explicitly slow button: Dupire makes it exact in continuous time, so the
+residual is discretisation alone — 0.0064 vol points against a 0.654 fit-error
+budget, 0.97% of it. Local volatility is **not** implied volatility, so the
+tooltip gives both at every point.
+
+**Heston.** The caveats are above the numbers, not below them, and each is read
+from the field that measures it rather than written as prose: it fits 11.6%
+worse than SSVI on the same quotes (1.10–1.12× on three expiries, 1.38–1.41× on
+six); the parameters are **not identified** — three of four starts reach
+comparable fit quality with parameters spread 0.799 apart, so the five numbers
+are one member of a family that fits equally well; and Feller is violated
+(−0.853), which is why the snowball uses QE as a requirement rather than a
+refinement. The COS European cites its QuantLib cross-check; the snowball
+reproduces its own `single_engine_note` verbatim, because a UI that paraphrased
+it would be the place that caveat got softened.
+
 ### 📊 Portfolio Exposure Monitor
 - Add multiple vanilla positions with qty / entry price
 - **Aggregated Greeks**: net Δ, Γ, ν, Θ, ρ across entire portfolio
@@ -398,9 +443,11 @@ spot level rather than averaged:
 | `/api/snowball_crosscheck` | POST | Runs both snowball engines and reports agreement against a measured error budget |
 | `/api/snowball_risk` | POST | Snowball Greeks from the PDE solution surface |
 | `/api/snowball_risk_crosscheck` | POST | PDE vs Monte Carlo risk, with a per-Greek verdict |
-| `/api/shark_fin` | POST | Shark fin barrier option pricing (UOC/DOP/UIC/DIC) |
+| `/api/snowball_quote` | POST | **Solves for the par coupon**, exactly, by the affinity of price in coupon |
+| `/api/snowball_report` | POST | Everything above in one readable report, carry coverage first |
+| `/api/carry` | POST | Measures the futures carry from the CFFEX panel, with the tail named |
+| `/api/export` | POST | CSV export of a computed result |
 | `/api/forward` | POST | OTC equity forward pricing |
-| `/api/irs` | POST | Interest rate swap NPV + cash flows |
 | `/api/cn_fdm` | POST | Legacy CN-FDM pricing + 3-method MC Greeks (Resimulation FD/Pathwise/Likelihood) — ⚠️ see *Known limitations* |
 
 ---
@@ -410,14 +457,25 @@ spot level rather than averaged:
 | Library | Version | Role |
 |---|---|---|
 | *(self-built)* | — | BSM pricing, Greeks, implied vol — see `src/otcpricer/models/bsm.py` |
-| `numpy` | ≥ 1.21 | Monte Carlo GBM simulation, vectorized math |
-| `pandas` | ≥ 1.3 | Portfolio aggregation, data structuring |
-| `scipy` | ≥ 1.7 | Statistical distributions, optimization |
-| `flask` | ≥ 2.0 | REST API backend |
+| `numpy` | ≥ 2.2, < 2.4 | Monte Carlo GBM simulation, vectorized math |
+| `pandas` | ≥ 2.2 | Portfolio aggregation, data structuring |
+| `scipy` | ≥ 1.14 | Statistical distributions, optimization |
+| `Flask` | ≥ 3.0 | REST API backend |
+| `waitress` | ≥ 3.0 | The production server. Not gunicorn — it does not run on Windows |
+| `pydantic` | ≥ 2.9 | Settings and `OTCPRICER_*` environment overrides |
+| `pyarrow` | ≥ 16 | Reads the Wind panel, which is parquet. Also the `wind` extra |
+| `openpyxl` | ≥ 3.1 | `/api/export` |
 | `matplotlib` | ≥ 3.9 | CLI chart output (PNG) |
 | **ECharts 5** | CDN | Interactive web charts (no npm required) |
 | `QuantLib` | ≥ 1.38 | **Test-time only** — independent benchmark, never a runtime dependency |
-| `pytest` | ≥ 8 | 400 tests: analytic identities, convergence, regression |
+| `pytest` | ≥ 8 | 1,496 tests: analytic identities, convergence, cross-engine, regression |
+
+> The four numeric rows above all disagreed with `requirements.txt` until this
+> phase — numpy was listed at ≥ 1.21 against an actual floor of ≥ 2.2, scipy at
+> ≥ 1.7 against ≥ 1.14 — and `waitress`, `pydantic`, `pyarrow` and `openpyxl`
+> were absent from the table entirely. The test count said 400. A test now
+> compares the two files, because this is the third documentation table this
+> phase that was wrong in a way neither file revealed on its own.
 
 ---
 

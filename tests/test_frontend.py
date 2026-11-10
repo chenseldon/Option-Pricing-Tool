@@ -42,7 +42,6 @@ _ATTRIBUTE_KEYS = re.compile(r'data-i18n="([A-Za-z0-9_]+)"')
 _MAPPED_KEYS = re.compile(r"'[a-z0-9\-]+'\s*:\s*'([A-Za-z0-9_]+)'")
 
 
-
 def _id_map(page: str) -> dict[str, str]:
     """The id->key map, by brace matching.
 
@@ -63,6 +62,7 @@ def _id_map(page: str) -> dict[str, str]:
     else:  # pragma: no cover - an unbalanced page would fail earlier
         raise AssertionError("unbalanced braces in idMap")
     return dict(re.findall(r"'([^']+)'\s*:\s*'([^']+)'", block))
+
 
 @pytest.fixture(scope="module")
 def page() -> str:
@@ -239,9 +239,7 @@ class TestTheModelsTab:
     the flat-volatility number was the only one anyone saw.
     """
 
-    def test_the_tab_buttons_and_the_panel_keys_are_in_the_same_order(
-        self, page: str
-    ) -> None:
+    def test_the_tab_buttons_and_the_panel_keys_are_in_the_same_order(self, page: str) -> None:
         """The page's most fragile line, and a comment is not enough.
 
         ``switchMain`` highlights buttons with ``Object.keys(PANELS)[i]`` against
@@ -252,9 +250,7 @@ class TestTheModelsTab:
         mistake it is, which is exactly the kind of thing that survives a visual
         pass.
         """
-        buttons = re.findall(
-            r'class="mtab[^"]*"[^>]*onclick="switchMain\(.([a-z]+).\)', page
-        )
+        buttons = re.findall(r'class="mtab[^"]*"[^>]*onclick="switchMain\(.([a-z]+).\)', page)
         block = page[page.index("const PANELS={") :]
         keys = re.findall(r"([a-z]+):", block[: block.index("}")])
 
@@ -407,9 +403,7 @@ class TestTheHestonPanel:
         assert "n_comparable_starts" in page
         assert "fits the quotes equally well" in page
 
-    def test_the_single_engine_note_is_reproduced_not_paraphrased(
-        self, page: str
-    ) -> None:
+    def test_the_single_engine_note_is_reproduced_not_paraphrased(self, page: str) -> None:
         """The response carries its own wording for exactly this reason.
 
         A UI that summarised it in its own words would be the place the caveat
@@ -421,9 +415,7 @@ class TestTheHestonPanel:
         assert "d.cross_checked_by_a_second_engine" in body
         assert "Cross-checked by a second engine" in body
 
-    def test_the_cos_cross_check_is_claimed_only_where_it_holds(
-        self, page: str
-    ) -> None:
+    def test_the_cos_cross_check_is_claimed_only_where_it_holds(self, page: str) -> None:
         """QuantLib backs the European, not the snowball.
 
         The distinction is the whole point: what is verified is the layer below
@@ -439,9 +431,7 @@ class TestTheHestonPanel:
         assert "QuantLib" not in snowball
         assert "without a second engine" in snowball
 
-    def test_the_measured_fit_gap_is_quoted_with_both_figures(
-        self, page: str
-    ) -> None:
+    def test_the_measured_fit_gap_is_quoted_with_both_figures(self, page: str) -> None:
         """1.10-1.12x on three expiries and 1.38-1.41x on six.
 
         The second pair matters more than the first: the gap widens with the
@@ -452,9 +442,7 @@ class TestTheHestonPanel:
         assert "1.38" in page and "1.41" in page
         assert "one parameter per expiry" in page
 
-    def test_qe_is_presented_as_required_rather_than_chosen(
-        self, page: str
-    ) -> None:
+    def test_qe_is_presented_as_required_rather_than_chosen(self, page: str) -> None:
         """Because Feller is violated, Euler would take the variance negative.
 
         Described as a refinement it sounds like a quality setting someone

@@ -26,6 +26,7 @@ authentication.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -355,3 +356,158 @@ class TestDeclaredDependencies:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         assert "numpy>=2.2,<2.4" in pyproject
         assert "numpy>=2.0,<2.3" not in pyproject
+
+
+class TestTheDocumentedRouteTable:
+    """The README lists the API, and the list had gone stale in both directions.
+
+    It was missing four routes -- ``/api/snowball_quote`` (the one that solves
+    for the par coupon, which is the point of the whole fifth phase),
+    ``/api/snowball_report``, ``/api/carry`` and ``/api/export`` -- while listing
+    ``/api/shark_fin`` and ``/api/irs`` twice each, duplicates left from before
+    those endpoints grew their cross-checks.
+
+    Neither direction is visible to anyone reading either file alone, which is
+    what makes it the same failure mode as the engines silently substituting a
+    coarser schedule: the artefact looks complete and is not. A reader
+    following the table would conclude the service cannot quote.
+    """
+
+    @pytest.fixture(scope="class")
+    def documented(self) -> set[str]:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        return set(re.findall(r"\| `(/api/[^`]*)` \| (?:POST|GET)", readme))
+
+    @pytest.fixture(scope="class")
+    def registered(self) -> set[str]:
+        source = (ROOT / "app.py").read_text(encoding="utf-8")
+        # Read from the source rather than from app.url_map: importing the
+        # application pulls in the whole library, and this file's other tests
+        # deliberately run in subprocesses with an empty path for that reason.
+        return {
+            route
+            for route in re.findall(r'@app\.route\("([^"]*)"', source)
+            if route.startswith("/api/")
+        }
+
+    def test_every_route_is_documented(self, documented: set[str], registered: set[str]) -> None:
+        assert registered, "no routes were found in app.py"
+        missing = sorted(registered - documented)
+        assert missing == [], f"registered but undocumented: {missing}"
+
+    def test_nothing_documented_has_been_removed(
+        self, documented: set[str], registered: set[str]
+    ) -> None:
+        """The other direction, and the worse one.
+
+        A reader calling a route the README promises and the service no longer
+        serves gets a 404 with no explanation. ``/api/cn_fdm`` is the live case
+        to watch: it is documented with a warning and still registered, and the
+        day it is finally removed this test is what will catch the row.
+        """
+        stale = sorted(documented - registered)
+        assert stale == [], f"documented but not registered: {stale}"
+
+    def test_no_route_is_listed_twice(self) -> None:
+        """Duplicates are how the table drifted in the first place.
+
+        The set comparisons above cannot see them -- both copies collapse to one
+        entry -- so this counts the rows.
+        """
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        rows = re.findall(r"\| `(/api/[^`]*)` \| (?:POST|GET)", readme)
+        duplicates = sorted({route for route in rows if rows.count(route) > 1})
+        assert duplicates == [], f"listed more than once: {duplicates}"
+
+
+class TestTheDocumentedDependencies:
+    """The README's Tech Stack table against the file that actually installs.
+
+    Every numeric row disagreed: numpy documented at >=1.21 against a real
+    floor of >=2.2, scipy at >=1.7 against >=1.14, pandas at >=1.3 against
+    >=2.2, Flask at >=2.0 against >=3.0. And ``waitress``, ``pydantic``,
+    ``pyarrow`` and ``openpyxl`` were not in the table at all -- the first
+    three of those being the dependencies this phase added or discovered, so
+    the table was documenting the project as it stood four phases ago.
+
+    The direction that matters is **a floor documented lower than the real
+    one**: someone installing numpy 1.21 on the strength of this table gets a
+    project that does not import, and the table is why. A floor documented
+    higher is merely conservative.
+    """
+
+    #: Rows whose version is deliberately not a requirements.txt pin.
+    _NOT_INSTALLED = frozenset({"*(self-built)*", "**ECharts 5**", "QuantLib", "pytest"})
+
+    @pytest.fixture(scope="class")
+    def documented(self) -> dict[str, str]:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        table = readme[readme.index("## 🛠 Tech Stack") :]
+        table = table[: table.index("\n---")]
+        rows = re.findall(r"^\| (\S+) \| ([^|]+) \|", table, re.MULTILINE)
+        # Strip the backticks *before* filtering: the table writes the package
+        # names as `numpy`, `QuantLib` and so on, so a filter applied to the
+        # raw capture matches none of them and QuantLib and pytest leak through
+        # as if requirements.txt were expected to install them.
+        named = ((name.strip("`"), version.strip()) for name, version in rows)
+        return {
+            name: version
+            for name, version in named
+            if name not in self._NOT_INSTALLED and name != "Library"
+        }
+
+    @pytest.fixture(scope="class")
+    def required(self) -> dict[str, str]:
+        text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        found: dict[str, str] = {}
+        for line in text.splitlines():
+            line = line.split("#")[0].strip()
+            match = re.match(r"^([A-Za-z0-9_.\-]+)\s*(.*)$", line)
+            if match and match.group(2):
+                found[match.group(1)] = match.group(2).replace(" ", "")
+        return found
+
+    def test_every_installed_dependency_is_in_the_table(
+        self, documented: dict[str, str], required: dict[str, str]
+    ) -> None:
+        assert required, "requirements.txt did not parse"
+        lowered = {name.lower() for name in documented}
+        missing = sorted(n for n in required if n.lower() not in lowered)
+        assert missing == [], f"installed but undocumented: {missing}"
+
+    def test_the_table_lists_nothing_that_is_not_installed(
+        self, documented: dict[str, str], required: dict[str, str]
+    ) -> None:
+        """A row for a package the project stopped needing is how the py_vollib
+        claim survived four phases in requirements.txt."""
+        lowered = {name.lower() for name in required}
+        stale = sorted(n for n in documented if n.lower() not in lowered)
+        assert stale == [], f"documented but not installed: {stale}"
+
+    def test_no_documented_floor_is_below_the_real_one(
+        self, documented: dict[str, str], required: dict[str, str]
+    ) -> None:
+        """The direction that breaks an install done on the table's authority."""
+        canonical = {name.lower(): spec for name, spec in required.items()}
+        for name, version in documented.items():
+            spec = canonical[name.lower()]
+            shown = re.search(r"≥\s*([0-9.]+)", version)
+            actual = re.search(r">=\s*([0-9.]+)", spec)
+            if not (shown and actual):
+                continue
+            as_tuple = lambda v: tuple(int(x) for x in v.rstrip(".").split("."))  # noqa: E731
+            assert as_tuple(shown.group(1)) >= as_tuple(actual.group(1)), (
+                f"{name}: the table says >={shown.group(1)} and the real floor "
+                f"is >={actual.group(1)}"
+            )
+
+    def test_an_upper_bound_that_exists_is_documented(
+        self, documented: dict[str, str], required: dict[str, str]
+    ) -> None:
+        """numpy carries a ``<2.4`` cap from numba, and a reader who installs
+        2.4 on this table's word gets a version the project does not verify."""
+        canonical = {name.lower(): spec for name, spec in required.items()}
+        for name, version in documented.items():
+            cap = re.search(r"<\s*([0-9.]+)", canonical[name.lower()])
+            if cap:
+                assert cap.group(1) in version, f"{name}: the <{cap.group(1)} cap is not shown"
