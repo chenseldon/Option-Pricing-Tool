@@ -522,3 +522,246 @@ class TestTheCarryCoverageClaim:
         assert english, "the English claim was not found"
         assert chinese, "the Chinese claim was not found"
         assert set(english) == set(chinese), f"en says {set(english)}, cn says {set(chinese)}"
+
+
+class TestTheDataPathsThePanelsRead:
+    """Every field a new panel reads, checked against a live response.
+
+    This is the second failure mode in this module's docstring, and until now
+    it was the one with no test behind it. A panel reading ``d.min_butterfly``
+    when the response nests it under ``arbitrage`` renders perfectly: the
+    button works, the request succeeds, and the cell says ``undefined``. The
+    page cannot tell you, because to JavaScript a missing property is simply
+    ``undefined`` rather than an error.
+
+    The paths are listed explicitly rather than scraped out of the script.
+    Scraping would drift into testing a regex -- template literals, optional
+    chaining and computed indices all defeat it -- and the explicit list
+    doubles as a statement of what each panel actually depends on.
+
+    Marked slow because it calls the endpoints for real, including a Heston
+    calibration. Calling them for real is the entire point: a mocked response
+    would be a copy of the assumption under test.
+    """
+
+    #: route -> the dotted paths the panel reads from its response.
+    PATHS: dict[str, tuple[str, ...]] = {
+        "/api/vol_surface/fit": (
+            "as_of",
+            "source",
+            "calibration.rms_vol_error",
+            "calibration.max_vol_error",
+            "calibration.n_points",
+            "calibration.slices",
+            "arbitrage.arbitrage_free",
+            "arbitrage.min_butterfly",
+            "arbitrage.min_calendar",
+            "arbitrage.n_checked",
+            "arbitrage.n_violations",
+            "input.slices",
+        ),
+        "/api/local_vol/surface": (
+            "as_of",
+            "spot",
+            "spots",
+            "times",
+            "moneyness",
+            "local_vol",
+            "implied_vol",
+            "underlying",
+            "extrapolated_fraction",
+            "solver_moneyness_range",
+            "forward_curve.maturities",
+            "diagnostics.well_defined",
+            "diagnostics.min_denominator",
+            "diagnostics.clamped_fraction",
+            "diagnostics.max_peclet",
+            "diagnostics.min_vol",
+            "diagnostics.max_vol",
+            "diagnostics.n_evaluated",
+            "diagnostics.n_undefined",
+            "diagnostics.n_floored",
+            "diagnostics.n_capped",
+        ),
+        "/api/local_vol/validate": (
+            "worst_error_vol_points",
+            "calibration_rms_vol_points",
+            "share_of_budget",
+            "passes",
+            "rows",
+        ),
+        "/api/heston/calibrate": (
+            "as_of",
+            "n_points",
+            "n_starts",
+            "n_comparable_starts",
+            "parameter_spread",
+            "well_identified",
+            "converged",
+            "rms_vol_points",
+            "ssvi_rms_vol_points",
+            "heston_over_ssvi",
+            "fits_worse_than_ssvi",
+            "max_vol_error",
+            "params.v0",
+            "params.kappa",
+            "params.theta",
+            "params.sigma",
+            "params.rho",
+            "params.initial_vol",
+            "params.long_run_vol",
+            "params.satisfies_feller",
+            "params.feller_margin",
+        ),
+        "/api/heston/european": (
+            "price",
+            "flag",
+            "strike",
+            "T",
+            "spot",
+            "method",
+            "terms",
+            "truncation",
+            "params_source",
+        ),
+        "/api/heston/snowball": (
+            "price",
+            "ci95",
+            "std_error",
+            "paths",
+            "steps_per_year",
+            "vol_model",
+            "ko_prob",
+            "ki_prob",
+            "ki_no_ko_prob",
+            "expected_ko_time",
+            "params_source",
+            "single_engine_note",
+            "cross_checked_by_a_second_engine",
+        ),
+    }
+
+    #: Deliberately small where the endpoint allows it. The grids here are the
+    #: smallest that still exercise every path, not the ones the panel sends.
+    BODIES: dict[str, dict] = {
+        "/api/vol_surface/fit": {"underlying": "510300", "source": "snapshot", "r": 0.02},
+        "/api/local_vol/surface": {
+            "underlying": "510300",
+            "source": "snapshot",
+            "r": 0.02,
+            "horizon": 1.0,
+            "n_spots": 5,
+            "n_times": 3,
+        },
+        "/api/local_vol/validate": {
+            "underlying": "510300",
+            "source": "snapshot",
+            "r": 0.02,
+        },
+        "/api/heston/calibrate": {"underlying": "510300", "source": "snapshot", "r": 0.02},
+        "/api/heston/european": {
+            "underlying": "510300",
+            "source": "snapshot",
+            "r": 0.02,
+            "K": 4.1,
+            "T": 0.5,
+            "flag": "c",
+        },
+        "/api/heston/snowball": {
+            "underlying": "510300",
+            "source": "snapshot",
+            "r": 0.02,
+            "S0": 100.0,
+            "T": 1.0,
+            "paths": 5000,
+        },
+    }
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def responses(cls) -> dict[str, dict]:
+        import app
+
+        app.app.config.update(TESTING=True)
+        client = app.app.test_client()
+        out: dict[str, dict] = {}
+        for route, body in cls.BODIES.items():
+            response = client.post(route, json=body)
+            assert response.status_code == 200, (
+                f"{route} answered {response.status_code}: "
+                f"{response.data.decode('utf-8', 'replace')[:200]}"
+            )
+            out[route] = response.get_json()
+        return out
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("route", sorted(PATHS))
+    def test_every_field_the_panel_reads_is_sent(
+        self, route: str, responses: dict[str, dict]
+    ) -> None:
+        payload = responses[route]
+        missing = []
+        for path in self.PATHS[route]:
+            node = payload
+            for part in path.split("."):
+                if not isinstance(node, dict) or part not in node:
+                    missing.append(path)
+                    break
+                node = node[part]
+            else:
+                # Present is not enough: a null reaches the page as a blank
+                # cell, which is the same defect wearing a different hat.
+                if node is None and path != "share_of_budget":
+                    missing.append(f"{path} (sent as null)")
+        assert missing == [], f"{route} does not send: {missing}"
+
+    @pytest.mark.slow
+    def test_the_slice_rows_carry_the_maturity_the_panel_sorts_on(
+        self, responses: dict[str, dict]
+    ) -> None:
+        """Both volatility panels take the last quoted expiry from a row field.
+
+        The surface panel reads it off ``calibration.slices`` and the local
+        volatility panel off ``forward_curve.maturities``; a dashed line drawn
+        at the wrong place is worse than none, because it labels extrapolated
+        cells as quoted.
+        """
+        slices = responses["/api/vol_surface/fit"]["calibration"]["slices"]
+        assert slices, "no fitted slices"
+        for row in slices:
+            assert "maturity" in row, row
+            assert isinstance(row["maturity"], int | float)
+
+        maturities = responses["/api/local_vol/surface"]["forward_curve"]["maturities"]
+        assert maturities and all(isinstance(m, int | float) for m in maturities)
+
+    @pytest.mark.slow
+    def test_the_round_trip_rows_carry_every_column_the_table_prints(
+        self, responses: dict[str, dict]
+    ) -> None:
+        rows = responses["/api/local_vol/validate"]["rows"]
+        assert rows, "no round-trip rows"
+        for column in (
+            "maturity",
+            "moneyness",
+            "strike",
+            "target_vol",
+            "recovered_vol",
+            "error_vol_points",
+        ):
+            assert column in rows[0], f"{column} missing from a round-trip row"
+
+    @pytest.mark.slow
+    def test_the_heston_snowball_still_declares_itself_unchecked(
+        self, responses: dict[str, dict]
+    ) -> None:
+        """The panel prints this verbatim, so it has to keep arriving.
+
+        If a second engine is ever built for it, this test fails -- and that is
+        correct: the panel's red warning block would then be wrong, and
+        somebody has to go and change it rather than have it quietly keep
+        warning about something that is no longer true.
+        """
+        payload = responses["/api/heston/snowball"]
+        assert payload["cross_checked_by_a_second_engine"] is False
+        assert "no independent second engine" in payload["single_engine_note"]
