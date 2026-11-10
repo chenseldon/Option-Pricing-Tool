@@ -290,7 +290,7 @@ spot level rather than averaged:
 ### 📋 Quote Report (Structured tab)
 
 One call to `/api/snowball_report`, read top to bottom, with the sections that
-cost solves behind checkboxes. **Carry coverage leads** — 48% of a one-year
+cost solves behind checkboxes. **Carry coverage leads** — 52% of a one-year
 note's carry and 84% of a three-year note's is beyond the futures board, and
 the carry more than doubles the quotable coupon, so the largest input is also
 the least observed. A carry measurement that fails is shown as the reason it

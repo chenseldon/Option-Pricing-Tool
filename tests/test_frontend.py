@@ -450,3 +450,74 @@ class TestTheHestonPanel:
         """
         assert "a requirement, not a refinement" in page
         assert "Euler" in page
+
+
+class TestTheCarryCoverageClaim:
+    """The report panel leads with a percentage, and I inverted it.
+
+    ``docs/data/futures_carry.md`` tabulates the fraction of each tenor's carry
+    that the futures board **measures**: 48.5% at one year, 16.2% at three. The
+    panel leads with the fraction that is *not* measured, and the first version
+    printed 48% for the one-year note -- the measured number, relabelled. It
+    read plausibly, it sat next to a correct 84% for the three-year note, and
+    nothing connected the two files.
+
+    One subtraction, in both directions, so the claim cannot drift from its
+    source or be inverted again.
+    """
+
+    #: Fractions measured, from docs/data/futures_carry.md.
+    _MEASURED = {1: 48.5, 3: 16.2}
+
+    def test_the_documented_table_still_says_what_this_assumes(self) -> None:
+        """If the measurement is re-run the table moves, and this test is the
+        thing that should fail first -- before the panel quietly disagrees with
+        it."""
+        doc = (
+            Path(__file__).resolve().parents[1] / "docs" / "data" / "futures_carry.md"
+        ).read_text(encoding="utf-8")
+        for tenor, measured in self._MEASURED.items():
+            label = "1 year" if tenor == 1 else f"{tenor} years"
+            row = re.search(rf"\| {re.escape(label)} \| \*?\*?([0-9.]+)%", doc)
+            assert row, f"no row for {label} in futures_carry.md"
+            assert float(row.group(1)) == measured, (
+                f"{label}: the document says {row.group(1)}% measured, "
+                f"this test assumes {measured}%"
+            )
+
+    def test_the_panel_states_the_unmeasured_share(self, page: str) -> None:
+        hint = page[page.index('id="lbl-sb-rep-hint"') :]
+        hint = hint[: hint.index("</p>")]
+
+        one_year = re.search(r"([0-9]+)% of a one-year note", hint)
+        three_year = re.search(r"([0-9]+)% of a three-year note", hint)
+        assert one_year and three_year, f"the percentages did not parse from: {hint[:200]}"
+
+        for stated, tenor in ((one_year, 1), (three_year, 3)):
+            unmeasured = 100.0 - self._MEASURED[tenor]
+            # Rounded to whole points on the page, so one point of slack and no
+            # more -- two would readmit the 48/52 confusion this exists for.
+            assert abs(float(stated.group(1)) - unmeasured) <= 1.0, (
+                f"{tenor}y: the panel says {stated.group(1)}% unmeasured, "
+                f"the table implies {unmeasured:.1f}%"
+            )
+
+    def test_it_is_not_the_measured_share_relabelled(self, page: str) -> None:
+        """The actual mistake, named so the regression is unambiguous."""
+        hint = page[page.index('id="lbl-sb-rep-hint"') :]
+        hint = hint[: hint.index("</p>")]
+        for tenor, measured in self._MEASURED.items():
+            label = "one-year" if tenor == 1 else "three-year"
+            assert f"{measured:.0f}% of a {label} note" not in hint, (
+                f"the panel is printing the {label} *measured* share "
+                f"({measured}%) as though it were the unmeasured one"
+            )
+
+    def test_both_languages_agree_on_the_number(self, page: str) -> None:
+        """The Chinese string carries the figure separately, so it can drift
+        alone -- and a reader of only one language would never see it."""
+        english = re.findall(r"([0-9]+)% of a one-year note", page)
+        chinese = re.findall(r"一年期雪球有 ([0-9]+)% 的 carry 测不到", page)
+        assert english, "the English claim was not found"
+        assert chinese, "the Chinese claim was not found"
+        assert set(english) == set(chinese), f"en says {set(english)}, cn says {set(chinese)}"
