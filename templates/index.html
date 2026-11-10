@@ -745,6 +745,108 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
         </div>
       </div>
     </div>
+
+    <!-- Heston -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-hs-hdr">🌀 Heston — one engine only, and it fits worse</span><span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="lbl-hs-hint">Heston is here for a forward smile that does not flatten, not for accuracy — and the three things wrong with it go above the numbers rather than below them. The first calibration takes about 19 seconds; it is cached for the rest of the server&rsquo;s life, after which everything on this panel is instant.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:130px">
+            <label id="lbl-hs-und">Underlying</label>
+            <select id="hs-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:100px">
+            <label id="lbl-hs-rate">Rate (%)</label>
+            <input type="number" id="hs-rate" value="2" step="0.1"/>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcHeston()" id="btn-hs" data-i18n="btn_run_hs">▶ Calibrate (slow first time)</button>
+        </div>
+
+        <div id="hs-results" style="display:none">
+          <!-- The caveats, deliberately above everything else -->
+          <div id="hs-caveats" style="border-left:3px solid var(--yellow);background:#140f00;border-radius:4px;padding:9px 12px;margin-bottom:12px;font-size:11px;line-height:1.55;color:#d9c89a"></div>
+
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-vs">Fit vs SSVI</div><div class="metric-val" id="hs-vs">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-ident">Well-Identified</div><div class="metric-val" id="hs-ident">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-feller">Feller</div><div class="metric-val" id="hs-feller">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-conv">Converged</div><div class="metric-val" id="hs-conv">—</div></div>
+          </div>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-rms">Heston RMS</div><div class="metric-val" id="hs-rms">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-ssvi">SSVI RMS</div><div class="metric-val" id="hs-ssvi">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-pts">Quotes Fitted</div><div class="metric-val" id="hs-pts">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-asof">As Of</div><div class="metric-val" style="font-size:11px" id="hs-asof">—</div></div>
+          </div>
+          <div id="hs-params"></div>
+        </div>
+
+        <!-- European by COS: the one layer here that does have a second engine -->
+        <div style="border-top:1px solid #1c3a60;margin-top:14px;padding-top:12px">
+          <p class="hint" id="lbl-hs-eu-hint">A European by the COS method, which is the one number on this panel with an independent second engine behind it: it agrees with QuantLib&rsquo;s analytic Heston engine to 5e-09 across three parameter sets, four maturities and three strikes. Puts are integrated and calls come from parity, because a call&rsquo;s cosine coefficients overflow on a wide density.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div class="fg" style="margin-bottom:0;min-width:100px">
+              <label id="lbl-hs-K">Strike</label>
+              <input type="number" id="hs-K" value="4.1" step="0.05"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-T">Maturity (y)</label>
+              <input type="number" id="hs-T" value="0.5" step="0.25"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-flag">Type</label>
+              <select id="hs-flag"><option value="c">Call</option><option value="p">Put</option></select>
+            </div>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="calcHestonEuropean()" id="btn-hs-eu" data-i18n="btn_run_hs_eu">▶ Price</button>
+          </div>
+          <div id="hs-eu-out" class="hint" style="display:none"></div>
+        </div>
+
+        <!-- Snowball by QE: the single-engine number -->
+        <div style="border-top:1px solid #1c3a60;margin-top:14px;padding-top:12px">
+          <p class="hint" id="lbl-hs-sb-hint">A snowball under Heston by Andersen&rsquo;s QE scheme. QE is a requirement here rather than a refinement: the calibrated parameters violate Feller, so the variance reaches zero and a Euler step would take it negative. This number is the only one the service returns without a second engine behind it, and the response says so — reproduced below rather than quietly dropped.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-T">Tenor (y)</label>
+              <input type="number" id="hs-sb-T" value="1" step="0.5"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-ko">KO (%)</label>
+              <input type="number" id="hs-sb-ko" value="103" step="1"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-ki">KI (%)</label>
+              <input type="number" id="hs-sb-ki" value="75" step="1"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:100px">
+              <label id="lbl-hs-sb-cpn">Coupon (%)</label>
+              <input type="number" id="hs-sb-cpn" value="20" step="0.5"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-hs-sb-paths">Paths</label>
+              <input type="number" id="hs-sb-paths" value="100000" step="50000"/>
+            </div>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="calcHestonSnowball()" id="btn-hs-sb" data-i18n="btn_run_hs_sb">▶ Simulate</button>
+          </div>
+          <div id="hs-sb-results" style="display:none">
+            <div id="hs-sb-warn" style="border-left:3px solid var(--red);background:#1a0c0c;border-radius:4px;padding:9px 12px;margin-bottom:10px;font-size:11px;line-height:1.55;color:#e8b4b4"></div>
+            <div class="metric-grid" style="margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-px">Price</div><div class="metric-val" id="hs-sb-px">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ci">95% CI</div><div class="metric-val" style="font-size:12px" id="hs-sb-ci">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ko-p">KO Probability</div><div class="metric-val" id="hs-sb-ko-p">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ki-p">KI, Never KO</div><div class="metric-val" id="hs-sb-ki-p">—</div></div>
+            </div>
+            <p class="hint" id="hs-sb-note">—</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div><!-- /panel-models -->
 
   <div class="tab-panel" id="panel-portfolio">
@@ -1862,6 +1964,23 @@ const I18N = {
     btn_run_lv_rt:'\u25b6 Reprice the Vanillas (slow, ~7s)',
     lbl_lv_rt_worst:'Worst Error', lbl_lv_rt_budget:'Fit-Error Budget',
     lbl_lv_rt_share:'Share of Budget', lbl_lv_rt_verdict:'Verdict',
+    lbl_hs_hdr:'\ud83c\udf00 Heston \u2014 one engine only, and it fits worse',
+    lbl_hs_hint:'Heston is here for a forward smile that does not flatten, not for accuracy \u2014 and the three things wrong with it go above the numbers rather than below them. The first calibration takes about 19 seconds; it is cached for the rest of the server\u2019s life, after which everything on this panel is instant.',
+    btn_run_hs:'\u25b6 Calibrate (slow first time)',
+    lbl_hs_und:'Underlying', lbl_hs_rate:'Rate (%)',
+    lbl_hs_vs:'Fit vs SSVI', lbl_hs_ident:'Well-Identified',
+    lbl_hs_feller:'Feller', lbl_hs_conv:'Converged',
+    lbl_hs_rms:'Heston RMS', lbl_hs_ssvi:'SSVI RMS',
+    lbl_hs_pts:'Quotes Fitted', lbl_hs_asof:'As Of',
+    lbl_hs_eu_hint:'A European by the COS method, which is the one number on this panel with an independent second engine behind it: it agrees with QuantLib\u2019s analytic Heston engine to 5e-09 across three parameter sets, four maturities and three strikes. Puts are integrated and calls come from parity, because a call\u2019s cosine coefficients overflow on a wide density.',
+    btn_run_hs_eu:'\u25b6 Price',
+    lbl_hs_K:'Strike', lbl_hs_T:'Maturity (y)', lbl_hs_flag:'Type',
+    lbl_hs_sb_hint:'A snowball under Heston by Andersen\u2019s QE scheme. QE is a requirement here rather than a refinement: the calibrated parameters violate Feller, so the variance reaches zero and a Euler step would take it negative. This number is the only one the service returns without a second engine behind it, and the response says so \u2014 reproduced below rather than quietly dropped.',
+    btn_run_hs_sb:'\u25b6 Simulate',
+    lbl_hs_sb_T:'Tenor (y)', lbl_hs_sb_ko:'KO (%)', lbl_hs_sb_ki:'KI (%)',
+    lbl_hs_sb_cpn:'Coupon (%)', lbl_hs_sb_paths:'Paths',
+    lbl_hs_sb_px:'Price', lbl_hs_sb_ci:'95% CI',
+    lbl_hs_sb_ko_p:'KO Probability', lbl_hs_sb_ki_p:'KI, Never KO',
     lbl_sb_rep_hdr:'📋 Quote Report — read top to bottom',
     lbl_sb_rep_hint:"The whole picture in the order it should be read. Carry coverage leads, because 48% of a one-year note's carry is unmeasured and 84% of a three-year note's — and the carry more than doubles the quotable coupon, so the largest input is also the least observed.",
     btn_run_report:'▶ Build Report',
@@ -2003,6 +2122,23 @@ const I18N = {
     btn_run_lv_rt:'\u25b6 重新定价这些香草期权（慢，约 7 秒）',
     lbl_lv_rt_worst:'最大误差', lbl_lv_rt_budget:'拟合误差预算',
     lbl_lv_rt_share:'占预算比例', lbl_lv_rt_verdict:'结论',
+    lbl_hs_hdr:'\ud83c\udf00 Heston \u2014\u2014 只有一个引擎，而且拟合更差',
+    lbl_hs_hint:'Heston 放在这里是为了一个不会被压平的远期微笑，不是为了精度 \u2014\u2014 它的三个毛病写在数字上面，而不是下面。第一次标定大约 19 秒；之后在服务进程生命周期内缓存，这一整块都是秒出。',
+    btn_run_hs:'\u25b6 标定（首次较慢）',
+    lbl_hs_und:'标的', lbl_hs_rate:'利率 (%)',
+    lbl_hs_vs:'相对 SSVI 的拟合', lbl_hs_ident:'参数可辨识',
+    lbl_hs_feller:'Feller 条件', lbl_hs_conv:'已收敛',
+    lbl_hs_rms:'Heston RMS', lbl_hs_ssvi:'SSVI RMS',
+    lbl_hs_pts:'拟合报价数', lbl_hs_asof:'数据日期',
+    lbl_hs_eu_hint:'用 COS 方法算的欧式期权 \u2014\u2014 这是本面板上唯一有独立第二引擎背书的数：在三组参数、四个到期、三个行权价上与 QuantLib 的解析 Heston 引擎一致到 5e-09。看跌期权直接积分，看涨由平价关系得到，因为看涨的余弦系数在密度较宽时会溢出。',
+    btn_run_hs_eu:'\u25b6 定价',
+    lbl_hs_K:'行权价', lbl_hs_T:'到期 (年)', lbl_hs_flag:'类型',
+    lbl_hs_sb_hint:'用 Andersen 的 QE 方案在 Heston 下给雪球定价。这里用 QE 是必需而非优化：标定出来的参数违反 Feller 条件，方差会触零，Euler 步进会把它推到负数。这个数是本服务返回的唯一没有第二引擎背书的数，响应里就是这么说的 \u2014\u2014 下面原样照搬，而不是悄悄省掉。',
+    btn_run_hs_sb:'\u25b6 模拟',
+    lbl_hs_sb_T:'期限 (年)', lbl_hs_sb_ko:'敲出 (%)', lbl_hs_sb_ki:'敲入 (%)',
+    lbl_hs_sb_cpn:'票息 (%)', lbl_hs_sb_paths:'路径数',
+    lbl_hs_sb_px:'价格', lbl_hs_sb_ci:'95% 置信区间',
+    lbl_hs_sb_ko_p:'敲出概率', lbl_hs_sb_ki_p:'敲入且未敲出',
     lbl_sb_rep_hdr:'📋 报价报告 —— 请从头往下读',
     lbl_sb_rep_hint:'把整件事按该读的顺序排好。贴水覆盖率领头：一年期雪球有 48% 的 carry 测不到，三年期是 84%，而 carry 能让可报票息翻倍以上 —— 最大的那个输入恰好也是最没被观测到的。',
     btn_run_report:'▶ 生成报告',
@@ -2134,6 +2270,20 @@ function switchLang(lang) {
     'lbl-lv-rt-hint':'lbl_lv_rt_hint',
     'lbl-lv-rt-worst':'lbl_lv_rt_worst','lbl-lv-rt-budget':'lbl_lv_rt_budget',
     'lbl-lv-rt-share':'lbl_lv_rt_share','lbl-lv-rt-verdict':'lbl_lv_rt_verdict',
+    'lbl-hs-hdr':'lbl_hs_hdr','lbl-hs-hint':'lbl_hs_hint',
+    'lbl-hs-und':'lbl_hs_und','lbl-hs-rate':'lbl_hs_rate',
+    'lbl-hs-vs':'lbl_hs_vs','lbl-hs-ident':'lbl_hs_ident',
+    'lbl-hs-feller':'lbl_hs_feller','lbl-hs-conv':'lbl_hs_conv',
+    'lbl-hs-rms':'lbl_hs_rms','lbl-hs-ssvi':'lbl_hs_ssvi',
+    'lbl-hs-pts':'lbl_hs_pts','lbl-hs-asof':'lbl_hs_asof',
+    'lbl-hs-eu-hint':'lbl_hs_eu_hint',
+    'lbl-hs-K':'lbl_hs_K','lbl-hs-T':'lbl_hs_T','lbl-hs-flag':'lbl_hs_flag',
+    'lbl-hs-sb-hint':'lbl_hs_sb_hint',
+    'lbl-hs-sb-T':'lbl_hs_sb_T','lbl-hs-sb-ko':'lbl_hs_sb_ko',
+    'lbl-hs-sb-ki':'lbl_hs_sb_ki','lbl-hs-sb-cpn':'lbl_hs_sb_cpn',
+    'lbl-hs-sb-paths':'lbl_hs_sb_paths',
+    'lbl-hs-sb-px':'lbl_hs_sb_px','lbl-hs-sb-ci':'lbl_hs_sb_ci',
+    'lbl-hs-sb-ko-p':'lbl_hs_sb_ko_p','lbl-hs-sb-ki-p':'lbl_hs_sb_ki_p',
     'lbl-sb-rep-hdr':'lbl_sb_rep_hdr','lbl-sb-rep-hint':'lbl_sb_rep_hint',
     'lbl-sb-rep-quote':'lbl_sb_rep_quote','lbl-sb-rep-mc':'lbl_sb_rep_mc',
     'lbl-sb-rep-xc':'lbl_sb_rep_xc','lbl-sb-rep-asof':'lbl_sb_rep_asof',
@@ -2521,6 +2671,168 @@ async function drawSurfaceHeatmap(req, cal){
                        data:[{yAxis: q.maturities.findIndex(t => t > lastQuoted) - 0.5}]}}]
   });
   chartSurface.resize();
+}
+
+// ========== HESTON ==========
+function hestonRequest(){
+  return {
+    underlying: $('hs-und').value,
+    source: 'snapshot',
+    r: +$('hs-rate').value / 100,
+  };
+}
+
+async function calcHeston(){
+  const btn = $('btn-hs');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Calibrating\u2026'; }
+  try{
+    const res = await fetch('/api/heston/calibrate',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(hestonRequest())});
+    const d = await res.json();
+    if(d.error){ showErr('Heston: ' + d.error); return; }
+
+    const pr = d.params;
+    const ratio = d.heston_over_ssvi;
+
+    // Three caveats, above the numbers rather than below them. A panel that
+    // leads with a price and buries these reads as an endorsement.
+    const lines = [];
+    if(ratio != null){
+      lines.push(`<b>It fits worse than SSVI</b>, by ${fmt((ratio-1)*100,1)}% on these ` +
+        `${d.n_points} quotes under the same vega-weighted objective \u2014 ` +
+        `${fmt(d.rms_vol_points,3)} against ${fmt(d.ssvi_rms_vol_points,3)} vol points. ` +
+        `Measured across snapshots: 1.10\u20131.12\u00d7 on three expiries and ` +
+        `1.38\u20131.41\u00d7 on six, because SSVI carries one parameter per expiry ` +
+        `against Heston's five in total.`);
+    }
+    if(!d.well_identified){
+      lines.push(`<b>The parameters are not identified.</b> ${d.n_comparable_starts} of ` +
+        `${d.n_starts} starting points reached comparable fit quality with parameters ` +
+        `spread ${fmt(d.parameter_spread,3)} apart, so these five numbers are one member ` +
+        `of a family that fits the quotes equally well \u2014 read them as a surface that ` +
+        `reprices, not as estimated properties of the market.`);
+    }
+    if(!pr.satisfies_feller){
+      lines.push(`<b>Feller is violated</b> (2\u03ba\u03b8 \u2212 \u03c3\u00b2 = ` +
+        `${fmt(pr.feller_margin,3)}), so the variance can reach zero. That is why the ` +
+        `snowball below uses QE rather than Euler \u2014 a requirement, not a refinement. ` +
+        `It is reported rather than imposed: constraining it fits the quotes worse ` +
+        `without making the model more true.`);
+    }
+    $('hs-caveats').innerHTML = lines.length
+      ? lines.map(x => '\u2022 ' + x).join('<br/><br/>')
+      : 'No caveats triggered on this fit, which would itself be worth checking.';
+
+    const vsEl = $('hs-vs');
+    vsEl.textContent = ratio == null ? '\u2014' : fmt(ratio, 4) + '\u00d7';
+    vsEl.className = 'metric-val ' + (d.fits_worse_than_ssvi ? 'neg' : 'pos');
+
+    const idEl = $('hs-ident');
+    idEl.textContent = d.well_identified ? 'yes' : 'NO';
+    idEl.className = 'metric-val ' + (d.well_identified ? 'pos' : 'neg');
+
+    const feEl = $('hs-feller');
+    feEl.textContent = pr.satisfies_feller
+      ? 'satisfied' : 'violated (' + fmt(pr.feller_margin, 3) + ')';
+    feEl.className = 'metric-val ' + (pr.satisfies_feller ? 'pos' : 'neg');
+    feEl.style.fontSize = '12px';
+
+    const cvEl = $('hs-conv');
+    cvEl.textContent = d.converged ? 'yes' : 'NO';
+    cvEl.className = 'metric-val ' + (d.converged ? 'pos' : 'neg');
+
+    $('hs-rms').textContent  = fmt(d.rms_vol_points, 3) + ' vol pts';
+    $('hs-ssvi').textContent = fmt(d.ssvi_rms_vol_points, 3) + ' vol pts';
+    $('hs-pts').textContent  = String(d.n_points);
+    $('hs-asof').textContent = d.as_of;
+
+    // Both the raw parameters and what they mean as volatilities: kappa and
+    // sigma are not comparable to anything a reader has intuition for, while
+    // sqrt(v0) and sqrt(theta) are.
+    $('hs-params').innerHTML =
+      '<div class="tscroll"><table class="dtable"><thead><tr>' +
+      '<th>v0</th><th>kappa</th><th>theta</th><th>sigma</th><th>rho</th>' +
+      '<th>Initial Vol</th><th>Long-Run Vol</th><th>Worst Quote Error</th>' +
+      '</tr></thead><tbody><tr>' +
+      `<td>${fmt(pr.v0,6)}</td><td>${fmt(pr.kappa,4)}</td><td>${fmt(pr.theta,6)}</td>` +
+      `<td>${fmt(pr.sigma,4)}</td><td>${fmt(pr.rho,4)}</td>` +
+      `<td>${fmt(pr.initial_vol*100,2)}%</td><td>${fmt(pr.long_run_vol*100,2)}%</td>` +
+      `<td>${fmt(d.max_vol_error*100,3)} vol pts</td>` +
+      '</tr></tbody></table></div>';
+
+    $('hs-results').style.display = '';
+  }catch(e){ showErr('Heston error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Calibrate (slow first time)'; } }
+}
+
+async function calcHestonEuropean(){
+  const btn = $('btn-hs-eu');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Pricing\u2026'; }
+  try{
+    const res = await fetch('/api/heston/european',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...hestonRequest(),
+        K: +$('hs-K').value, T: +$('hs-T').value, flag: $('hs-flag').value})});
+    const d = await res.json();
+    if(d.error){ showErr('Heston European: ' + d.error); return; }
+
+    // The spot is the surface's own implied one unless a caller supplies it --
+    // an SSVI surface is parameterised in forward terms and carries no spot --
+    // so it is shown rather than assumed to be understood.
+    $('hs-eu-out').innerHTML =
+      `<b>${fmt(d.price, 6)}</b> &nbsp; ` +
+      `(${d.flag === 'c' ? 'call' : 'put'}, K = ${fmt(d.strike,4)}, T = ${fmt(d.T,3)}y, ` +
+      `spot ${fmt(d.spot,4)} implied from the surface's nearest forward) &nbsp;\u00b7&nbsp; ` +
+      `${d.method}, ${d.terms} terms, truncation [${fmt(d.truncation[0],2)}, ` +
+      `${fmt(d.truncation[1],2)}] set from the model's own cumulants &nbsp;\u00b7&nbsp; ` +
+      `parameters: ${d.params_source}`;
+    $('hs-eu-out').style.display = '';
+  }catch(e){ showErr('Heston European error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Price'; } }
+}
+
+async function calcHestonSnowball(){
+  const btn = $('btn-hs-sb');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Simulating\u2026'; }
+  try{
+    const res = await fetch('/api/heston/snowball',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...hestonRequest(),
+        S0: 100.0,
+        T: +$('hs-sb-T').value,
+        ko_pct: +$('hs-sb-ko').value / 100,
+        ki_pct: +$('hs-sb-ki').value / 100,
+        coupon_pa: +$('hs-sb-cpn').value / 100,
+        paths: +$('hs-sb-paths').value})});
+    const d = await res.json();
+    if(d.error){ showErr('Heston snowball: ' + d.error); return; }
+
+    // The response's own words, not a paraphrase. This is the only number the
+    // service returns without a second engine, and a UI that softened the
+    // wording would be the place that quietly dropped it.
+    const checked = d.cross_checked_by_a_second_engine;
+    $('hs-sb-warn').innerHTML =
+      `<b>Cross-checked by a second engine: ${checked ? 'yes' : 'NO'}.</b> ` +
+      (d.single_engine_note || '');
+
+    $('hs-sb-px').textContent   = fmt(d.price, 6);
+    $('hs-sb-ci').textContent   = '\u00b1' + fmt(d.ci95, 6);
+    $('hs-sb-ko-p').textContent = fmt(d.ko_prob * 100, 2) + '%';
+    $('hs-sb-ki-p').textContent = fmt(d.ki_no_ko_prob * 100, 2) + '%';
+
+    $('hs-sb-note').textContent =
+      `${d.paths.toLocaleString()} paths at ${d.steps_per_year} steps a year under ` +
+      `${d.vol_model}, standard error ${fmt(d.std_error,6)}. ` +
+      `Knocks out ${fmt(d.ko_prob*100,2)}% of the time with an expected knock-out at ` +
+      `${fmt(d.expected_ko_time,3)} years; knocks in ${fmt(d.ki_prob*100,2)}% and ends ` +
+      `knocked in without ever having knocked out ${fmt(d.ki_no_ko_prob*100,2)}% \u2014 ` +
+      `that last figure is the one the coupon is paid for. ` +
+      `Parameters: ${d.params_source}.`;
+
+    $('hs-sb-results').style.display = '';
+  }catch(e){ showErr('Heston snowball error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Simulate'; } }
 }
 
 // ========== DUPIRE LOCAL VOLATILITY ==========

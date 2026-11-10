@@ -351,3 +351,114 @@ class TestTheIdMap:
         ids = set(re.findall(r'id="([^"]+)"', page))
         absent = sorted(i for i in _id_map(page) if i not in ids)
         assert absent == [], f"mapped but absent from the page: {absent}"
+
+
+class TestTheHestonPanel:
+    """The one model here with no second engine behind its headline number.
+
+    Which makes the panel's honesty its actual function. Every test below is
+    about something that would be easy and tempting to leave out, and whose
+    absence the panel would survive looking perfectly good.
+    """
+
+    def test_it_calls_all_three_routes(self, page: str) -> None:
+        assert "/api/heston/calibrate" in page
+        assert "/api/heston/european" in page
+        assert "/api/heston/snowball" in page
+        for fn in ("calcHeston", "calcHestonEuropean", "calcHestonSnowball"):
+            assert f"async function {fn}()" in page, fn
+
+    def test_the_three_caveats_are_read_from_the_response(self, page: str) -> None:
+        """Not asserted in prose -- read from the fields that measure them.
+
+        A hard-coded sentence saying Heston fits worse would still be there
+        after a future snapshot where it did not, and the panel would be
+        asserting something it had stopped checking.
+        """
+        body = page[page.index("async function calcHeston()") :]
+        body = body[: body.index("\nasync function calcHestonEuropean")]
+        assert "d.heston_over_ssvi" in body, "the fit comparison is not read"
+        assert "d.well_identified" in body, "identifiability is not read"
+        assert "pr.satisfies_feller" in body, "Feller is not read"
+        assert "d.parameter_spread" in body
+        assert "d.feller_margin" in body or "pr.feller_margin" in body
+
+    def test_the_caveats_render_above_the_numbers(self, page: str) -> None:
+        """Order on the page, not merely presence.
+
+        A panel that leads with a price and puts the caveats underneath reads
+        as an endorsement with small print. The caveat block has to come before
+        the metric cards in the markup.
+        """
+        panel = page[page.index('id="hs-results"') :]
+        panel = panel[: panel.index('id="hs-params"')]
+        assert panel.index('id="hs-caveats"') < panel.index('id="hs-vs"')
+
+    def test_the_identifiability_warning_exists_at_all(self, page: str) -> None:
+        """The subtlest of the three, and the one most likely to be dropped.
+
+        Three of four starting points reach comparable fit quality with
+        parameters spread 0.80 apart, so the five numbers shown are one member
+        of a family that fits the quotes equally well. Printing them in a table
+        without that sentence invites reading kappa and rho as estimated
+        properties of the market, which they are not.
+        """
+        assert "not identified" in page
+        assert "n_comparable_starts" in page
+        assert "fits the quotes equally well" in page
+
+    def test_the_single_engine_note_is_reproduced_not_paraphrased(
+        self, page: str
+    ) -> None:
+        """The response carries its own wording for exactly this reason.
+
+        A UI that summarised it in its own words would be the place the caveat
+        got quietly softened -- so the panel prints the field, and prints the
+        boolean beside it.
+        """
+        body = page[page.index("async function calcHestonSnowball()") :]
+        assert "d.single_engine_note" in body
+        assert "d.cross_checked_by_a_second_engine" in body
+        assert "Cross-checked by a second engine" in body
+
+    def test_the_cos_cross_check_is_claimed_only_where_it_holds(
+        self, page: str
+    ) -> None:
+        """QuantLib backs the European, not the snowball.
+
+        The distinction is the whole point: what is verified is the layer below
+        the payoff, so the European section may cite it and the snowball
+        section must not.
+        """
+        european = page[page.index('id="lbl-hs-eu-hint"') :]
+        european = european[: european.index("</p>")]
+        assert "QuantLib" in european and "5e-09" in european
+
+        snowball = page[page.index('id="lbl-hs-sb-hint"') :]
+        snowball = snowball[: snowball.index("</p>")]
+        assert "QuantLib" not in snowball
+        assert "without a second engine" in snowball
+
+    def test_the_measured_fit_gap_is_quoted_with_both_figures(
+        self, page: str
+    ) -> None:
+        """1.10-1.12x on three expiries and 1.38-1.41x on six.
+
+        The second pair matters more than the first: the gap widens with the
+        number of expiries, because SSVI carries a parameter per expiry and
+        Heston does not. Quoting only the three-expiry figure would understate
+        it on any chain with real term structure.
+        """
+        assert "1.38" in page and "1.41" in page
+        assert "one parameter per expiry" in page
+
+    def test_qe_is_presented_as_required_rather_than_chosen(
+        self, page: str
+    ) -> None:
+        """Because Feller is violated, Euler would take the variance negative.
+
+        Described as a refinement it sounds like a quality setting someone
+        could turn down.
+        """
+        assert "a requirement, not a refinement" in page
+        assert "Euler" in page
