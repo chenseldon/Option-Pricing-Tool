@@ -2120,6 +2120,9 @@ def snowball_report_route():
                 pde_config=config,
                 mc_config=MonteCarloConfig(paths=n_paths, seed=42),
                 local_vol=local_vol,
+                # The report already computed this, and a PDE risk is seven
+                # solves. Without it this route paid for fourteen.
+                pde=risk,
             )
             if want_crosscheck
             else None

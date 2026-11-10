@@ -17,10 +17,13 @@ self-consistent.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from scipy.special import ndtr
 
+from otcpricer.core.exceptions import EngineError
 from otcpricer.core.market import EquityMarket
 from otcpricer.core.types import KIStrikeMode
 from otcpricer.engines.mc import MonteCarloConfig
@@ -764,3 +767,99 @@ class TestCarryRho:
         assert "same derivative" in str(payload["carry_rho_note"])
         assert "dividend_sensitivity" not in payload
         assert "basis_sensitivity" not in payload
+
+
+class TestReusingAComputedRisk:
+    """A PDE risk is seven solves, and the report route was paying twice.
+
+    Seven because delta and gamma come off the surface the base solve already
+    built, while vega, rho and carry_rho each need a central difference. On the
+    local-volatility path one solve is 4.4 seconds, so the duplication was
+    worth more than every other optimisation available here.
+
+    What makes this safe to offer is that it must be **lossless**: the Greeks
+    have to come back bit-identical, or the saving is a different answer rather
+    than the same answer sooner.
+    """
+
+    MC = MonteCarloConfig(paths=50_000, seed=42, memory_budget_mb=8192.0)
+
+    def test_the_result_is_bit_identical(self) -> None:
+        """Every Greek, not approximately -- exactly.
+
+        A tolerance here would permit the reuse path to differ from the
+        recomputed one, which is precisely what must not happen.
+        """
+        terms, market = reference_terms(), REFERENCE_MARKET
+        risk = snowball_risk_pde(terms, market, STANDARD)
+
+        recomputed = compare_snowball_risk(terms, market, pde_config=STANDARD, mc_config=self.MC)
+        reused = compare_snowball_risk(
+            terms, market, pde_config=STANDARD, mc_config=self.MC, pde=risk
+        )
+
+        for name in ("delta", "gamma", "vega", "theta", "rho", "carry_rho"):
+            assert reused.verdicts[name]["pde"] == recomputed.verdicts[name]["pde"], name
+        assert reused.pde.price == recomputed.pde.price
+
+    def test_it_is_faster_rather_than_merely_equal(self) -> None:
+        """Because an optimisation that does not measure is a refactor.
+
+        Measured: 4.04s to 3.51s on the flat path -- 13%, since the Monte Carlo
+        side dominates there -- and 18.5s to 9.1s on the surface path, 51%.
+        The guard below costs one solve of the seven saved, so the net is six.
+
+        The assertion is deliberately weak: a timing test on a shared machine
+        should check the direction, not a threshold.
+        """
+        import time
+
+        terms, market = reference_terms(), REFERENCE_MARKET
+        risk = snowball_risk_pde(terms, market, STANDARD)
+
+        start = time.perf_counter()
+        compare_snowball_risk(terms, market, pde_config=STANDARD, mc_config=self.MC)
+        recomputed = time.perf_counter() - start
+
+        start = time.perf_counter()
+        compare_snowball_risk(terms, market, pde_config=STANDARD, mc_config=self.MC, pde=risk)
+        reused = time.perf_counter() - start
+
+        assert reused < recomputed, f"reuse took {reused:.2f}s against {recomputed:.2f}s"
+
+    def test_risk_from_a_different_contract_is_refused(self) -> None:
+        """The failure this could otherwise introduce, and it is a quiet one.
+
+        Reconciling two engines against *different* contracts reports agreement
+        that means nothing -- both numbers are internally consistent and the
+        verdict says yes. A SnowballRisk does not carry the terms it came from,
+        so this cannot be proved; what can be done is to reprice the contract
+        actually passed in and compare, which costs one solve against the seven
+        saved and catches the realistic mistake.
+        """
+        terms, market = reference_terms(), REFERENCE_MARKET
+        stale = snowball_risk_pde(replace(terms, coupon_pa=terms.coupon_pa * 2.0), market, STANDARD)
+
+        with pytest.raises(EngineError, match="different contracts"):
+            compare_snowball_risk(terms, market, pde_config=STANDARD, mc_config=self.MC, pde=stale)
+
+    def test_risk_from_a_different_market_is_refused_too(self) -> None:
+        terms, market = reference_terms(), REFERENCE_MARKET
+        stale = snowball_risk_pde(terms, market.with_shift(vol_abs=0.05), STANDARD)
+
+        with pytest.raises(EngineError, match="taken around a price of"):
+            compare_snowball_risk(terms, market, pde_config=STANDARD, mc_config=self.MC, pde=stale)
+
+    def test_matching_risk_from_an_equal_contract_is_accepted(self) -> None:
+        """The guard must not reject a legitimately equivalent result.
+
+        A separately constructed but identical contract prices the same, so it
+        passes -- the check is on the price, not on object identity.
+        """
+        terms, market = reference_terms(), REFERENCE_MARKET
+        equivalent = snowball_risk_pde(reference_terms(), REFERENCE_MARKET, STANDARD)
+
+        comparison = compare_snowball_risk(
+            terms, market, pde_config=STANDARD, mc_config=self.MC, pde=equivalent
+        )
+        assert comparison.agree

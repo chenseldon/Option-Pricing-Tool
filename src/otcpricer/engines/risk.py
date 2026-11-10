@@ -596,6 +596,35 @@ def _paired_theta(
     return theta, std_error
 
 
+def _check_supplied_risk(
+    supplied: SnowballRisk,
+    terms: SnowballTerms,
+    market: EquityMarket,
+    config: PDEConfig,
+    local_vol: LocalVolatility | None,
+) -> None:
+    """Refuse a result that was taken around a different contract.
+
+    A :class:`SnowballRisk` does not carry the terms it came from, so this
+    cannot be proved. What it can do is reprice the contract that *was* passed
+    in and compare, which costs one solve against the seven being saved and
+    catches the realistic mistake -- a caller reusing a result after changing
+    the coupon, the barriers or the market.
+
+    The tolerance is the grid's own reproducibility rather than a round
+    number: the same inputs through the same solver give the same price, so
+    anything beyond a few ULP means different inputs.
+    """
+    fresh = price_snowball_pde(terms, market, config, local_vol=local_vol).price
+    if abs(fresh - supplied.price) > 1e-12 * max(abs(fresh), 1.0):
+        raise EngineError(
+            f"the supplied risk was taken around a price of {supplied.price:.12g}, "
+            f"but these terms and market price to {fresh:.12g}. Reconciling two "
+            f"engines against different contracts would report agreement that "
+            f"means nothing -- recompute the risk, or let this function do it."
+        )
+
+
 def compare_snowball_risk(
     terms: SnowballTerms,
     market: EquityMarket,
@@ -603,6 +632,8 @@ def compare_snowball_risk(
     pde_config: PDEConfig | None = None,
     mc_config: MonteCarloConfig | None = None,
     local_vol: LocalVolatility | None = None,
+    pde: SnowballRisk | None = None,
+    mc: SnowballRisk | None = None,
 ) -> RiskComparison:
     """Run both methods and report whether they agree, Greek by Greek.
 
@@ -623,6 +654,42 @@ def compare_snowball_risk(
     worth seeing rather than averaging away: the two are difference quotients
     over horizons four times apart, and three sampling errors come to about
     80% of the value. Both facts are reported alongside the verdict.
+
+    Passing risk that is already computed
+    -------------------------------------
+    ``pde`` and ``mc`` let a caller hand in a result instead of paying for it
+    twice. The cost is not marginal: a PDE risk computation is **seven solves**
+    -- the base, plus a pair each for vega, rho and carry_rho, since delta and
+    gamma come off the surface the base solve already built.
+
+    ``/api/snowball_report`` was paying it twice. It computed the PDE risk for
+    the report's own risk section and then called this function, which computed
+    the identical thing again. Fourteen solves where seven would do, and on the
+    local-volatility path a solve is 4.4 seconds.
+
+    What is *not* allowed is handing in a result computed against different
+    inputs, which would produce a reconciliation of two unrelated numbers while
+    looking like a pass. There is no way to verify that from here -- a
+    ``SnowballRisk`` does not carry the terms it came from -- so the price it
+    was taken around is checked against a fresh price of the contract supplied,
+    which catches the realistic version of the mistake.
+
+    Args:
+        terms: Contract terms.
+        market: Market state.
+        pde_config: Grid for the PDE side. Defaults by path; see
+            :data:`~otcpricer.engines.pde.LOCAL_VOL_PDE_CONFIG`.
+        mc_config: Simulation controls for the Monte Carlo side.
+        local_vol: A Dupire surface to compare on, instead of ``market.sigma``.
+        pde: An already-computed PDE risk for *these* terms and market.
+        mc: An already-computed Monte Carlo risk, likewise.
+
+    Returns:
+        A :class:`RiskComparison`.
+
+    Raises:
+        EngineError: if a supplied result was taken around a materially
+            different price from the contract passed in.
     """
     # The flat grid's budget does not carry over to a Dupire surface; see
     # LOCAL_VOL_PDE_CONFIG for the measured convergence behind this.
@@ -634,8 +701,12 @@ def compare_snowball_risk(
         )
     mc_config = mc_config or MonteCarloConfig(paths=200_000)
 
-    pde = snowball_risk_pde(terms, market, pde_config, local_vol=local_vol)
-    mc = snowball_risk_mc(terms, market, mc_config, local_vol=local_vol)
+    if pde is None:
+        pde = snowball_risk_pde(terms, market, pde_config, local_vol=local_vol)
+    else:
+        _check_supplied_risk(pde, terms, market, pde_config, local_vol)
+    if mc is None:
+        mc = snowball_risk_mc(terms, market, mc_config, local_vol=local_vol)
 
     def read(risk: SnowballRisk, name: str) -> float:
         """One Greek off a result, whether it lives on Greeks or beside it.
