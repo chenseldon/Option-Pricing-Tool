@@ -338,7 +338,12 @@ def calibrate_heston(
     spots = [1.0] * len(T) if forwards is None else list(forwards)
 
     def model_vols(params: HestonParams, cos_terms: int) -> list[NDArray[np.float64]]:
-        out = []
+        # Annotated rather than inferred. numpy's shape type parameter is not
+        # stable across versions -- CI's numpy infers ndarray[tuple[int], ...]
+        # from the first append where the signature says
+        # ndarray[tuple[int, ...], ...] -- and list is invariant, so the two
+        # do not unify. Declaring it keeps the check version-agnostic.
+        out: list[NDArray[np.float64]] = []
         for maturity, k, forward in zip(T, k_slices, spots, strict=True):
             # Priced off the forward, so the moneyness coordinate matches the
             # one the quotes were expressed in.

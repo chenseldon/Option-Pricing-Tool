@@ -544,6 +544,10 @@ def price_shark_fin_mc(
     config = config or MonteCarloConfig()
     times, paths = simulate_log_paths(market, terms.T, config, local_vol=local_vol)
 
+    # Declared, not inferred: np.arange and np.array disagree on numpy's shape
+    # type parameter on some versions, and whichever branch is assigned first
+    # would otherwise fix the type for the other.
+    observation_indices: np.ndarray
     if terms.is_continuous:
         observation_indices = np.arange(1, times.size)
     else:
