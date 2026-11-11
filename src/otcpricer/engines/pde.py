@@ -74,11 +74,23 @@ class PDEConfig:
             schedule on exact grid points.
         rannacher_steps: Fully implicit start-up steps before Crank-Nicolson
             takes over. 2-4 is standard; 0 disables the damping.
+        snapshot_layers: How many time layers of the solution to keep, or 0 to
+            keep none. See :attr:`SnowballPDEResult.snapshots`.
+
+            Zero by default, so the pricing path is untouched: a solve that
+            does not ask for layers allocates nothing and behaves exactly as
+            before. Asking for them costs memory, not arithmetic -- the layers
+            are already computed and currently overwritten.
+
+            Observation dates are always kept when this is non-zero, however
+            small, and they are kept *twice*. The budget applies to the
+            ordinary steps in between.
     """
 
     space_nodes: int = 400
     steps_per_year: int = 252
     rannacher_steps: int = 4
+    snapshot_layers: int = 0
 
     def __post_init__(self) -> None:
         if self.space_nodes < 50:
@@ -87,6 +99,8 @@ class PDEConfig:
             raise ValueError(f"steps_per_year must be at least 1, got {self.steps_per_year}")
         if self.rannacher_steps < 0:
             raise ValueError(f"rannacher_steps must be non-negative, got {self.rannacher_steps}")
+        if self.snapshot_layers < 0:
+            raise ValueError(f"snapshot_layers must be non-negative, got {self.snapshot_layers}")
 
 
 #: Discretisation adequate for a local-volatility snowball. Not the default,
@@ -167,6 +181,155 @@ _MEASURED_GRID_ERROR_NOTE = (
 )
 
 
+def _ascending_layer_order(times: list[float], stages: list[str]) -> list[int]:
+    """Indices that put the collected layers in increasing calendar time.
+
+    Not simply ``reversed(range(n))``. A plain reversal does order the times,
+    but it also reverses each pre/post pair -- so the post-projection side
+    would arrive first and every event would read as a jump in the wrong
+    direction. The pairs are reversed as units with their two members left in
+    order, which is the only arrangement where the times ascend *and* each
+    event still reads pre then post.
+    """
+    units: list[list[int]] = []
+    index = 0
+    while index < len(times):
+        if (
+            stages[index] == "pre_projection"
+            and index + 1 < len(times)
+            and stages[index + 1] == "post_projection"
+        ):
+            units.append([index, index + 1])
+            index += 2
+        else:
+            units.append([index])
+            index += 1
+    return [i for unit in reversed(units) for i in unit]
+
+
+@dataclass(frozen=True, slots=True)
+class SolutionLayers:
+    """The solution at a set of calendar times, both knock-in states.
+
+    What this is for: delta and gamma at a single instant come off the one
+    surface the solver already returns, and that is enough to risk a position
+    today. It is not enough to see *how* the risk behaves -- how gamma sharpens
+    as a knock-out observation approaches, or what delta does the moment one
+    passes. That needs the solution at many times, which the backward induction
+    computes on its way to the answer and then overwrites.
+
+    Observation dates appear **twice**, with the same ``times`` entry and
+    different ``stages``. A knock-out observation is a discontinuity in the
+    contract, not in time: the instant before it, the holder has a note worth
+    the continuation value; the instant after, anything above the barrier has
+    terminated and pays a fixed coupon. One sample at that time would have to
+    pick a side, and whichever it picked would make the jump invisible.
+
+    So a repeated time coordinate is not a duplicate to be cleaned up. It is
+    the event, and anything that resamples these layers has to keep the pair
+    together -- see :meth:`subsample`.
+
+    Attributes:
+        times: Calendar time since inception, ascending but **not strictly**:
+            an observation date occurs twice. Ascending is the consumer's
+            convention, not the solver's -- the induction runs backwards and
+            the layers are reordered on the way out.
+        stages: ``"step"`` for an ordinary layer, ``"pre_projection"`` and
+            ``"post_projection"`` for the two sides of an event.
+        events: What happened at that layer -- ``""``, ``"knock_in"``,
+            ``"knock_out"``, or ``"knock_in+knock_out"`` when both fired.
+        V_no_ki: ``(n_layers, n_nodes)``, value given not knocked in.
+        V_ki: ``(n_layers, n_nodes)``, value given knocked in.
+    """
+
+    times: np.ndarray
+    stages: tuple[str, ...]
+    events: tuple[str, ...]
+    V_no_ki: np.ndarray
+    V_ki: np.ndarray
+
+    @property
+    def n_layers(self) -> int:
+        return int(self.times.size)
+
+    def surface(self, *, knocked_in: bool = False) -> np.ndarray:
+        return self.V_ki if knocked_in else self.V_no_ki
+
+    def event_indices(self) -> list[int]:
+        """Layers that are one side of an event."""
+        return [i for i, stage in enumerate(self.stages) if stage != "step"]
+
+    def subsample(self, limit: int) -> SolutionLayers:
+        """At most ``limit`` layers, with every event pair kept whole.
+
+        Thins **pair-wise**, not layer-wise. Taking every n-th layer would
+        eventually land on one side of a projection and not the other, which
+        silently converts a jump into a slope -- and the jump is the reason
+        these layers exist.
+
+        Knock-out pairs are kept in preference to knock-in ones when the
+        budget binds: there are twelve of them against the knock-ins' 252, so
+        dropping one loses a feature that occurs nowhere else, while dropping
+        a knock-in loses one of many near-identical samples of the same cliff.
+
+        **The limit has a floor and this will exceed it rather than drop a
+        knock-out.** Twice the number of knock-out observations is the least
+        this can return -- 16 layers on a monthly one-year note -- so
+        ``subsample(10)`` gives 16. Said plainly here because the first
+        version of the capture plan exceeded its budget eightfold without
+        saying so, and a limit that is sometimes advisory has to be the kind
+        that announces when it is.
+        """
+        if limit <= 0 or self.n_layers <= limit:
+            return self
+
+        units: list[list[int]] = []
+        index = 0
+        while index < self.n_layers:
+            if (
+                self.stages[index] == "pre_projection"
+                and index + 1 < self.n_layers
+                and self.stages[index + 1] == "post_projection"
+            ):
+                units.append([index, index + 1])
+                index += 2
+            else:
+                units.append([index])
+                index += 1
+
+        def cost(unit: list[int]) -> int:
+            return len(unit)
+
+        mandatory = [u for u in units if any("knock_out" in self.events[i] for i in u)]
+        optional = [u for u in units if u not in mandatory]
+        keep_units = list(mandatory)
+        spent = sum(cost(u) for u in keep_units)
+        if optional and spent < limit:
+            room = limit - spent
+            take = 0
+            while (
+                take < len(optional)
+                and sum(
+                    cost(optional[round(n * (len(optional) - 1) / max(take, 1))])
+                    for n in range(take + 1)
+                )
+                <= room
+            ):
+                take += 1
+            if take:
+                chosen = {round(n * (len(optional) - 1) / max(take - 1, 1)) for n in range(take)}
+                keep_units += [optional[i] for i in sorted(chosen)]
+
+        keep = sorted(i for unit in keep_units for i in unit)
+        return SolutionLayers(
+            times=self.times[keep],
+            stages=tuple(self.stages[i] for i in keep),
+            events=tuple(self.events[i] for i in keep),
+            V_no_ki=self.V_no_ki[keep],
+            V_ki=self.V_ki[keep],
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class SnowballPDEResult:
     """Outcome of a snowball PDE valuation, as a fraction of notional.
@@ -191,6 +354,8 @@ class SnowballPDEResult:
         dt: Time step in years, the denominator for that theta.
         space_nodes: Grid nodes used.
         time_steps: Time steps used.
+        snapshots: The solution across time, when
+            :attr:`PDEConfig.snapshot_layers` asked for it. ``None`` otherwise.
     """
 
     price: float
@@ -202,6 +367,7 @@ class SnowballPDEResult:
     dt: float
     space_nodes: int
     time_steps: int
+    snapshots: SolutionLayers | None = None
 
     def surface(self, *, knocked_in: bool = False) -> np.ndarray:
         """Return the value surface at valuation time, for a knock-in state."""
@@ -916,6 +1082,68 @@ def price_snowball_pde(
     V_no_ki_next = V_no_ki.copy()
     V_ki_next = V_ki.copy()
 
+    # --- Snapshot plan ------------------------------------------------------
+    # Decided before the loop so the loop stays a set lookup.
+    #
+    # The first version kept every event step unconditionally, reasoning that
+    # events are rare and are the whole point of keeping layers. Both halves of
+    # that were wrong, and measuring said so:
+    #
+    # **Knock-ins are not rare.** They are observed daily -- 252 a year against
+    # the knock-out's 12 -- so "keep every event" returned 504 layers for a
+    # requested 60. A budget exceeded eightfold without complaint is not a
+    # budget.
+    #
+    # **And they are the larger discontinuity.** On the reference trade the
+    # biggest jump across a knock-in projection is 0.2118 of notional against
+    # the knock-out's 0.0935 -- 2.3 times. The projection replaces the
+    # un-knocked surface below the barrier with the knocked-in one, which is a
+    # short put and worth far less, so the cliff at the knock-in barrier is the
+    # largest feature on the surface. Treating knock-ins as ordinary daily
+    # mechanics would have hidden the thing most worth looking at.
+    #
+    # So knock-outs are kept whole, always: there are twelve and each is a
+    # distinct contract feature. Knock-ins are thinned to fit, as **pairs** --
+    # both sides of whichever are kept -- because a sample on one side of a
+    # projection and not the other turns a jump into a slope.
+    want_layers = config.snapshot_layers
+    ko_only = sorted(set(ko_steps))
+    ki_only = sorted(set(ki_steps) - set(ko_steps))
+    pair_steps: set[int] = set()
+    plain_steps: set[int] = set()
+    if want_layers:
+        pair_steps |= set(ko_only)
+        # Both ends of the life, so the layers span it.
+        plain_steps |= {0, grid.n_steps - 1} - pair_steps
+        spent = 2 * len(pair_steps) + len(plain_steps)
+        if want_layers - spent >= 2 and ki_only:
+            take = min((want_layers - spent) // 2, len(ki_only))
+            if take:
+                pair_steps |= {
+                    ki_only[round(n * (len(ki_only) - 1) / max(take - 1, 1))] for n in range(take)
+                }
+                spent += 2 * take
+        if want_layers - spent > 0:
+            rest = [k for k in range(grid.n_steps) if k not in pair_steps and k not in plain_steps]
+            if rest:
+                take = min(want_layers - spent, len(rest))
+                plain_steps |= {
+                    rest[round(n * (len(rest) - 1) / max(take - 1, 1))] for n in range(take)
+                }
+    snapshot_steps = pair_steps | plain_steps
+    layer_times: list[float] = []
+    layer_stages: list[str] = []
+    layer_events: list[str] = []
+    layer_no_ki: list[np.ndarray] = []
+    layer_ki: list[np.ndarray] = []
+
+    def _capture(t: float, stage: str, event: str) -> None:
+        layer_times.append(t)
+        layer_stages.append(stage)
+        layer_events.append(event)
+        layer_no_ki.append(V_no_ki.copy())
+        layer_ki.append(V_ki.copy())
+
     # --- Backward induction -------------------------------------------------
     S_low = float(grid.S_grid[0])
 
@@ -969,6 +1197,15 @@ def price_snowball_pde(
 
         V_no_ki = grid.step(V_no_ki, bc_no_ki_low, bc_no_ki_high, theta, k)
 
+        # Both sides of an event, when layers were asked for. Taken here --
+        # after the step, before the projections -- and again after them. At an
+        # observation the contract changes rather than time passing, so a
+        # single sample would have to choose a side and whichever it chose
+        # would hide the jump.
+        is_pair = k in pair_steps
+        if k in snapshot_steps:
+            _capture(t_elapsed, "pre_projection" if is_pair else "step", "")
+
         # On a knock-in observation date, transfer value into the knocked-in
         # state wherever spot is at or below the barrier.
         if k in ki_steps:
@@ -988,6 +1225,14 @@ def price_snowball_pde(
             ko_value = coupon * ko_steps[k]
             V_no_ki[ko_slice] = ko_value
             V_ki[ko_slice] = ko_value
+
+        if is_pair:
+            which = []
+            if k in ki_steps:
+                which.append("knock_in")
+            if k in ko_steps:
+                which.append("knock_out")
+            _capture(t_elapsed, "post_projection", "+".join(which))
 
         if k == theta_step:
             V_no_ki_next = V_no_ki.copy()
@@ -1018,6 +1263,21 @@ def price_snowball_pde(
             "ko_observations": len(ko_steps),
         },
     )
+    # Reversed, because the induction runs backwards and collected these from
+    # maturity towards inception. Anything drawing a surface wants time
+    # increasing, and a consumer forced to know the solver's direction would be
+    # carrying the solver's implementation detail.
+    layers = None
+    if layer_times:
+        order = _ascending_layer_order(layer_times, layer_stages)
+        layers = SolutionLayers(
+            times=np.asarray([layer_times[i] for i in order], dtype=float),
+            stages=tuple(layer_stages[i] for i in order),
+            events=tuple(layer_events[i] for i in order),
+            V_no_ki=np.asarray([layer_no_ki[i] for i in order], dtype=float),
+            V_ki=np.asarray([layer_ki[i] for i in order], dtype=float),
+        )
+
     return SnowballPDEResult(
         price=price,
         S_grid=grid.S_grid,
@@ -1028,4 +1288,5 @@ def price_snowball_pde(
         dt=grid.dt,
         space_nodes=grid.n_nodes,
         time_steps=grid.n_steps,
+        snapshots=layers,
     )
