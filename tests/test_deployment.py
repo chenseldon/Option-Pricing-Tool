@@ -624,3 +624,61 @@ class TestReproducibilityUnderConcurrency:
                 f"{banned} is back in app.py; use a local np.random.default_rng(seed) instead"
             )
         assert "np.random.default_rng(42)" in source
+
+
+class TestTemplateReloading:
+    """Flask caches templates whenever the debugger is off.
+
+    Which is the entire point of serve.py, so the production entry point
+    served the page from its cache after every front-end edit -- silently,
+    because a cached page renders perfectly. It cost a false verification
+    while the interface was being rebuilt: a tab reorder was committed, the
+    page fetched over HTTP to confirm it, and the previous order came back.
+
+    On by default, which is a deliberate departure from what "production"
+    normally means. The cost is one ``stat()`` per request against a single
+    template; the alternative is a staleness trap that gives no sign of
+    itself, and this project has spent six phases removing exactly that shape
+    of defect.
+    """
+
+    def test_it_is_on_by_default(self) -> None:
+        from otcpricer.core.config import ServerSettings
+
+        assert ServerSettings().reload_templates is True
+
+    def test_the_environment_can_turn_it_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A real deployment behind a process manager may want the cache."""
+        monkeypatch.setenv("OTCPRICER_RELOAD_TEMPLATES", "0")
+        from otcpricer.core import config
+
+        config.get_settings.cache_clear()
+        try:
+            assert config.get_settings().server.reload_templates is False
+        finally:
+            config.get_settings.cache_clear()
+
+    def test_an_unrecognised_value_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Same rule as OTCPRICER_DEBUG: a spelling this does not know is an
+        error, not a silent false."""
+        monkeypatch.setenv("OTCPRICER_RELOAD_TEMPLATES", "sometimes")
+        from otcpricer.core import config
+
+        config.get_settings.cache_clear()
+        try:
+            with pytest.raises(ValueError):
+                config.get_settings()
+        finally:
+            config.get_settings.cache_clear()
+
+    def test_serve_sets_both_switches(self) -> None:
+        """Asserted on the source, because calling main() starts a server.
+
+        Both are needed. ``TEMPLATES_AUTO_RELOAD`` is read when Flask builds
+        its Jinja environment, and that has already happened by the time
+        ``app.py`` finishes importing -- so setting the config key alone has
+        no effect on an application that is already constructed.
+        """
+        source = (ROOT / "serve.py").read_text(encoding="utf-8")
+        assert 'config["TEMPLATES_AUTO_RELOAD"] = server.reload_templates' in source
+        assert "jinja_env.auto_reload = server.reload_templates" in source

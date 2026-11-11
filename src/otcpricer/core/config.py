@@ -119,6 +119,18 @@ class ServerSettings(BaseModel):
             "gets it by inheriting a default."
         ),
     )
+    reload_templates: bool = Field(
+        True,
+        description=(
+            "Re-read the page template when it changes on disk. On by "
+            "default, which is a deliberate departure from what 'production' "
+            "usually means: Flask caches templates whenever the debugger is "
+            "off, so this entry point served a stale page after every "
+            "front-end edit, silently -- a cached page renders perfectly. "
+            "The cost is one stat() per request against one template. Set "
+            "OTCPRICER_RELOAD_TEMPLATES=0 to cache instead."
+        ),
+    )
 
 
 class Settings(BaseModel):
@@ -207,6 +219,7 @@ def _build_settings() -> Settings:
                 "port": _env_int("OTCPRICER_PORT"),
                 "threads": _env_int("OTCPRICER_THREADS"),
                 "debug": _env_bool("OTCPRICER_DEBUG"),
+                "reload_templates": _env_bool("OTCPRICER_RELOAD_TEMPLATES"),
             }
         )
     )

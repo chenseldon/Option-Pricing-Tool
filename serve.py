@@ -48,6 +48,7 @@ interpreter. Configuration is by environment variable, in the same
 ``OTCPRICER_HOST``           interface to bind (default ``127.0.0.1``)
 ``OTCPRICER_PORT``           port (default ``5000``)
 ``OTCPRICER_THREADS``        waitress worker threads (default ``8``)
+``OTCPRICER_RELOAD_TEMPLATES`` re-read the page when it changes (default on)
 ``OTCPRICER_DEBUG``          ``1`` to use the development server instead
 ===========================  ==========================================
 
@@ -117,6 +118,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     from app import app as application
+
+    # Flask caches templates unless the debugger is on, so with the debugger
+    # off -- which is the entire point of this file -- a front-end edit is
+    # served from the cache until the process restarts. It cost a false
+    # verification while this was being built: a tab reorder was committed,
+    # the page fetched over HTTP to check it, and the old order came back.
+    #
+    # jinja_env.auto_reload is set as well as the config key. The config key
+    # alone is read when Flask builds its Jinja environment, and that has
+    # already happened by the time app.py finishes importing.
+    application.config["TEMPLATES_AUTO_RELOAD"] = server.reload_templates
+    application.jinja_env.auto_reload = server.reload_templates
 
     if server.debug:
         # Reachable only through OTCPRICER_DEBUG. Announced loudly, because a
