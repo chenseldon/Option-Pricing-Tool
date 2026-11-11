@@ -41,8 +41,11 @@ Author: GitHub Portfolio Project
 """
 
 import os
+import re
 import sys
+from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 import openpyxl
@@ -415,18 +418,103 @@ def vol_smile():
 #: served a stale fit.
 _SURFACE_CACHE = {}
 
+#: Where an uploaded chain is kept.
+#:
+#: Files are named by a hash of their own contents, never by the name the
+#: caller supplied -- a client-chosen filename reaching a path join is the
+#: oldest upload defect there is. The hash also makes the same chain uploaded
+#: twice one file rather than two.
+UPLOAD_DIR = Path("data/uploads")
 
-def _cached_surface(underlying, source_kind, snapshot, rate):
-    key = (underlying, source_kind, snapshot, round(float(rate), 10))
-    if key not in _SURFACE_CACHE:
-        _SURFACE_CACHE[key] = fit_surface(
-            underlying, source_kind=source_kind, snapshot=snapshot, rate=rate
+#: Largest chain this will accept, in bytes. The committed 510300 snapshot is
+#: 126 contracts and about 9 KB as CSV; the CFFEX index option boards are a
+#: few thousand rows. 8 MB is far above anything real and far below anything
+#: that would exhaust memory.
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSpec:
+    """Everything that decides which option chain gets fitted.
+
+    One object rather than six positional arguments threaded through three
+    cache layers. This project has already had three defects from argument
+    order alone -- ``_panel_rate_curve``, ``/api/carry`` and
+    ``AkshareSource.fetch`` each evaluated their arguments in the wrong order,
+    and each read correctly -- and six positionals through three layers is
+    where the fourth would come from.
+
+    Frozen and hashable, so it is also the cache key instead of a tuple that
+    each layer assembles by hand. Adding a source argument is then one field,
+    not an edit at every layer and every call site.
+    """
+
+    underlying: str
+    source_kind: str | None = None
+    snapshot: str | None = None
+    rate: float = DEFAULT_RATE
+    csv_path: Path | None = None
+    as_of: object | None = None
+
+    @property
+    def key(self):
+        """Hashable identity, with the rate rounded as the old key was."""
+        return (
+            self.underlying,
+            self.source_kind,
+            self.snapshot,
+            round(float(self.rate), 10),
+            str(self.csv_path or ""),
+            str(self.as_of or ""),
         )
-    return _SURFACE_CACHE[key]
+
+    def describe(self):
+        """What a reader needs to see beside a number that came from here."""
+        parts = [self.underlying, self.source_kind or "configured default"]
+        if self.snapshot:
+            parts.append(f"snapshot={self.snapshot}")
+        if self.csv_path:
+            parts.append(f"csv={self.csv_path.name}")
+        if self.as_of:
+            parts.append(f"as_of={self.as_of}")
+        parts.append(f"r={self.rate:.6g}")
+        return " / ".join(parts)
+
+
+def _cached_surface(spec):
+    if spec.key not in _SURFACE_CACHE:
+        _SURFACE_CACHE[spec.key] = fit_surface(
+            spec.underlying,
+            source_kind=spec.source_kind,
+            snapshot=spec.snapshot,
+            csv_path=spec.csv_path,
+            as_of=spec.as_of,
+            rate=spec.rate,
+        )
+    return _SURFACE_CACHE[spec.key]
+
+
+def _upload_path(token):
+    """Resolve an upload token to a file, refusing anything else.
+
+    The token is the content hash this server assigned on upload, never a name
+    the caller chose. Validated by shape rather than merely joined to a
+    directory: a token is sixteen hex characters, so ``..`` and path
+    separators cannot occur in a valid one, and refusing on the shape leaves
+    nothing to reason about afterwards.
+    """
+    if not re.fullmatch(r"[0-9a-f]{16}", str(token or "")):
+        raise ValueError(
+            "csv_token must be the 16-character token returned by /api/marketdata/upload"
+        )
+    path = UPLOAD_DIR / f"{token}.csv"
+    if not path.exists():
+        raise ValueError(f"no uploaded chain {token!r}; upload it again.")
+    return path
 
 
 def _surface_request(data):
-    """Pull the common surface arguments out of a request body."""
+    """Pull the source arguments out of a request body into a SourceSpec."""
     underlying = str(data.get("underlying", "510050")).strip()
     if underlying not in SUPPORTED_UNDERLYINGS:
         raise ValueError(
@@ -434,9 +522,21 @@ def _surface_request(data):
             f"{', '.join(sorted(SUPPORTED_UNDERLYINGS))}"
         )
     source_kind = data.get("source")
-    snapshot = data.get("snapshot")
-    rate = float(data.get("r", data.get("rate", DEFAULT_RATE)))
-    return underlying, source_kind, snapshot, rate
+    csv_path = None
+    if data.get("csv_token"):
+        csv_path = _upload_path(data["csv_token"])
+        # An uploaded chain implies the csv kind. Stated rather than required,
+        # because a caller who sent a token and forgot `source` meant csv.
+        source_kind = source_kind or "csv"
+
+    return SourceSpec(
+        underlying=underlying,
+        source_kind=source_kind,
+        snapshot=data.get("snapshot"),
+        rate=float(data.get("r", data.get("rate", DEFAULT_RATE))),
+        csv_path=csv_path,
+        as_of=_panel_date(data["as_of"]) if data.get("as_of") else None,
+    )
 
 
 @app.route("/api/vol_surface/fit", methods=["POST"])
@@ -467,13 +567,13 @@ def vol_surface_fit():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate = _surface_request(data)
+        spec = _surface_request(data)
         want_report = bool(data.get("report", False))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+        fitted = _cached_surface(spec)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -510,7 +610,7 @@ def vol_surface_query():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate = _surface_request(data)
+        spec = _surface_request(data)
         n_moneyness = max(3, min(int(data.get("n_moneyness", 41)), 401))
         n_maturities = max(2, min(int(data.get("n_maturities", 25)), 201))
         t_max = float(data.get("t_max", 3.0))
@@ -524,7 +624,7 @@ def vol_surface_query():
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+        fitted = _cached_surface(spec)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -575,7 +675,7 @@ def vol_surface_query():
 
     return jsonify(
         {
-            "underlying": underlying,
+            "underlying": spec.underlying,
             "as_of": fitted.as_of,
             "source": fitted.source,
             "reference_forward": round(reference_forward, 6),
@@ -636,17 +736,14 @@ def vol_surface_snapshots():
 _LOCAL_VOL_CACHE = {}
 
 
-def _cached_local_vol(underlying, source_kind, snapshot, rate, spot, tail_drift):
+def _cached_local_vol(spec, spot, tail_drift):
     key = (
-        underlying,
-        source_kind,
-        snapshot,
-        round(float(rate), 10),
+        spec.key,
         None if spot is None else round(float(spot), 10),
         round(float(tail_drift), 10),
     )
     if key not in _LOCAL_VOL_CACHE:
-        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+        fitted = _cached_surface(spec)
         _LOCAL_VOL_CACHE[key] = (
             fitted,
             local_vol_from_fitted(fitted, spot=spot, tail_drift=tail_drift),
@@ -656,7 +753,7 @@ def _cached_local_vol(underlying, source_kind, snapshot, rate, spot, tail_drift)
 
 def _local_vol_request(data):
     """Pull the local-volatility arguments out of a request body."""
-    underlying, source_kind, snapshot, rate = _surface_request(data)
+    spec = _surface_request(data)
     spot = data.get("S", data.get("spot"))
     spot = None if spot is None else float(spot)
     if spot is not None and spot <= 0.0:
@@ -667,7 +764,7 @@ def _local_vol_request(data):
     # drop the forward 14% on that evidence alone.
     q = float(data.get("q", 0.0))
     basis = float(data.get("basis_pa", 0.0))
-    return underlying, source_kind, snapshot, rate, spot, rate - q - basis
+    return spec, spot, spec.rate - q - basis
 
 
 @app.route("/api/local_vol/surface", methods=["POST"])
@@ -693,7 +790,7 @@ def local_vol_surface():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate, spot, tail = _local_vol_request(data)
+        spec, spot, tail = _local_vol_request(data)
         horizon = float(data.get("horizon", 3.0))
         if horizon <= 0.0:
             raise ValueError("horizon must be positive")
@@ -703,7 +800,7 @@ def local_vol_surface():
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted, lv = _cached_local_vol(underlying, source_kind, snapshot, rate, spot, tail)
+        fitted, lv = _cached_local_vol(spec, spot, tail)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -730,7 +827,7 @@ def local_vol_surface():
 
     return jsonify(
         {
-            "underlying": underlying,
+            "underlying": spec.underlying,
             "as_of": fitted.as_of,
             "spot": round(lv.spot, 6),
             "spots": [round(float(x), 6) for x in spots],
@@ -771,13 +868,13 @@ def local_vol_validate():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate, spot, tail = _local_vol_request(data)
+        spec, spot, tail = _local_vol_request(data)
         want_report = bool(data.get("report", False))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted, lv = _cached_local_vol(underlying, source_kind, snapshot, rate, spot, tail)
+        fitted, lv = _cached_local_vol(spec, spot, tail)
         rows = round_trip(fitted, lv)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
@@ -785,7 +882,7 @@ def local_vol_validate():
     worst = max((abs(r.error_vol_points) for r in rows), default=0.0)
     budget = fitted.calibration.rms_vol_error * 100.0
     payload = {
-        "underlying": underlying,
+        "underlying": spec.underlying,
         "as_of": fitted.as_of,
         "rows": [r.as_dict() for r in rows],
         "worst_error_vol_points": round(worst, 6),
@@ -817,7 +914,7 @@ def european_local_vol():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate, spot, tail = _local_vol_request(data)
+        spec, spot, tail = _local_vol_request(data)
         strike = float(data["K"])
         T = float(data["T"])
         flag = str(data.get("flag", "c")).lower()
@@ -827,10 +924,12 @@ def european_local_vol():
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted, lv = _cached_local_vol(underlying, source_kind, snapshot, rate, spot, tail)
-        result = price_european_pde(lv.spot, strike, T, rate, flag, lv)
+        fitted, lv = _cached_local_vol(spec, spot, tail)
+        result = price_european_pde(lv.spot, strike, T, spec.rate, flag, lv)
         forward = float(lv.forward(T))
-        implied = float(calc_implied_volatility(flag, result.price, forward, strike, T, rate, rate))
+        implied = float(
+            calc_implied_volatility(flag, result.price, forward, strike, T, spec.rate, spec.rate)
+        )
     except (OtcPricerError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
 
@@ -877,10 +976,10 @@ SHARK_FIN_PDE_CONFIG = PDEConfig(space_nodes=3200, steps_per_year=2016)
 _HESTON_CACHE = {}
 
 
-def _cached_heston(underlying, source_kind, snapshot, rate):
-    key = (underlying, source_kind, snapshot, round(float(rate), 10))
+def _cached_heston(spec):
+    key = spec.key
     if key not in _HESTON_CACHE:
-        fitted = _cached_surface(underlying, source_kind, snapshot, rate)
+        fitted = _cached_surface(spec)
         usable = fitted.surface_input.usable_slices
         calibration = calibrate_heston(
             [s.year_fraction for s in usable],
@@ -888,7 +987,7 @@ def _cached_heston(underlying, source_kind, snapshot, rate):
             [np.array([q.implied_vol for q in s.points]) for s in usable],
             [np.array([q.vega for q in s.points]) for s in usable],
             forwards=[s.forward.forward for s in usable],
-            rate=rate,
+            rate=spec.rate,
             terms=192,
         )
         _HESTON_CACHE[key] = (fitted, calibration)
@@ -918,19 +1017,19 @@ def heston_calibrate():
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
-        underlying, source_kind, snapshot, rate = _surface_request(data)
+        spec = _surface_request(data)
         want_report = bool(data.get("report", False))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
     try:
-        fitted, calibration = _cached_heston(underlying, source_kind, snapshot, rate)
+        fitted, calibration = _cached_heston(spec)
     except OtcPricerError as e:
         return jsonify({"error": str(e)}), 400
 
     ssvi_rms = fitted.calibration.rms_vol_error * 100.0
     payload = calibration.as_dict()
-    payload["underlying"] = underlying
+    payload["underlying"] = spec.underlying
     payload["as_of"] = fitted.as_of
     payload["ssvi_rms_vol_points"] = round(ssvi_rms, 5)
     payload["heston_over_ssvi"] = (
@@ -940,7 +1039,7 @@ def heston_calibrate():
     if want_report:
         payload["report"] = heston_report(
             calibration,
-            underlying=underlying,
+            underlying=spec.underlying,
             as_of=fitted.as_of,
             ssvi_rms_vol_points=ssvi_rms,
         )
@@ -978,18 +1077,18 @@ def heston_european():
 
     try:
         if params is None:
-            underlying, source_kind, snapshot, fit_rate = _surface_request(data)
-            fitted, calibration = _cached_heston(underlying, source_kind, snapshot, fit_rate)
+            spec = _surface_request(data)
+            fitted, calibration = _cached_heston(spec)
             params = calibration.params
             # The surface carries no spot -- it is parameterised in forward
             # terms on purpose -- so the default is the nearest expiry's
             # forward discounted back. A caller who has a spot should pass it.
             nearest = min(fitted.surface_input.usable_slices, key=lambda sl: sl.year_fraction)
             implied_spot = nearest.forward.forward * float(
-                np.exp(-fit_rate * nearest.year_fraction)
+                np.exp(-spec.rate * nearest.year_fraction)
             )
             spot = float(data.get("S", implied_spot))
-            source = f"calibrated:{underlying}"
+            source = f"calibrated:{spec.underlying}"
         else:
             spot = float(data.get("S", 100.0))
             source = "explicit"
@@ -1076,10 +1175,10 @@ def heston_snowball():
 
     try:
         if params is None:
-            underlying, source_kind, snapshot, fit_rate = _surface_request(data)
-            _, calibration = _cached_heston(underlying, source_kind, snapshot, fit_rate)
+            spec = _surface_request(data)
+            _, calibration = _cached_heston(spec)
             params = calibration.params
-            source = f"calibrated:{underlying}"
+            source = f"calibrated:{spec.underlying}"
         else:
             source = "explicit"
         snowball_terms = SnowballTerms(**terms_kwargs)
@@ -1564,15 +1663,14 @@ def _snowball_local_vol(d, market):
     """
     if "underlying" not in d:
         return None, None
-    underlying, source_kind, snapshot, _ = _surface_request(d)
-    return _cached_local_vol(
-        underlying,
-        source_kind,
-        snapshot,
-        market.r,
-        market.S,
-        market.drift,
-    )
+    from dataclasses import replace as _replace
+
+    # The market's rate wins over whatever the request said, because the
+    # snowball is being priced in that market. Stated as a replace() on the
+    # spec so the substitution is visible; the previous positional call passed
+    # market.r into a `rate` slot and dropped the parsed one without saying so.
+    spec = _replace(_surface_request(d), rate=market.r)
+    return _cached_local_vol(spec, market.S, market.drift)
 
 
 def _snowball_grid(d, local_vol, *, nodes=1600, steps=1008):
