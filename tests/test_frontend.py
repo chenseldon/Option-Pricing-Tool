@@ -829,3 +829,67 @@ class TestTheChartingLibraryClaim:
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
         wrong = sorted({k for k in self._KNOWN if k != loaded and k in readme.lower()})
         assert wrong == [], f"README still mentions {wrong} while the page loads {loaded!r}"
+
+
+class TestTheSharedPlotTemplate:
+    """PLOT() styles every chart, and it used to drop what it did not know.
+
+    The first version named the keys it understood and silently discarded the
+    rest, so the Monte Carlo chart's ``bargap:0`` never reached Plotly and its
+    bars drew with gaps where the ECharts version had them touching. Nothing
+    reported it: a layout key Plotly never receives is not an error, and a bar
+    chart with gaps looks like a bar chart.
+
+    Found by listing the keys every call site passes and intersecting with the
+    keys the function reads -- which is the check below, kept rather than
+    thrown away, because the forwarding is one deletion away from regressing.
+    """
+
+    _NAMED = ("x", "y", "xaxis", "yaxis", "title", "legend", "hovermode", "margin")
+
+    @staticmethod
+    def _plot_body(page: str) -> str:
+        body = page[page.index("function PLOT(") :]
+        return body[: body.index("\n}")]
+
+    def test_it_forwards_keys_it_does_not_name(self, page: str) -> None:
+        """The whole point: any valid Plotly layout key works without this
+        function having to know about it."""
+        body = self._plot_body(page)
+        assert "...rest" in body, (
+            "PLOT() no longer spreads its unrecognised keys into the layout, so "
+            "any layout key it does not name is being dropped again"
+        )
+
+    def test_every_key_any_caller_passes_is_either_named_or_forwarded(self, page: str) -> None:
+        """Belt and braces. With the rest spread this holds by construction;
+        it fails loudly if the spread is removed and a caller is relying on it.
+        """
+        body = self._plot_body(page)
+        forwards = "...rest" in body
+
+        passed: set[str] = set()
+        for match in re.finditer(r"PLOT\(\{", page):
+            opening = match.end() - 1
+            depth, index = 0, opening
+            while index < len(page):
+                if page[index] == "{":
+                    depth += 1
+                elif page[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                index += 1
+            arg = page[opening : index + 1]
+            for key in re.finditer(r"([a-zA-Z_]\w*)\s*:", arg):
+                before = arg[: key.start()]
+                # Top level of this object literal only.
+                if before.count("{") - before.count("}") == 1 and before.count("[") == before.count(
+                    "]"
+                ):
+                    passed.add(key.group(1))
+
+        assert passed, "no PLOT() call sites parsed"
+        if not forwards:
+            dropped = sorted(passed - set(self._NAMED))
+            assert dropped == [], f"PLOT() would drop {dropped}"

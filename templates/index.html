@@ -1314,8 +1314,18 @@ const PCFG = {
 // Every chart starts from this. The ECharts version repeated its axis colours
 // in all ten option blocks -- thirty-three literals -- which is why a theme
 // change used to mean editing every chart.
+//
+// `x` / `y` are shorthand for the axis titles; `xaxis` / `yaxis` merge into
+// the styled axes; `title` and `legend` get their own handling. **Everything
+// else is forwarded to the layout verbatim via the rest spread**, and that
+// matters: the first version named the keys it understood and silently
+// dropped the rest, so the Monte Carlo chart's `bargap:0` vanished and its
+// bars drew with gaps where the ECharts version had them touching. Nothing
+// reported it -- a layout key Plotly never receives is not an error. Any
+// valid Plotly layout key now works here without this function having to
+// know about it.
 function PLOT(o){
-  o = o || {};
+  const {x, y, xaxis, yaxis, title, legend, hovermode, margin, ...rest} = o || {};
   const axFont = {color:PAL.tx2, size:10, family:FONT};
   const axis = extra => ({
     tickfont:axFont, gridcolor:PAL.bd2, zerolinecolor:PAL.bd, linecolor:PAL.bd,
@@ -1324,16 +1334,15 @@ function PLOT(o){
   const layout = {
     paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
     font:{family:FONT, size:11, color:PAL.tx},
-    margin:o.margin || {l:58, r:22, t:o.title ? 36 : 14, b:46},
-    xaxis:axis({title:{text:o.x||'', font:axFont}, ...(o.xaxis||{})}),
-    yaxis:axis({title:{text:o.y||'', font:axFont}, ...(o.yaxis||{})}),
-    showlegend:o.legend === true,
+    margin:margin || {l:58, r:22, t:title ? 36 : 14, b:46},
+    xaxis:axis({title:{text:x||'', font:axFont}, ...(xaxis||{})}),
+    yaxis:axis({title:{text:y||'', font:axFont}, ...(yaxis||{})}),
+    showlegend:legend === true,
     legend:{orientation:'h', x:0, y:1.12, font:{size:10, color:PAL.tx2}},
-    hovermode:o.hovermode || 'closest',
-    shapes:o.shapes || [],
-    annotations:o.annotations || [],
+    hovermode:hovermode || 'closest',
+    ...rest,
   };
-  if(o.title) layout.title = {text:o.title, font:{size:12, color:PAL.tx}, x:0.5, xanchor:'center', y:0.97};
+  if(title) layout.title = {text:title, font:{size:12, color:PAL.tx}, x:0.5, xanchor:'center', y:0.97};
   return layout;
 }
 
