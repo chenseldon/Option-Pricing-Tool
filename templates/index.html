@@ -829,7 +829,35 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
             <div class="metric-card"><div class="metric-label" id="lbl-vs-asof">As Of</div><div class="metric-val" style="font-size:11px" id="vs-asof">—</div></div>
           </div>
           <p class="hint" id="vs-note">—</p>
-          <div id="chart-surface" style="height:320px;margin-top:8px"></div>
+
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0">
+            <label class="chk"><input type="checkbox" id="vs-show-quotes" checked onchange="redrawSurface()"/> <span id="lbl-vs-quotes">Show the quotes it was fitted to</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:120px">
+              <label id="lbl-vs-horizon">Draw out to (y)</label>
+              <select id="vs-horizon" onchange="calcSurface()">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+              </select>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-vs-stretch">Time axis</label>
+              <input type="range" id="vs-stretch" min="0.4" max="2.4" step="0.1" value="1.1" oninput="stretchSurface()"/>
+            </div>
+          </div>
+
+          <div id="chart-surface" style="height:460px;margin-top:4px"></div>
+          <p class="hint" id="vs-pick">Click the surface to pin a point; the two charts below follow it.</p>
+          <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+            <div>
+              <div class="hint" id="lbl-vs-slice-k">Fixed expiry, along strike &mdash; the smile</div>
+              <div id="chart-vs-smile" style="height:260px"></div>
+            </div>
+            <div>
+              <div class="hint" id="lbl-vs-slice-t">Fixed moneyness, along time &mdash; the term structure</div>
+              <div id="chart-vs-term" style="height:260px"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3140,13 +3168,18 @@ function surfaceRequest(){
   };
 }
 
+// Everything the surface panel is currently showing, so the quote overlay can
+// be toggled and the axis stretched without re-fitting or re-querying.
+let vsState = null;
+
 async function calcSurface(){
   const btn = $('btn-vs');
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Fitting…'; }
   try{
     const req = surfaceRequest();
     const res = await fetch('/api/vol_surface/fit',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify(req)});
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...req, include_quotes: true})});
     const d = await res.json();
     if(d.error){ showErr('Surface: ' + d.error); return; }
 
@@ -3194,16 +3227,18 @@ async function calcSurface(){
           `no amount of grid refinement touches that.`
         : '');
 
-    await drawSurfaceHeatmap(req, d.calibration);
+    await loadSurfaceGrid(req, d);
     $('vs-results').style.display = '';
   }catch(e){ showErr('Surface error: ' + e.message); }
   finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Fit Surface'; } }
 }
 
-async function drawSurfaceHeatmap(req, cal){
+async function loadSurfaceGrid(req, fit){
   // Sampled around the surface's own reference forward rather than around
-  // spot: the surface is parameterised in log-moneyness k = log(K/F), so a
-  // strike grid centred anywhere else would sample the wrong part of it.
+  // spot: SSVI is parameterised in k = log(K/F), so a strike grid centred
+  // anywhere else samples the wrong part of it. That is the same mistake, in
+  // a different place, as the spot/forward mismatch Phase 2 removed from the
+  // engine.
   const probe = await fetch('/api/vol_surface/query',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({...req, strikes:[1.0], maturities:[0.5]})});
@@ -3211,9 +3246,15 @@ async function drawSurfaceHeatmap(req, cal){
   if(first.error){ showErr('Surface query: ' + first.error); return; }
   const F = first.reference_forward;
 
-  const moneyness = [-0.30,-0.22,-0.15,-0.08,-0.04,0,0.04,0.08,0.15,0.22,0.30];
+  const horizon = +$('vs-horizon').value;
+  // Denser than the old heat map: a surface is read as a shape, so the
+  // sampling has to be fine enough that the shape is the surface's and not
+  // the grid's. 31 x 25 draws in well under a second.
+  const moneyness = [];
+  for(let k = -0.40; k <= 0.4001; k += 0.80/30) moneyness.push(+k.toFixed(6));
   const strikes = moneyness.map(k => +(F * Math.exp(k)).toFixed(6));
-  const maturities = [0.08,0.17,0.25,0.5,0.75,1.0,1.5,2.0,3.0];
+  const maturities = [];
+  for(let n = 0; n < 25; n++) maturities.push(+(0.04 + n*(horizon-0.04)/24).toFixed(6));
 
   const res = await fetch('/api/vol_surface/query',{method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -3221,35 +3262,190 @@ async function drawSurfaceHeatmap(req, cal){
   const q = await res.json();
   if(q.error){ showErr('Surface query: ' + q.error); return; }
 
+  vsState = {q, F, fit, quotes: fit.quotes || [],
+             lastQuoted: Math.max(...q.quoted_maturities)};
+  redrawSurface();
+  // Pin the middle of the quoted region so the slices below are not empty.
+  vsPick(0, q.maturities.findIndex(t => t >= vsState.lastQuoted * 0.5));
+}
+
+function redrawSurface(){
+  if(!vsState) return;
+  const {q, F, quotes, lastQuoted} = vsState;
+
+  // z is [row][col] = [y][x] and the endpoint returns implied_vol[i][j] at
+  // maturities[i], moneyness[j] -- so maturity is y and the grid goes in as
+  // it arrives. Transposing it would be the easiest mistake here and the
+  // hardest to see, since a transposed smile still looks like a smile.
   const z = q.implied_vol.map(row => row.map(v =>
-    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(2)));
-  const flat = z.flat().filter(v => v != null);
-  const lo = Math.min(...flat), hi = Math.max(...flat);
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(3)));
 
-  const lastQuoted = Math.max(...q.quoted_maturities);
-  const firstBeyond = q.maturities.findIndex(t => t > lastQuoted);
+  const traces = [{
+    type:'surface', x:q.moneyness, y:q.maturities, z,
+    colorscale:'Viridis', opacity:0.88, showscale:true, name:'SSVI',
+    colorbar:{title:{text:'IV %', font:{size:10, color:PAL.tx2}},
+              tickfont:{size:9, color:PAL.tx2}, len:0.65, thickness:12},
+    contours:{z:{show:true, usecolormap:true, project:{z:false},
+                 highlightcolor:PAL.amber, width:1}},
+    hovertemplate:'k %{x:.3f}<br>T %{y:.3f}y<br>IV %{z:.2f}%<extra>SSVI</extra>',
+  }];
 
-  draw('chart-surface',[
-    {type:'heatmap', z,
-     x:q.moneyness.map(k=>fmt(k,2)), y:q.maturities.map(t=>fmt(t,2)),
-     colorscale:'Viridis', zmin:Math.floor(lo), zmax:Math.ceil(hi),
-     texttemplate:'%{z}', textfont:{size:9},
-     colorbar:{title:{text:'%', font:{size:10, color:PAL.tx2}},
-               tickfont:{size:9, color:PAL.tx2}, len:0.8, thickness:12},
-     hovertemplate:'T = %{y}y<br>k = %{x}<br>IV = %{z}%<extra></extra>'},
-  ], PLOT({title:`Implied Volatility (%) — ${q.underlying}, forward ${fmt(F,4)}`,
-           x:'log-moneyness k = log(K/F)', y:'maturity (y)',
-           margin:{l:70,r:20,t:52,b:48},
-           xaxis:{showgrid:false}, yaxis:{showgrid:false},
-           shapes: firstBeyond > 0 ? [{
-             type:'line', xref:'paper', x0:0, x1:1,
-             yref:'y', y0:firstBeyond-0.5, y1:firstBeyond-0.5,
-             line:{color:PAL.red, dash:'dash', width:1.5}}] : [],
-           annotations: firstBeyond > 0 ? [{
-             xref:'paper', x:0.5, xanchor:'center',
-             yref:'y', y:firstBeyond-0.5, yanchor:'bottom',
-             text:`last quoted expiry ${fmt(lastQuoted,2)}y — above this line is extrapolated`,
-             showarrow:false, font:{size:9, color:PAL.red}}] : []}));
+  // The quotes the fit actually used, on top of the surface it produced. This
+  // is the whole credibility of the picture: a fitted surface looks smooth and
+  // plausible whether or not it goes through anything.
+  if($('vs-show-quotes').checked && quotes.length){
+    const kx = [], ty = [], vz = [], txt = [];
+    quotes.forEach(sl => sl.log_moneyness.forEach((k, i) => {
+      kx.push(k); ty.push(sl.year_fraction); vz.push(sl.implied_vol[i]*100);
+      txt.push(`${sl.expiry_tag} &middot; K ${fmt(sl.strike[i],4)} &middot; ` +
+               `${sl.option_type[i] === 'c' ? 'call' : 'put'}`);
+    }));
+    traces.push({
+      type:'scatter3d', mode:'markers', x:kx, y:ty, z:vz, name:'quotes fitted',
+      marker:{size:3.2, color:PAL.red, line:{width:0}},
+      text:txt,
+      hovertemplate:'%{text}<br>k %{x:.3f}<br>T %{y:.3f}y<br>IV %{z:.2f}%<extra></extra>',
+    });
+  }
+
+  const stretch = +$('vs-stretch').value;
+  Plotly.react('chart-surface', traces, {
+    paper_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:{l:0, r:0, t:10, b:0},
+    showlegend:true,
+    legend:{orientation:'h', x:0, y:1.0, font:{size:10, color:PAL.tx2}},
+    scene:{
+      xaxis:{title:{text:'k = log(K/F)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      yaxis:{title:{text:'maturity (y)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      zaxis:{title:{text:'implied vol (%)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      aspectmode:'manual', aspectratio:{x:1.15, y:stretch, z:0.65},
+      camera:{eye:{x:1.6, y:-1.65, z:0.85}},
+      dragmode:'orbit',
+      // Keeps the camera where the reader put it across a redraw, which is
+      // what makes the quote toggle usable rather than disorienting.
+      uirevision:'surface-camera',
+    },
+  }, PCFG);
+  PLOTS.add('chart-surface');
+
+  const el = $('chart-surface');
+  if(el && !el._vsClickBound){
+    el._vsClickBound = true;
+    el.on('plotly_click', e => {
+      const p = e.points[0];
+      if(p.data.type !== 'surface') return;
+      const j = nearestIndex(vsState.q.moneyness, p.x);
+      const i = nearestIndex(vsState.q.maturities, p.y);
+      vsPick(j, i);
+    });
+  }
+
+  $('vs-pick').textContent =
+    `Quotes reach ${fmt(lastQuoted,3)}y; the surface is drawn to ` +
+    `${fmt(Math.max(...q.maturities),2)}y, so everything past the quoted edge ` +
+    `is the parameterisation's own extension. Click the surface to pin a point.`;
+}
+
+function nearestIndex(values, target){
+  let best = 0;
+  for(let i = 1; i < values.length; i++){
+    if(Math.abs(values[i]-target) < Math.abs(values[best]-target)) best = i;
+  }
+  return best;
+}
+
+function stretchSurface(){
+  if(!vsState) return;
+  Plotly.relayout('chart-surface',
+    {'scene.aspectratio': {x:1.15, y:+$('vs-stretch').value, z:0.65}});
+}
+
+// The two slices through the point that was clicked. Fixed expiry along
+// strike is the smile; fixed moneyness along time is the term structure. Both
+// carry the market quotes that belong to that cut, which is what makes them
+// worth having over reading the 3D picture by eye.
+function vsPick(j, i){
+  if(!vsState) return;
+  const {q, quotes, lastQuoted} = vsState;
+  j = Math.max(0, Math.min(j, q.moneyness.length - 1));
+  i = Math.max(0, Math.min(i, q.maturities.length - 1));
+  const kPicked = q.moneyness[j], tPicked = q.maturities[i];
+
+  // --- fixed expiry, along strike -----------------------------------------
+  const smileTraces = [{
+    type:'scatter', mode:'lines', x:q.moneyness,
+    y:q.implied_vol[i].map(v => v == null ? null : v*100),
+    name:`SSVI at T=${fmt(tPicked,3)}y`, line:{color:PAL.blue, width:2},
+    connectgaps:false,
+    hovertemplate:'k %{x:.3f}<br>IV %{y:.2f}%<extra></extra>',
+  }];
+  // The nearest quoted expiry's own points, labelled with how far away it is:
+  // a smile drawn at 1.8 years next to quotes from 0.4 is not a comparison.
+  const near = nearestQuotedSlice(tPicked);
+  if(near){
+    smileTraces.push({
+      type:'scatter', mode:'markers', x:near.log_moneyness,
+      y:near.implied_vol.map(v => v*100),
+      name:`quotes at T=${fmt(near.year_fraction,3)}y`,
+      marker:{color:PAL.red, size:7},
+      hovertemplate:'k %{x:.3f}<br>IV %{y:.2f}%<extra>market</extra>',
+    });
+  }
+  draw('chart-vs-smile', smileTraces, PLOT({
+    x:'k = log(K/F)', y:'implied vol (%)', legend:true,
+    margin:{l:56,r:16,t:26,b:44},
+    shapes:[vline(0, PAL.tx2, 'dot')],
+    annotations:[vlabel(0, 'at the money', PAL.tx2)],
+  }));
+
+  // --- fixed moneyness, along time ----------------------------------------
+  const termTraces = [{
+    type:'scatter', mode:'lines', x:q.maturities,
+    y:q.maturities.map((_, r) => {
+      const v = q.implied_vol[r][j];
+      return v == null ? null : v*100;
+    }),
+    name:`SSVI at k=${fmt(kPicked,3)}`, line:{color:PAL.blue, width:2},
+    connectgaps:false,
+    hovertemplate:'T %{x:.3f}y<br>IV %{y:.2f}%<extra></extra>',
+  }];
+  // One market point per quoted expiry, taken at the quote nearest the picked
+  // moneyness -- the boards do not have a contract at every k.
+  const tx = [], ty = [], tt = [];
+  quotes.forEach(sl => {
+    let b = 0;
+    for(let n = 1; n < sl.log_moneyness.length; n++){
+      if(Math.abs(sl.log_moneyness[n]-kPicked) < Math.abs(sl.log_moneyness[b]-kPicked)) b = n;
+    }
+    tx.push(sl.year_fraction); ty.push(sl.implied_vol[b]*100);
+    tt.push(`${sl.expiry_tag} &middot; nearest quote at k ${fmt(sl.log_moneyness[b],3)}`);
+  });
+  if(tx.length){
+    termTraces.push({type:'scatter', mode:'markers', x:tx, y:ty, text:tt,
+      name:'nearest quote', marker:{color:PAL.red, size:7},
+      hovertemplate:'%{text}<br>IV %{y:.2f}%<extra></extra>'});
+  }
+  draw('chart-vs-term', termTraces, PLOT({
+    x:'maturity (y)', y:'implied vol (%)', legend:true,
+    margin:{l:56,r:16,t:26,b:44},
+    shapes:[vline(lastQuoted, PAL.red, 'dash')],
+    annotations:[vlabel(lastQuoted, 'quotes end', PAL.red)],
+  }));
+
+  $('lbl-vs-slice-k').textContent =
+    `Fixed expiry T = ${fmt(tPicked,3)}y, along strike \u2014 the smile`;
+  $('lbl-vs-slice-t').textContent =
+    `Fixed moneyness k = ${fmt(kPicked,3)}, along time \u2014 the term structure`;
+}
+
+function nearestQuotedSlice(t){
+  if(!vsState || !vsState.quotes.length) return null;
+  let best = vsState.quotes[0];
+  for(const sl of vsState.quotes){
+    if(Math.abs(sl.year_fraction - t) < Math.abs(best.year_fraction - t)) best = sl;
+  }
+  return best;
 }
 
 // ========== HESTON ==========

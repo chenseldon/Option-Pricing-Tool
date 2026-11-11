@@ -270,7 +270,28 @@ class TestTheModelsTab:
         assert "/api/vol_surface/fit" in page
         assert "/api/vol_surface/query" in page
         assert "function calcSurface()" in page
-        assert "async function drawSurfaceHeatmap(" in page
+
+    def test_it_draws_a_real_surface_rather_than_a_heat_map(self, page: str) -> None:
+        """The reason the charting library was swapped at all.
+
+        ECharts has no native 3D surface, so the panel drew a 2D heat map --
+        the library's ceiling, not a choice. A heat map and a surface answer
+        different questions: the shape of a volatility surface is the thing
+        being judged, and a grid of coloured squares does not show a shape.
+        """
+        assert "type:'surface'" in page, "no 3D surface trace"
+        assert "scene:" in page, "no 3D scene layout"
+
+    def test_the_quotes_it_was_fitted_to_are_drawn_on_it(self, page: str) -> None:
+        """The credibility of the whole picture.
+
+        A fitted surface is smooth and plausible whether or not it passes
+        through anything. The only way to see that it does is the market points
+        on top of it, which is why the fit route grew an opt-in
+        ``include_quotes`` for exactly this.
+        """
+        assert "include_quotes" in page
+        assert "type:'scatter3d'" in page, "the quotes are not drawn in the scene"
 
     def test_the_surface_samples_around_its_own_forward(self, page: str) -> None:
         """SSVI is parameterised in k = log(K/F).
@@ -279,11 +300,14 @@ class TestTheModelsTab:
         the same mistake, in a different place, as the spot/forward mismatch
         Phase 2 took out of the engine. So the panel probes for the surface's
         reference forward first and builds the grid from that.
+
+        Asserted on the page rather than inside a named function. The first
+        version sliced from ``drawSurfaceHeatmap``, and the 3D rewrite renamed
+        it -- the property was untouched and the test broke anyway, which is
+        the test's fault and not the rewrite's.
         """
         assert "reference_forward" in page
-        body = page[page.index("async function drawSurfaceHeatmap(") :]
-        body = body[: body.index("\nasync function")]
-        assert "F * Math.exp(k)" in body, "the strike grid is not built from the forward"
+        assert "F * Math.exp(k)" in page, "the strike grid is not built from the forward"
 
     def test_the_local_vol_panel_calls_both_of_its_routes(self, page: str) -> None:
         assert "/api/local_vol/surface" in page

@@ -575,6 +575,7 @@ def vol_surface_fit():
         data = request.get_json(force=True, silent=True) or {}
         spec = _surface_request(data)
         want_report = bool(data.get("report", False))
+        want_quotes = bool(data.get("include_quotes", False))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
@@ -586,7 +587,43 @@ def vol_surface_fit():
     payload = fitted.as_dict()
     if want_report:
         payload["report"] = surface_report(fitted)
+    if want_quotes:
+        payload["quotes"] = _fitted_quotes(fitted)
     return jsonify(payload)
+
+
+def _fitted_quotes(fitted):
+    """The individual quotes the fit actually used, per usable expiry.
+
+    Opt-in rather than always present. It is needed by exactly one thing --
+    drawing the market points on top of the fitted 3D surface -- and adding it
+    to every response carrying an ``input`` block would change the shape that
+    several tests pin, for no caller's benefit.
+
+    Only the usable slices, and within them only the screened quotes. That is
+    the honest overlay: these are what the surface was fitted to. Including the
+    rejected ones would put points on the chart that the surface never tried to
+    match, and some were rejected precisely because their implied volatility
+    could not be trusted.
+
+    Columns rather than a list of objects: 42 points across three expiries is
+    small either way, but Plotly wants arrays and this saves transposing them
+    in the browser.
+    """
+    return [
+        {
+            "expiry_tag": sl.expiry_tag,
+            "year_fraction": round(sl.year_fraction, 8),
+            "forward": round(sl.forward.forward, 6),
+            "strike": [round(q.strike, 6) for q in sl.points],
+            "moneyness": [round(float(np.exp(q.log_moneyness)), 6) for q in sl.points],
+            "log_moneyness": [round(q.log_moneyness, 8) for q in sl.points],
+            "implied_vol": [round(q.implied_vol, 8) for q in sl.points],
+            "option_type": [str(q.option_type.value) for q in sl.points],
+            "vega": [round(q.vega, 8) for q in sl.points],
+        }
+        for sl in fitted.surface_input.usable_slices
+    ]
 
 
 @app.route("/api/vol_surface/query", methods=["POST"])
