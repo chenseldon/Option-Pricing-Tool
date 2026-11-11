@@ -440,7 +440,7 @@ class TestTheDocumentedDependencies:
     """
 
     #: Rows whose version is deliberately not a requirements.txt pin.
-    _NOT_INSTALLED = frozenset({"*(self-built)*", "**ECharts 5**", "QuantLib", "pytest"})
+    _NOT_INSTALLED = frozenset({"*(self-built)*", "**Plotly 2**", "QuantLib", "pytest"})
 
     @pytest.fixture(scope="class")
     @classmethod

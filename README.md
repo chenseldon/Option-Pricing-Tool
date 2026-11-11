@@ -5,7 +5,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-2.0+-green.svg)](https://flask.palletsprojects.com/)
-[![ECharts](https://img.shields.io/badge/ECharts-5.x-orange.svg)](https://echarts.apache.org/)
+[![Plotly](https://img.shields.io/badge/Plotly-2.x-orange.svg)](https://plotly.com/javascript/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -30,7 +30,7 @@ A professional-grade **OTC derivatives pricing and risk analytics web applicatio
 - **Monte Carlo simulation** (risk-neutral GBM, up to 200k paths)
 - **Full Greeks**: Δ Delta / Γ Gamma / ν Vega / Θ Theta / ρ Rho
 - **Implied Volatility solver** (Newton-Raphson, < 1ms per solve)
-- **Interactive charts**: ECharts price curve + 5 Greeks curves
+- **Interactive charts**: Plotly price curve + 5 Greeks curves, and native 3D surfaces
 - **Unit auto-conversion**: input T in days or years, σ/r in % or decimal
 
 ### 🔬 Structured Products Greeks
@@ -408,7 +408,7 @@ it would be the place that caveat got softened.
 ├── greeks_calc.py              # Compatibility layer over otcpricer.models.bsm
 ├── visualization.py            # Matplotlib charts (CLI use, PNG export)
 ├── main.py                     # CLI entry point (demo + interactive)
-├── templates/index.html        # Single-page frontend (ECharts, no build step)
+├── templates/index.html        # Single-page frontend (Plotly, no build step)
 ├── serve.py                    # Production entry point (waitress, debugger off)
 ├── scripts/check_deps.py       # Can this interpreter run the app? Used by both launchers
 ├── run_app.bat / run_app.ps1   # Launchers (pick the first interpreter that passes the probe)
@@ -466,7 +466,7 @@ it would be the place that caveat got softened.
 | `pyarrow` | ≥ 16 | Reads the Wind panel, which is parquet. Also the `wind` extra |
 | `openpyxl` | ≥ 3.1 | `/api/export` |
 | `matplotlib` | ≥ 3.9 | CLI chart output (PNG) |
-| **ECharts 5** | CDN | Interactive web charts (no npm required) |
+| **Plotly 2** | CDN | Interactive web charts, incl. native 3D surfaces (no npm required) |
 | `QuantLib` | ≥ 1.38 | **Test-time only** — independent benchmark, never a runtime dependency |
 | `pytest` | ≥ 8 | 1,496 tests: analytic identities, convergence, cross-engine, regression |
 
@@ -1045,5 +1045,5 @@ MIT License — free for personal learning, portfolio, and interview demonstrati
 
 ---
 
-*Built with Python + Flask + ECharts · 2024–2026*
+*Built with Python + Flask + Plotly · 2024–2026*
 

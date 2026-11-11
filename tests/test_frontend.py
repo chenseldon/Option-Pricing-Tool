@@ -309,12 +309,21 @@ class TestTheModelsTab:
         local surface, so the tooltip has to name which is which and give the
         implied value beside it -- otherwise the panel is an invitation to the
         trap the endpoint was written to avoid.
+
+        Asserted as a property rather than as the expressions that produce it.
+        The first version pinned ``d.implied_vol[i][j]`` and
+        ``local ${p.data[2]}%`` -- an ECharts tooltip formatter's exact text.
+        Porting to Plotly changed both while leaving the tooltip identical to
+        a reader, and a test that fails on a faithful port is testing the
+        wrong thing.
         """
         body = page[page.index("function drawLocalVolHeatmap(") :]
         body = body[: body.index("\nasync function")]
-        assert "d.implied_vol[i][j]" in body
-        assert "local ${p.data[2]}%" in body
-        assert "implied " in body
+        assert "implied_vol" in body, "the implied surface is not read at all"
+        assert "hovertemplate" in body, "the heat map has no hover text"
+        hover = body[body.index("hovertemplate") :]
+        assert "local" in hover, "the hover does not say which volatility it draws"
+        assert "implied" in hover, "the hover does not give the implied value beside it"
 
     def test_the_round_trip_is_measured_against_the_fit_error(self, page: str) -> None:
         """Dupire makes the round trip exact in continuous time, so any residual
@@ -765,3 +774,58 @@ class TestTheDataPathsThePanelsRead:
         payload = responses["/api/heston/snowball"]
         assert payload["cross_checked_by_a_second_engine"] is False
         assert "no independent second engine" in payload["single_engine_note"]
+
+
+class TestTheChartingLibraryClaim:
+    """The page names its charting library in four places and loads one.
+
+    Swapping ECharts for Plotly left **seven** stale claims behind: two
+    "ECharts 5" badges in the About tab, a shields.io badge, a feature line, a
+    project-structure comment and a footer in the README, and a row in the
+    Tech Stack table. Every one of them rendered perfectly and every one was
+    wrong. None of the existing tests could see it -- the dependency test
+    deliberately excludes the charting library, because it comes from a CDN
+    rather than from requirements.txt, which is exactly the hole the stale row
+    sat in.
+
+    So the library is asserted against the thing that actually decides it: the
+    script tag.
+    """
+
+    #: Libraries this page could plausibly be using, by the substring that
+    #: would appear in its CDN URL.
+    _KNOWN = ("plotly", "echarts", "chart.js", "d3", "highcharts")
+
+    @staticmethod
+    def _loaded(page: str) -> str:
+        """The charting library the page actually loads."""
+        tags = re.findall(r'<script src="([^"]+)"', page)
+        for url in tags:
+            for name in TestTheChartingLibraryClaim._KNOWN:
+                if name in url.lower():
+                    return name
+        raise AssertionError(f"no known charting library in the script tags: {tags}")
+
+    def test_the_about_badges_name_the_library_that_is_loaded(self, page: str) -> None:
+        """Two badges, in the English and Chinese copies of the tech stack."""
+        loaded = self._loaded(page)
+        badges = re.findall(r'<span class="badge">([^<]*)</span>', page)
+        charting = [b for b in badges if any(k in b.lower() for k in self._KNOWN)]
+        assert charting, f"no charting badge among {len(badges)} badges"
+        for badge in charting:
+            assert loaded in badge.lower(), (
+                f"the About tab advertises {badge!r} and the page loads {loaded!r}"
+            )
+
+    def test_no_badge_names_a_library_that_is_not_loaded(self, page: str) -> None:
+        """The failure that actually happened: the badge kept the old name."""
+        loaded = self._loaded(page)
+        stale = [k for k in self._KNOWN if k != loaded and f">{k}" in page.lower()]
+        assert stale == [], f"the page still advertises {stale} but loads {loaded!r}"
+
+    def test_the_readme_names_the_same_library(self, page: str) -> None:
+        """Four mentions there, and they all went stale together."""
+        loaded = self._loaded(page)
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+        wrong = sorted({k for k in self._KNOWN if k != loaded and k in readme.lower()})
+        assert wrong == [], f"README still mentions {wrong} while the page loads {loaded!r}"

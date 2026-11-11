@@ -4,13 +4,35 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Option Pricing Tool</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2/plotly.min.js"></script>
 <style>
-:root{--bg:#0c1420;--bg2:#0f1927;--bg3:#0d1626;--bgi:#09111e;--bd:#1c3a60;--tx:#d4e0ef;--tx2:#6b8db0;--blue:#0d6efd;--blu2:#4e9eff;--green:#20bf6b;--yellow:#f7b731;--red:#ff6b6b;--purple:#a55eea;}
+/* The light palette. Text #334155 and Microsoft YaHei follow the two
+   reference pricers this interface is being brought in line with, so a
+   screenshot from either sits beside the other without reformatting.
+
+   Everything below is a variable, including the semantic tints that used to
+   be hardcoded further down this stylesheet. --yellow is the one that could
+   not simply be lightened: #f7b731 is legible on a dark ground and not on
+   white, and .metric-val is yellow by default, so the text tone is a darker
+   amber while charts keep a brighter one for line work. */
+:root{
+  --bg:#ffffff;--bg2:#ffffff;--bg3:#f1f5f9;--bgi:#f8fafc;--bd:#e2e8f0;
+  --tx:#334155;--tx2:#64748b;
+  --blue:#2563eb;--blu2:#1d4ed8;--green:#059669;--yellow:#b45309;
+  --red:#dc2626;--purple:#7c3aed;
+  /* chart line work: brighter than the text tones, still legible on white */
+  --c-blue:#3b82f6;--c-green:#10b981;--c-amber:#f59e0b;--c-red:#ef4444;
+  --c-purple:#8b5cf6;
+  /* semantic tints, formerly hardcoded */
+  --tint-ok:#ecfdf5;--tint-err:#fef2f2;--tint-info:#eff6ff;
+  --bd2:#eef2f6;--row-hover:#f8fafc;--code-bg:#f8fafc;
+  --hdr-from:#f8fafc;--hdr-to:#eef2f7;--hdr-tx:#1e40af;
+  --btn-hover:#1d4ed8;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);height:100vh;overflow:hidden;display:flex;flex-direction:column}
-.header{background:linear-gradient(135deg,#0f2040,#0b3060);border-bottom:1px solid var(--bd);padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
-.header-title{font-size:15px;font-weight:700;color:#5bc8f5}
+body{font-family:'Microsoft YaHei','Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,var(--hdr-from),var(--hdr-to));border-bottom:1px solid var(--bd);padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.header-title{font-size:15px;font-weight:700;color:var(--hdr-tx)}
 .tag{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--bd);color:var(--tx2);background:var(--bg3);text-transform:uppercase;letter-spacing:.5px}
 .body-layout{display:flex;flex:1;overflow:hidden}
 .sidebar{width:276px;min-width:276px;background:var(--bg3);border-right:1px solid var(--bd);padding:12px 13px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
@@ -32,16 +54,16 @@ input:focus{border-color:var(--blue)}
 .pset{padding:5px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:3px;color:var(--tx2);font-size:10.5px;cursor:pointer;text-align:left;transition:all .15s}
 .pset:hover{border-color:var(--blue);color:var(--tx)}
 .btn{padding:7px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11.5px;font-weight:600;transition:all .2s;width:100%;margin-bottom:3px}
-.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:#0b5ed7}
+.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:var(--btn-hover)}
 .btn-s{background:var(--bg2);border:1px solid var(--bd);color:var(--tx2);padding:6px 12px}.btn-s:hover{border-color:var(--blue);color:var(--tx)}
-.btn-ok{background:#0e3a1f;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;transition:all .2s}.btn-ok:hover{background:var(--green);color:#fff}
-.btn-exp{background:#0e2a0e;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;margin-top:2px;transition:all .2s}.btn-exp:hover{background:var(--green);color:#fff}
-.btn-del{padding:5px 10px;background:#2a0e0e;border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s}.btn-del:hover{background:var(--red);color:#fff}
+.btn-ok{background:var(--tint-ok);border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;transition:all .2s}.btn-ok:hover{background:var(--green);color:#fff}
+.btn-exp{background:var(--tint-ok);border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;margin-top:2px;transition:all .2s}.btn-exp:hover{background:var(--green);color:#fff}
+.btn-del{padding:5px 10px;background:var(--tint-err);border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s}.btn-del:hover{background:var(--red);color:#fff}
 .port-add{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:9px;margin-top:3px;display:none;flex-direction:column;gap:5px}
 .port-add.open{display:flex}
 .iv-res{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:7px;margin-top:5px;font-size:11.5px;color:var(--green);display:none}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.err-toast{position:fixed;top:14px;right:20px;background:#2a0a0a;border:1px solid var(--red);border-radius:5px;padding:9px 14px;color:var(--red);font-size:11.5px;z-index:999;max-width:340px;display:none}
+.err-toast{position:fixed;top:14px;right:20px;background:var(--tint-err);border:1px solid var(--red);border-radius:5px;padding:9px 14px;color:var(--red);font-size:11.5px;z-index:999;max-width:340px;display:none}
 .err-toast.show{display:block}
 .main-tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--bg3);flex-shrink:0;overflow-x:auto}
 .main-tabs::-webkit-scrollbar{height:0}
@@ -63,7 +85,7 @@ input:focus{border-color:var(--blue)}
 .panel-title{font-size:11px;font-weight:700;color:var(--blu2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
 .gtable{width:100%;border-collapse:collapse;font-size:11px}
 .gtable th{padding:5px 7px;text-align:left;color:var(--tx2);font-weight:600;border-bottom:1px solid var(--bd);font-size:10px;text-transform:uppercase}
-.gtable td{padding:5px 7px;border-bottom:1px solid #0d1826}.gtable tr:last-child td{border-bottom:none}
+.gtable td{padding:5px 7px;border-bottom:1px solid var(--bd2)}.gtable tr:last-child td{border-bottom:none}
 .g-name{font-weight:700}.g-val{font-weight:700;font-size:13px}.g-fml{color:var(--tx2);font-family:monospace;font-size:10px}.g-desc{color:var(--tx2);font-size:10px}
 .inner-tabs{display:flex;border-bottom:1px solid var(--bd);margin-bottom:10px;flex-shrink:0}
 .itab{padding:6px 12px;background:transparent;border:none;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
@@ -76,11 +98,11 @@ input:focus{border-color:var(--blue)}
 .dtable{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
 .dtable th{padding:6px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;text-align:right;border-bottom:1px solid var(--bd)}
 .dtable th:nth-child(-n+3){text-align:left}
-.dtable td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:right}
+.dtable td{padding:5px 9px;border-bottom:1px solid var(--bd2);text-align:right}
 .dtable td:nth-child(-n+3){text-align:left}
-.dtable tr:hover td{background:#0f1e2e}
+.dtable tr:hover td{background:var(--row-hover)}
 .xbtn{background:none;border:none;color:var(--tx2);cursor:pointer;font-size:12px;padding:2px 5px}.xbtn:hover{color:var(--red)}
-.tot-row td{font-weight:700;color:var(--blu2);background:#08162a;border-top:1px solid var(--blue)}
+.tot-row td{font-weight:700;color:var(--blu2);background:var(--tint-info);border-top:1px solid var(--blue)}
 .totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
 .total-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:9px 12px}
 .total-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
@@ -100,7 +122,7 @@ input:focus{border-color:var(--blue)}
 .sens-section{margin-bottom:20px}
 .stbl{border-collapse:collapse;font-size:11px;min-width:360px}
 .stbl th{padding:6px 12px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border:1px solid var(--bd)}
-.stbl td{padding:6px 12px;border:1px solid #0c1520;text-align:center;font-weight:600}
+.stbl td{padding:6px 12px;border:1px solid var(--bd);text-align:center;font-weight:600}
 .stbl .rlbl{background:var(--bg3);color:var(--tx2);font-size:10px;text-align:left}
 .s-base{outline:2px solid var(--blue)!important}
 .about-card{max-width:700px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:26px 30px}
@@ -112,7 +134,7 @@ input:focus{border-color:var(--blue)}
 .a-sec p{font-size:11.5px;color:var(--tx2);line-height:1.7}
 .badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 .badge{padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--blu2)}
-.code-blk{display:block;background:#04090f;border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
+.code-blk{display:block;background:var(--code-bg);border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
 /* ── Language toggle ── */
 .lang-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;flex-shrink:0}
 .lang-btn{padding:3px 10px;background:var(--bgi);border:none;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s}
@@ -158,9 +180,9 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 .struct-results{flex:1;min-width:280px}
 .quote-row{display:flex;gap:8px;margin-bottom:12px}
 .quote-card{flex:1;border-radius:7px;padding:11px 12px;text-align:center}
-.quote-bid{background:#1a0808;border:1px solid var(--red)}
-.quote-mid{background:#08142a;border:1px solid var(--blue)}
-.quote-ask{background:#081a0f;border:1px solid var(--green)}
+.quote-bid{background:var(--tint-err);border:1px solid var(--red)}
+.quote-mid{background:var(--tint-info);border:1px solid var(--blue)}
+.quote-ask{background:var(--tint-ok);border:1px solid var(--green)}
 .quote-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700}
 .quote-val{font-size:20px;font-weight:700}
 .quote-bid .quote-label,.quote-bid .quote-val{color:var(--red)}
@@ -174,7 +196,7 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 .cf-scroll{overflow-x:auto;max-height:260px;overflow-y:auto}
 .cf-table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
 .cf-table th{padding:5px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--bd);text-align:center;position:sticky;top:0}
-.cf-table td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:center}
+.cf-table td{padding:5px 9px;border-bottom:1px solid var(--bd2);text-align:center}
 .cf-table .net-pos{color:var(--green)}.cf-table .net-neg{color:var(--red)}
 .struct-sub{display:none}.struct-sub.on{display:block}
 /* ── Product type grid ── */
@@ -921,7 +943,7 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
           <span class="badge">NumPy</span>
           <span class="badge">Pandas</span>
           <span class="badge">openpyxl</span>
-          <span class="badge">ECharts 5</span>
+          <span class="badge">Plotly 2</span>
         </div>
       </div>
       <div class="a-sec"><h3>Target Roles</h3>
@@ -956,7 +978,7 @@ python app.py
           <span class="badge">NumPy</span>
           <span class="badge">Pandas</span>
           <span class="badge">openpyxl</span>
-          <span class="badge">ECharts 5</span>
+          <span class="badge">Plotly 2</span>
         </div>
       </div>
       <div class="a-sec"><h3>目标岗位</h3>
@@ -1267,8 +1289,80 @@ python app.py
 let currentFlag='c', currentProduct='call', currentLang='en';
 let tUnit='days', rUnit='pct', sUnit='pct', qUnit='pct';
 let positions=[], posIdCounter=1, lastResult=null, lastParams=null;
-let chartPrice=null, chartSmile=null, chartMC=null, chartSurface=null, chartLocalVol=null;
-let gcCharts={delta:null,gamma:null,vega:null,theta:null,rho:null};
+// ========== PALETTE AND PLOTTING ==========
+// Read from the stylesheet rather than repeated here, so the palette has
+// exactly one definition. Changing the theme is a CSS edit and nothing below
+// moves.
+const CSSVAR = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let PAL = {};
+function readPalette(){
+  PAL = {
+    tx:CSSVAR('--tx'), tx2:CSSVAR('--tx2'), bd:CSSVAR('--bd'), bd2:CSSVAR('--bd2'),
+    blue:CSSVAR('--c-blue'), green:CSSVAR('--c-green'), amber:CSSVAR('--c-amber'),
+    red:CSSVAR('--c-red'), purple:CSSVAR('--c-purple'),
+  };
+}
+readPalette();
+
+const FONT = "'Microsoft YaHei','Segoe UI',Arial,sans-serif";
+const PCFG = {
+  responsive:true, displaylogo:false, scrollZoom:false,
+  toImageButtonOptions:{format:'png', scale:2},
+  modeBarButtonsToRemove:['sendDataToCloud','lasso2d','select2d','autoScale2d'],
+};
+
+// Every chart starts from this. The ECharts version repeated its axis colours
+// in all ten option blocks -- thirty-three literals -- which is why a theme
+// change used to mean editing every chart.
+function PLOT(o){
+  o = o || {};
+  const axFont = {color:PAL.tx2, size:10, family:FONT};
+  const axis = extra => ({
+    tickfont:axFont, gridcolor:PAL.bd2, zerolinecolor:PAL.bd, linecolor:PAL.bd,
+    automargin:true, ...extra,
+  });
+  const layout = {
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:o.margin || {l:58, r:22, t:o.title ? 36 : 14, b:46},
+    xaxis:axis({title:{text:o.x||'', font:axFont}, ...(o.xaxis||{})}),
+    yaxis:axis({title:{text:o.y||'', font:axFont}, ...(o.yaxis||{})}),
+    showlegend:o.legend === true,
+    legend:{orientation:'h', x:0, y:1.12, font:{size:10, color:PAL.tx2}},
+    hovermode:o.hovermode || 'closest',
+    shapes:o.shapes || [],
+    annotations:o.annotations || [],
+  };
+  if(o.title) layout.title = {text:o.title, font:{size:12, color:PAL.tx}, x:0.5, xanchor:'center', y:0.97};
+  return layout;
+}
+
+// A vertical reference line: a strike, a barrier, a confidence bound.
+function vline(x, color, dash){
+  return {type:'line', x0:x, x1:x, yref:'paper', y0:0, y1:1,
+          line:{color, dash:dash||'dot', width:1.4}};
+}
+function vlabel(x, text, color){
+  return {x, xref:'x', y:1.02, yref:'paper', text, showarrow:false,
+          font:{size:10, color}, yanchor:'bottom'};
+}
+
+// Plotly draws into the div, so there is no instance object to hold. This
+// records which divs carry a chart, so the tab-switch and font-size hooks can
+// resize them: responsive:true handles window resizes but not a container
+// that was display:none at the moment the chart was created, which is the
+// case this interface actually hits.
+const PLOTS = new Set();
+function draw(id, traces, layout){
+  PLOTS.add(id);
+  return Plotly.react(id, traces, layout, PCFG);
+}
+function resizePlots(){
+  PLOTS.forEach(id => {
+    const el = $(id);
+    if(el && el.offsetParent !== null) Plotly.Plots.resize(el);
+  });
+}
 let smileRowCount=0;
 
 // ========== UTILS ==========
@@ -1401,30 +1495,20 @@ function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
   $(PANELS[key]).classList.add('on');
-  requestAnimationFrame(()=>{
-    if(chartPrice) chartPrice.resize();
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-    if(chartSurface) chartSurface.resize();
-    if(chartLocalVol) chartLocalVol.resize();
-    Object.values(gcCharts).forEach(c=>c&&c.resize());
-  });
+  requestAnimationFrame(resizePlots);
 }
 function switchInner(key){
   document.querySelectorAll('.itab').forEach((b,i)=>b.classList.toggle('on',['price-curve','greeks-curves'][i]===key));
   $('inner-price-curve').style.display=key==='price-curve'?'flex':'none';
   $('inner-greeks-curves').style.display=key==='greeks-curves'?'flex':'none';
-  // Force DOM reflow so ECharts gets correct container dimensions
+  // Force DOM reflow so the chart gets correct container dimensions
   void $('inner-greeks-curves').offsetWidth;
   setTimeout(()=>{
     if(key==='price-curve'){
-      if(chartPrice) chartPrice.resize();
-    } else {
-      if(lastResult && lastParams){
-        _doRenderGreeksCharts(lastResult, lastParams);
-        // Second resize pass after ECharts has initialised
-        setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 120);
-      }
+      resizePlots();
+    } else if(lastResult && lastParams){
+      _doRenderGreeksCharts(lastResult, lastParams);
+      setTimeout(resizePlots, 120);
     }
   }, 80);
 }
@@ -1474,20 +1558,16 @@ function renderPricing(d,p){
 }
 
 function renderPriceChart(d,p){
-  if(!chartPrice) chartPrice=echarts.init($('chart-price'));
   const xs=d.price_curve.spots, ys=d.price_curve.prices;
-  const kLine=[[p.K,0],[p.K,Math.max(...ys)*1.1]];
-  chartPrice.setOption({
-    backgroundColor:'transparent',
-    grid:{left:50,right:20,top:30,bottom:40},
-    tooltip:{trigger:'axis',formatter:arr=>`Spot: ${arr[0].axisValue}<br/>Price: ${fmt(arr[0].data,2)}`},
-    xAxis:{type:'value',name:'Spot Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    yAxis:{type:'value',name:'Option Price',nameLocation:'middle',nameGap:40,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    series:[
-      {type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color:'#4e9eff',width:2},showSymbol:false,areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(78,158,255,0.25)'},{offset:1,color:'rgba(78,158,255,0.02)'}]}}},
-      {type:'line',data:kLine,lineStyle:{color:'#f7b731',type:'dashed',width:1.5},showSymbol:false,tooltip:{show:false}},
-    ]
-  });
+  draw('chart-price',[
+    {type:'scatter', mode:'lines', x:xs, y:ys, name:'Price',
+     fill:'tozeroy', fillcolor:'rgba(59,130,246,0.10)',
+     line:{color:PAL.blue, width:2, shape:'spline'},
+     hovertemplate:'Spot %{x}<br>Price %{y:.2f}<extra></extra>'},
+  ], PLOT({x:'Spot Price', y:'Option Price',
+           shapes:[vline(p.K, PAL.amber, 'dash')],
+           annotations:[vlabel(p.K, 'K', PAL.amber)],
+           margin:{l:58,r:22,t:22,b:46}}));
 }
 
 function renderGreeksCharts(d,p){
@@ -1502,30 +1582,25 @@ function renderGreeksCharts(d,p){
 function _doRenderGreeksCharts(d,p){
   const xs=d.price_curve.spots;
   const greekDefs=[
-    {key:'delta',label:'Delta',color:'#4e9eff'},
-    {key:'gamma',label:'Gamma',color:'#20bf6b'},
-    {key:'vega',label:'Vega',color:'#f7b731'},
-    {key:'theta',label:'Theta',color:'#ff6b6b'},
-    {key:'rho',label:'Rho',color:'#a55eea'},
+    {key:'delta',label:'Delta',color:PAL.blue},
+    {key:'gamma',label:'Gamma',color:PAL.green},
+    {key:'vega',label:'Vega',color:PAL.amber},
+    {key:'theta',label:'Theta',color:PAL.red},
+    {key:'rho',label:'Rho',color:PAL.purple},
   ];
   greekDefs.forEach(({key,label,color})=>{
-    const el=$('gc-'+key);
-    // Dispose and re-init to ensure correct sizing when previously hidden
-    if(gcCharts[key]){ gcCharts[key].dispose(); gcCharts[key]=null; }
-    gcCharts[key]=echarts.init(el);
     const ys=d.greeks_curve[key]||[];
-    gcCharts[key].setOption({
-      backgroundColor:'transparent',
-      title:{text:label,textStyle:{color:'#d4e0ef',fontSize:11},left:8,top:4},
-      grid:{left:40,right:10,top:28,bottom:30},
-      tooltip:{trigger:'axis',formatter:a=>`Spot: ${a[0].axisValue}<br/>${label}: ${fmt(a[0].data,4)}`},
-      xAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-      yAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-      series:[{type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color,width:1.5},showSymbol:false}]
-    });
+    draw('gc-'+key,[
+      {type:'scatter', mode:'lines', x:xs, y:ys, name:label,
+       line:{color, width:1.6, shape:'spline'},
+       hovertemplate:'Spot %{x}<br>'+label+' %{y:.4f}<extra></extra>'},
+    ], PLOT({title:label, margin:{l:46,r:12,t:30,b:32},
+             xaxis:{tickfont:{color:PAL.tx2, size:9, family:FONT}},
+             yaxis:{tickfont:{color:PAL.tx2, size:9, family:FONT}}}));
   });
-  // Trigger a resize pass to correct any dimension issues
-  setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 150);
+  // One resize pass: these five live in a container that is display:none
+  // until the Greeks tab is opened, so they are created at zero width.
+  setTimeout(resizePlots, 150);
 }
 </script>
 
@@ -1793,17 +1868,16 @@ async function calcVolSmile(){
   }catch(e){showErr('Vol smile error: '+e.message);}
 }
 function renderVolSmile(d){
-  if(!chartSmile) chartSmile=echarts.init($('chart-smile'));
   const valid=d.results.filter(r=>!r.error&&r.iv!=null);
-  chartSmile.setOption({
-    backgroundColor:'transparent',
-    title:{text:'Volatility Smile',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
-    grid:{left:55,right:20,top:40,bottom:40},
-    tooltip:{trigger:'axis',formatter:a=>`Strike: ${a[0].axisValue}<br/>IV: ${fmt(a[0].data,2)}%`},
-    xAxis:{type:'value',name:'Strike Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    yAxis:{type:'value',name:'Implied Vol (%)',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    series:[{type:'line',data:valid.map(r=>[r.K,r.iv]),smooth:true,lineStyle:{color:'#f7b731',width:2.5},symbol:'circle',symbolSize:7,itemStyle:{color:'#f7b731'},label:{show:true,formatter:p=>`${fmt(p.data[1],1)}%`,color:'#f7b731',fontSize:10,position:'top'}}]
-  });
+  draw('chart-smile',[
+    {type:'scatter', mode:'lines+markers+text', x:valid.map(r=>r.K), y:valid.map(r=>r.iv),
+     name:'IV', line:{color:PAL.amber, width:2.5, shape:'spline'},
+     marker:{color:PAL.amber, size:7},
+     text:valid.map(r=>fmt(r.iv,1)+'%'), textposition:'top center',
+     textfont:{color:PAL.amber, size:10, family:FONT},
+     hovertemplate:'Strike %{x}<br>IV %{y:.2f}%<extra></extra>'},
+  ], PLOT({title:'Volatility Smile', x:'Strike Price', y:'Implied Vol (%)',
+           margin:{l:58,r:22,t:38,b:46}}));
 }
 
 // ========== MC DISTRIBUTION ==========
@@ -1826,25 +1900,20 @@ function renderMCDist(d){
     <div class="stat-card"><div class="stat-label">95% CI Upper</div><div class="stat-val">${fmt(st.ci95_upper,2)}</div></div>
     <div class="stat-card"><div class="stat-label">Std Dev</div><div class="stat-val">${fmt(st.std,2)}</div></div>
     <div class="stat-card"><div class="stat-label">Paths</div><div class="stat-val">${(st.n_paths/1000).toFixed(0)}k</div></div>`;
-  if(!chartMC) chartMC=echarts.init($('chart-mc'));
   const bins=d.bins, counts=d.counts;
-  chartMC.setOption({
-    backgroundColor:'transparent',
-    title:{text:'Monte Carlo Payoff Distribution',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
-    grid:{left:55,right:30,top:45,bottom:40},
-    tooltip:{trigger:'axis',formatter:a=>`Payoff: ${fmt(a[0].axisValue,2)}<br/>Count: ${a[0].data}`},
-    xAxis:{type:'value',name:'Payoff',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{show:false}},
-    yAxis:{type:'value',name:'Frequency',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    markLine:{data:[{xAxis:st.mean,name:'Mean'},{xAxis:st.ci95_lower,name:'CI Lower'},{xAxis:st.ci95_upper,name:'CI Upper'}]},
-    series:[
-      {type:'bar',data:bins.map((b,i)=>[b,counts[i]]),barWidth:'99%',itemStyle:{color:'rgba(78,158,255,0.7)',borderColor:'rgba(78,158,255,0.3)',borderWidth:0.5}},
-      {type:'line',markLine:{silent:true,symbol:'none',data:[
-        {xAxis:st.mean,lineStyle:{color:'#f7b731',type:'dashed'},label:{formatter:'Mean',color:'#f7b731',fontSize:10}},
-        {xAxis:st.ci95_lower,lineStyle:{color:'#ff6b6b',type:'dotted'},label:{formatter:'5%',color:'#ff6b6b',fontSize:10}},
-        {xAxis:st.ci95_upper,lineStyle:{color:'#20bf6b',type:'dotted'},label:{formatter:'95%',color:'#20bf6b',fontSize:10}},
-      ]},data:[]}
-    ]
-  });
+  draw('chart-mc',[
+    {type:'bar', x:bins, y:counts, name:'Frequency',
+     marker:{color:'rgba(59,130,246,0.65)', line:{color:'rgba(59,130,246,0.9)', width:0.5}},
+     hovertemplate:'Payoff %{x:.2f}<br>Count %{y}<extra></extra>'},
+  ], PLOT({title:'Monte Carlo Payoff Distribution', x:'Payoff', y:'Frequency',
+           margin:{l:58,r:30,t:42,b:46},
+           xaxis:{showgrid:false}, bargap:0,
+           shapes:[vline(st.mean, PAL.amber, 'dash'),
+                   vline(st.ci95_lower, PAL.red, 'dot'),
+                   vline(st.ci95_upper, PAL.green, 'dot')],
+           annotations:[vlabel(st.mean, 'Mean', PAL.amber),
+                        vlabel(st.ci95_lower, '5%', PAL.red),
+                        vlabel(st.ci95_upper, '95%', PAL.green)]}));
 }
 
 // ========== SENSITIVITY ==========
@@ -2364,13 +2433,10 @@ function switchFont(size){
     const btn = document.getElementById('font-'+s);
     if(btn) btn.classList.toggle('on', s===size);
   });
-  // Resize ECharts
-  setTimeout(()=>{
-    if(chartPrice) chartPrice.resize();
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-    Object.values(gcCharts).forEach(c=>c&&c.resize());
-  }, 100);
+  // The font size changes the tick label metrics, so the plots have to
+  // re-measure. Also re-read the palette: a future theme switch would change
+  // the variables this reads from.
+  setTimeout(()=>{ readPalette(); resizePlots(); }, 100);
 }
 // Apply saved font size on load
 (function(){
@@ -2536,14 +2602,6 @@ async function calcSnowballRecon(){
 }
 
 // ========== VOLATILITY SURFACE ==========
-// Shared by the surface and local-volatility panels: the dark palette the
-// rest of the page uses, so a new chart does not look pasted in.
-const VOL_AXIS = {
-  axisLabel:{color:'#6b8db0',fontSize:10},
-  axisLine:{lineStyle:{color:'#1c3a60'}},
-  splitLine:{lineStyle:{color:'#0d1826'}},
-};
-
 function surfaceRequest(){
   return {
     underlying: $('vs-und').value,
@@ -2633,44 +2691,35 @@ async function drawSurfaceHeatmap(req, cal){
   const q = await res.json();
   if(q.error){ showErr('Surface query: ' + q.error); return; }
 
-  const cells = [];
-  let lo = Infinity, hi = -Infinity;
-  for(let i=0;i<q.maturities.length;i++){
-    for(let j=0;j<q.moneyness.length;j++){
-      const v = q.implied_vol[i][j];
-      if(v==null || !isFinite(v)) continue;
-      cells.push([j, i, +(v*100).toFixed(2)]);
-      lo = Math.min(lo, v*100); hi = Math.max(hi, v*100);
-    }
-  }
+  const z = q.implied_vol.map(row => row.map(v =>
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(2)));
+  const flat = z.flat().filter(v => v != null);
+  const lo = Math.min(...flat), hi = Math.max(...flat);
 
   const lastQuoted = Math.max(...q.quoted_maturities);
-  if(!chartSurface) chartSurface = echarts.init($('chart-surface'));
-  chartSurface.setOption({
-    backgroundColor:'transparent',
-    title:{text:`Implied Volatility (%) — ${q.underlying}, forward ${fmt(F,4)}`,
-           subtext:`dashed line: last quoted expiry at ${fmt(lastQuoted,2)}y — everything above it is extrapolated`,
-           textStyle:{color:'#d4e0ef',fontSize:12}, subtextStyle:{color:'#f7b731',fontSize:10},
-           left:'center', top:2},
-    grid:{left:70,right:80,top:56,bottom:46},
-    tooltip:{position:'top', formatter:p =>
-      `T = ${q.maturities[p.data[1]]}y<br/>k = ${fmt(q.moneyness[p.data[0]],3)}<br/>IV = ${p.data[2]}%` +
-      (q.maturities[p.data[1]] > lastQuoted ? '<br/><b>extrapolated</b>' : '')},
-    xAxis:{type:'category', data:q.moneyness.map(k=>fmt(k,2)), name:'log-moneyness k = log(K/F)',
-           nameLocation:'middle', nameGap:28, ...VOL_AXIS, splitArea:{show:false}},
-    yAxis:{type:'category', data:q.maturities.map(t=>fmt(t,2)), name:'maturity (y)',
-           nameLocation:'middle', nameGap:50, ...VOL_AXIS, splitArea:{show:false}},
-    visualMap:{min:Math.floor(lo), max:Math.ceil(hi), calculable:false, orient:'vertical',
-               right:8, top:'middle', textStyle:{color:'#6b8db0',fontSize:10},
-               inRange:{color:['#1a4a7a','#2e7ab8','#48b3d8','#8fd4a8','#f7e06b','#f7b731','#e8634a']}},
-    series:[{type:'heatmap', data:cells,
-             label:{show:true, color:'#0b1420', fontSize:9},
-             emphasis:{itemStyle:{borderColor:'#f7b731', borderWidth:2}},
-             markLine:{silent:true, symbol:'none',
-                       lineStyle:{color:'#f7b731', type:'dashed', width:1.5},
-                       data:[{yAxis: q.maturities.findIndex(t => t > lastQuoted) - 0.5}]}}]
-  });
-  chartSurface.resize();
+  const firstBeyond = q.maturities.findIndex(t => t > lastQuoted);
+
+  draw('chart-surface',[
+    {type:'heatmap', z,
+     x:q.moneyness.map(k=>fmt(k,2)), y:q.maturities.map(t=>fmt(t,2)),
+     colorscale:'Viridis', zmin:Math.floor(lo), zmax:Math.ceil(hi),
+     texttemplate:'%{z}', textfont:{size:9},
+     colorbar:{title:{text:'%', font:{size:10, color:PAL.tx2}},
+               tickfont:{size:9, color:PAL.tx2}, len:0.8, thickness:12},
+     hovertemplate:'T = %{y}y<br>k = %{x}<br>IV = %{z}%<extra></extra>'},
+  ], PLOT({title:`Implied Volatility (%) — ${q.underlying}, forward ${fmt(F,4)}`,
+           x:'log-moneyness k = log(K/F)', y:'maturity (y)',
+           margin:{l:70,r:20,t:52,b:48},
+           xaxis:{showgrid:false}, yaxis:{showgrid:false},
+           shapes: firstBeyond > 0 ? [{
+             type:'line', xref:'paper', x0:0, x1:1,
+             yref:'y', y0:firstBeyond-0.5, y1:firstBeyond-0.5,
+             line:{color:PAL.red, dash:'dash', width:1.5}}] : [],
+           annotations: firstBeyond > 0 ? [{
+             xref:'paper', x:0.5, xanchor:'center',
+             yref:'y', y:firstBeyond-0.5, yanchor:'bottom',
+             text:`last quoted expiry ${fmt(lastQuoted,2)}y — above this line is extrapolated`,
+             showarrow:false, font:{size:9, color:PAL.red}}] : []}));
 }
 
 // ========== HESTON ==========
@@ -2923,56 +2972,55 @@ async function calcLocalVol(){
 }
 
 function drawLocalVolHeatmap(d, quoted, horizon){
-  const cells = [];
-  let lo = Infinity, hi = -Infinity;
-  for(let i=0;i<d.times.length;i++){
-    for(let j=0;j<d.moneyness.length;j++){
-      const v = d.local_vol[i][j];
-      if(v==null || !isFinite(v)) continue;
-      cells.push([j, i, +(v*100).toFixed(2)]);
-      lo = Math.min(lo, v*100); hi = Math.max(hi, v*100);
-    }
-  }
+  // Plotly's z is [row][col] = [y][x], which is the shape the endpoint
+  // already returns: local_vol[i][j] at times[i], moneyness[j]. The grid goes
+  // in as it arrives rather than being flattened into [x, y, value] triples,
+  // which removes the chance of transposing it.
+  const z = d.local_vol.map(row => row.map(v =>
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(2)));
+  const flat = z.flat().filter(v => v != null);
+  const lo = Math.min(...flat), hi = Math.max(...flat);
 
   // Where the extrapolation starts. -0.5 puts the line on the cell boundary
   // rather than through the middle of the first extrapolated row.
   const firstBeyond = d.times.findIndex(t => t > quoted);
-  const markData = firstBeyond > 0 ? [{yAxis: firstBeyond - 0.5}] : [];
 
-  if(!chartLocalVol) chartLocalVol = echarts.init($('chart-localvol'));
-  chartLocalVol.setOption({
-    backgroundColor:'transparent',
-    title:{text:`Dupire Local Volatility (%) \u2014 ${d.underlying}, spot ${fmt(d.spot,4)}`,
-           subtext: markData.length
-             ? `dashed line: quotes stop at ${fmt(quoted,2)}y \u2014 everything above it is the tail assumption`
-             : `every row drawn is beyond the last quoted expiry at ${fmt(quoted,2)}y`,
-           textStyle:{color:'#d4e0ef',fontSize:12},
-           subtextStyle:{color:'#f7b731',fontSize:10}, left:'center', top:2},
-    grid:{left:70,right:80,top:56,bottom:46},
-    tooltip:{position:'top', formatter:p => {
-      const i = p.data[1], j = p.data[0];
-      const iv = d.implied_vol[i][j];
-      return `T = ${fmt(d.times[i],2)}y<br/>k = ${fmt(d.moneyness[j],3)}` +
-             `  (S = ${fmt(d.spots[j],3)})<br/>` +
-             `<b>local ${p.data[2]}%</b><br/>` +
-             `implied ${iv==null?'\u2014':fmt(iv*100,2)+'%'}` +
-             (d.times[i] > quoted ? '<br/><b>extrapolated</b>' : '');
-    }},
-    xAxis:{type:'category', data:d.moneyness.map(k=>fmt(k,2)), name:'log-moneyness k = log(S/spot)',
-           nameLocation:'middle', nameGap:28, ...VOL_AXIS, splitArea:{show:false},
-           axisLabel:{...VOL_AXIS.axisLabel, interval:1}},
-    yAxis:{type:'category', data:d.times.map(t=>fmt(t,2)), name:'time (y)',
-           nameLocation:'middle', nameGap:50, ...VOL_AXIS, splitArea:{show:false}},
-    visualMap:{min:Math.floor(lo), max:Math.ceil(hi), calculable:false, orient:'vertical',
-               right:8, top:'middle', textStyle:{color:'#6b8db0',fontSize:10},
-               inRange:{color:['#1a4a7a','#2e7ab8','#48b3d8','#8fd4a8','#f7e06b','#f7b731','#e8634a']}},
-    series:[{type:'heatmap', data:cells, progressive:0,
-             emphasis:{itemStyle:{borderColor:'#f7b731', borderWidth:2}},
-             markLine:{silent:true, symbol:'none',
-                       lineStyle:{color:'#f7b731', type:'dashed', width:1.5},
-                       data: markData}}]
-  });
-  chartLocalVol.resize();
+  // The implied volatility at the same points, carried alongside so the
+  // tooltip can give both. Reading local volatility as implied volatility is
+  // the standing trap this panel exists to avoid, and a bare z value invites
+  // it -- which is why the endpoint returns the two together.
+  // Two values per cell: the implied volatility, and the absolute spot the
+  // column stands for. k = log(S/spot) is the axis, but the level is what
+  // tells a reader whether a cell sits near the knock-in.
+  const extra = d.implied_vol.map(row => row.map((v, j) => [
+    (v == null || !isFinite(v)) ? '\u2014' : fmt(v*100,2)+'%',
+    fmt(d.spots[j], 3),
+  ]));
+
+  draw('chart-localvol',[
+    {type:'heatmap', z, customdata:extra,
+     x:d.moneyness.map(k=>fmt(k,2)), y:d.times.map(t=>fmt(t,2)),
+     colorscale:'Plasma', zmin:Math.floor(lo), zmax:Math.ceil(hi),
+     colorbar:{title:{text:'%', font:{size:10, color:PAL.tx2}},
+               tickfont:{size:9, color:PAL.tx2}, len:0.8, thickness:12},
+     hovertemplate:'T = %{y}y<br>k = %{x}  (S = %{customdata[1]})<br>' +
+                   '<b>local %{z}%</b><br>implied %{customdata[0]}<extra></extra>'},
+  ], PLOT({title:`Dupire Local Volatility (%) \u2014 ${d.underlying}, spot ${fmt(d.spot,4)}`,
+           x:'log-moneyness k = log(S/spot)', y:'time (y)',
+           margin:{l:70,r:20,t:52,b:48},
+           xaxis:{showgrid:false, dtick:2}, yaxis:{showgrid:false},
+           shapes: firstBeyond > 0 ? [{
+             type:'line', xref:'paper', x0:0, x1:1,
+             yref:'y', y0:firstBeyond-0.5, y1:firstBeyond-0.5,
+             line:{color:PAL.green, dash:'dash', width:1.5}}] : [],
+           annotations: firstBeyond > 0 ? [{
+             xref:'paper', x:0.5, xanchor:'center',
+             yref:'y', y:firstBeyond-0.5, yanchor:'bottom',
+             text:`quotes stop at ${fmt(quoted,2)}y \u2014 above this line is the tail assumption`,
+             showarrow:false, font:{size:9, color:PAL.green}}] : [{
+             xref:'paper', x:0.5, xanchor:'center', yref:'paper', y:1.0, yanchor:'bottom',
+             text:`every row drawn is beyond the last quoted expiry at ${fmt(quoted,2)}y`,
+             showarrow:false, font:{size:9, color:PAL.green}}]}));
 }
 
 async function calcLocalVolRoundTrip(){
@@ -3157,10 +3205,7 @@ function toggleAnalysis(hdr){
   hdr.classList.toggle('open');
   const body = hdr.nextElementSibling;
   if(body) body.classList.toggle('open');
-  setTimeout(()=>{
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-  }, 100);
+  setTimeout(resizePlots, 100);
 }
 
 // ========== CN-FDM REPRICE ==========
