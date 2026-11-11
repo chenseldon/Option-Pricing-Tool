@@ -4,13 +4,35 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Option Pricing Tool</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2/plotly.min.js"></script>
 <style>
-:root{--bg:#0c1420;--bg2:#0f1927;--bg3:#0d1626;--bgi:#09111e;--bd:#1c3a60;--tx:#d4e0ef;--tx2:#6b8db0;--blue:#0d6efd;--blu2:#4e9eff;--green:#20bf6b;--yellow:#f7b731;--red:#ff6b6b;--purple:#a55eea;}
+/* The light palette. Text #334155 and Microsoft YaHei follow the two
+   reference pricers this interface is being brought in line with, so a
+   screenshot from either sits beside the other without reformatting.
+
+   Everything below is a variable, including the semantic tints that used to
+   be hardcoded further down this stylesheet. --yellow is the one that could
+   not simply be lightened: #f7b731 is legible on a dark ground and not on
+   white, and .metric-val is yellow by default, so the text tone is a darker
+   amber while charts keep a brighter one for line work. */
+:root{
+  --bg:#ffffff;--bg2:#ffffff;--bg3:#f1f5f9;--bgi:#f8fafc;--bd:#e2e8f0;
+  --tx:#334155;--tx2:#64748b;
+  --blue:#2563eb;--blu2:#1d4ed8;--green:#059669;--yellow:#b45309;
+  --red:#dc2626;--purple:#7c3aed;
+  /* chart line work: brighter than the text tones, still legible on white */
+  --c-blue:#3b82f6;--c-green:#10b981;--c-amber:#f59e0b;--c-red:#ef4444;
+  --c-purple:#8b5cf6;
+  /* semantic tints, formerly hardcoded */
+  --tint-ok:#ecfdf5;--tint-err:#fef2f2;--tint-info:#eff6ff;
+  --bd2:#eef2f6;--row-hover:#f8fafc;--code-bg:#f8fafc;
+  --hdr-from:#f8fafc;--hdr-to:#eef2f7;--hdr-tx:#1e40af;
+  --btn-hover:#1d4ed8;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);height:100vh;overflow:hidden;display:flex;flex-direction:column}
-.header{background:linear-gradient(135deg,#0f2040,#0b3060);border-bottom:1px solid var(--bd);padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
-.header-title{font-size:15px;font-weight:700;color:#5bc8f5}
+body{font-family:'Microsoft YaHei','Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,var(--hdr-from),var(--hdr-to));border-bottom:1px solid var(--bd);padding:10px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.header-title{font-size:15px;font-weight:700;color:var(--hdr-tx)}
 .tag{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--bd);color:var(--tx2);background:var(--bg3);text-transform:uppercase;letter-spacing:.5px}
 .body-layout{display:flex;flex:1;overflow:hidden}
 .sidebar{width:276px;min-width:276px;background:var(--bg3);border-right:1px solid var(--bd);padding:12px 13px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
@@ -32,19 +54,22 @@ input:focus{border-color:var(--blue)}
 .pset{padding:5px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:3px;color:var(--tx2);font-size:10.5px;cursor:pointer;text-align:left;transition:all .15s}
 .pset:hover{border-color:var(--blue);color:var(--tx)}
 .btn{padding:7px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11.5px;font-weight:600;transition:all .2s;width:100%;margin-bottom:3px}
-.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:#0b5ed7}
+.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:var(--btn-hover)}
 .btn-s{background:var(--bg2);border:1px solid var(--bd);color:var(--tx2);padding:6px 12px}.btn-s:hover{border-color:var(--blue);color:var(--tx)}
-.btn-ok{background:#0e3a1f;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;transition:all .2s}.btn-ok:hover{background:var(--green);color:#fff}
-.btn-exp{background:#0e2a0e;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;margin-top:2px;transition:all .2s}.btn-exp:hover{background:var(--green);color:#fff}
-.btn-del{padding:5px 10px;background:#2a0e0e;border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s}.btn-del:hover{background:var(--red);color:#fff}
+.btn-ok{background:var(--tint-ok);border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;transition:all .2s}.btn-ok:hover{background:var(--green);color:#fff}
+.btn-exp{background:var(--tint-ok);border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;width:100%;margin-top:2px;transition:all .2s}.btn-exp:hover{background:var(--green);color:#fff}
+.btn-del{padding:5px 10px;background:var(--tint-err);border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s}.btn-del:hover{background:var(--red);color:#fff}
 .port-add{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:9px;margin-top:3px;display:none;flex-direction:column;gap:5px}
 .port-add.open{display:flex}
 .iv-res{background:var(--bgi);border:1px solid var(--bd);border-radius:4px;padding:7px;margin-top:5px;font-size:11.5px;color:var(--green);display:none}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.err-toast{position:fixed;top:14px;right:20px;background:#2a0a0a;border:1px solid var(--red);border-radius:5px;padding:9px 14px;color:var(--red);font-size:11.5px;z-index:999;max-width:340px;display:none}
+.err-toast{position:fixed;top:14px;right:20px;background:var(--tint-err);border:1px solid var(--red);border-radius:5px;padding:9px 14px;color:var(--red);font-size:11.5px;z-index:999;max-width:340px;display:none}
 .err-toast.show{display:block}
 .main-tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--bg3);flex-shrink:0;overflow-x:auto}
 .main-tabs::-webkit-scrollbar{height:0}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx2);cursor:pointer;user-select:none}
+.chk input{accent-color:var(--blu2);cursor:pointer;margin:0}
+.chk:hover{color:var(--tx)}
 .mtab{padding:9px 16px;background:transparent;border:none;color:var(--tx2);font-size:11.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
 .mtab:hover{color:var(--tx)}.mtab.on{color:var(--blu2);border-bottom-color:var(--blu2)}
 .tab-panel{flex:1;overflow-y:auto;padding:14px 18px;display:none}.tab-panel.on{display:block}
@@ -60,7 +85,7 @@ input:focus{border-color:var(--blue)}
 .panel-title{font-size:11px;font-weight:700;color:var(--blu2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
 .gtable{width:100%;border-collapse:collapse;font-size:11px}
 .gtable th{padding:5px 7px;text-align:left;color:var(--tx2);font-weight:600;border-bottom:1px solid var(--bd);font-size:10px;text-transform:uppercase}
-.gtable td{padding:5px 7px;border-bottom:1px solid #0d1826}.gtable tr:last-child td{border-bottom:none}
+.gtable td{padding:5px 7px;border-bottom:1px solid var(--bd2)}.gtable tr:last-child td{border-bottom:none}
 .g-name{font-weight:700}.g-val{font-weight:700;font-size:13px}.g-fml{color:var(--tx2);font-family:monospace;font-size:10px}.g-desc{color:var(--tx2);font-size:10px}
 .inner-tabs{display:flex;border-bottom:1px solid var(--bd);margin-bottom:10px;flex-shrink:0}
 .itab{padding:6px 12px;background:transparent;border:none;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
@@ -73,11 +98,11 @@ input:focus{border-color:var(--blue)}
 .dtable{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
 .dtable th{padding:6px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;text-align:right;border-bottom:1px solid var(--bd)}
 .dtable th:nth-child(-n+3){text-align:left}
-.dtable td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:right}
+.dtable td{padding:5px 9px;border-bottom:1px solid var(--bd2);text-align:right}
 .dtable td:nth-child(-n+3){text-align:left}
-.dtable tr:hover td{background:#0f1e2e}
+.dtable tr:hover td{background:var(--row-hover)}
 .xbtn{background:none;border:none;color:var(--tx2);cursor:pointer;font-size:12px;padding:2px 5px}.xbtn:hover{color:var(--red)}
-.tot-row td{font-weight:700;color:var(--blu2);background:#08162a;border-top:1px solid var(--blue)}
+.tot-row td{font-weight:700;color:var(--blu2);background:var(--tint-info);border-top:1px solid var(--blue)}
 .totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
 .total-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:9px 12px}
 .total-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
@@ -97,7 +122,7 @@ input:focus{border-color:var(--blue)}
 .sens-section{margin-bottom:20px}
 .stbl{border-collapse:collapse;font-size:11px;min-width:360px}
 .stbl th{padding:6px 12px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border:1px solid var(--bd)}
-.stbl td{padding:6px 12px;border:1px solid #0c1520;text-align:center;font-weight:600}
+.stbl td{padding:6px 12px;border:1px solid var(--bd);text-align:center;font-weight:600}
 .stbl .rlbl{background:var(--bg3);color:var(--tx2);font-size:10px;text-align:left}
 .s-base{outline:2px solid var(--blue)!important}
 .about-card{max-width:700px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:26px 30px}
@@ -109,7 +134,7 @@ input:focus{border-color:var(--blue)}
 .a-sec p{font-size:11.5px;color:var(--tx2);line-height:1.7}
 .badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 .badge{padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--blu2)}
-.code-blk{display:block;background:#04090f;border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
+.code-blk{display:block;background:var(--code-bg);border:1px solid var(--bd);border-radius:5px;padding:10px 14px;font-family:monospace;font-size:11.5px;color:var(--green);white-space:pre;margin-top:7px;line-height:1.6}
 /* ── Language toggle ── */
 .lang-toggle{display:flex;border:1px solid var(--bd);border-radius:3px;overflow:hidden;flex-shrink:0}
 .lang-btn{padding:3px 10px;background:var(--bgi);border:none;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s}
@@ -155,9 +180,9 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 .struct-results{flex:1;min-width:280px}
 .quote-row{display:flex;gap:8px;margin-bottom:12px}
 .quote-card{flex:1;border-radius:7px;padding:11px 12px;text-align:center}
-.quote-bid{background:#1a0808;border:1px solid var(--red)}
-.quote-mid{background:#08142a;border:1px solid var(--blue)}
-.quote-ask{background:#081a0f;border:1px solid var(--green)}
+.quote-bid{background:var(--tint-err);border:1px solid var(--red)}
+.quote-mid{background:var(--tint-info);border:1px solid var(--blue)}
+.quote-ask{background:var(--tint-ok);border:1px solid var(--green)}
 .quote-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700}
 .quote-val{font-size:20px;font-weight:700}
 .quote-bid .quote-label,.quote-bid .quote-val{color:var(--red)}
@@ -171,7 +196,7 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 .cf-scroll{overflow-x:auto;max-height:260px;overflow-y:auto}
 .cf-table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
 .cf-table th{padding:5px 9px;background:var(--bg3);color:var(--tx2);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--bd);text-align:center;position:sticky;top:0}
-.cf-table td{padding:5px 9px;border-bottom:1px solid #0c1520;text-align:center}
+.cf-table td{padding:5px 9px;border-bottom:1px solid var(--bd2);text-align:center}
 .cf-table .net-pos{color:var(--green)}.cf-table .net-neg{color:var(--red)}
 .struct-sub{display:none}.struct-sub.on{display:block}
 /* ── Product type grid ── */
@@ -320,6 +345,9 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
       <input type="number" id="sb-r" value="2.5" step="0.1"/></div>
     <div class="fg"><label id="lbl-sb-q">Dividend Yield (%)</label>
       <input type="number" id="sb-q" value="0" step="0.1"/></div>
+    <div class="fg"><label id="lbl-sb-basis">Futures Carry 贴水 (%/yr)</label>
+      <input type="number" id="sb-basis" value="0" step="0.5"/>
+      <div class="hint" style="margin-top:3px" id="lbl-sb-basis-hint">Total carry from the futures discount. Positive = future below spot. Measured at +10.2%/yr on the CSI 1000 board, where it more than doubles the quotable coupon.</div></div>
     <div class="fg"><label id="lbl-sb-T">Tenor (Years)</label>
       <input type="number" id="sb-T" value="1" step="0.25"/></div>
     <div class="fg"><label id="lbl-sb-ko">Knock-Out Level (%)</label>
@@ -497,14 +525,16 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 </aside>
 <div class="main">
   <div class="main-tabs">
-    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
+    <button class="mtab on" onclick="switchMain('market')" data-i18n="tab_market">📡 Market Data</button>
+    <button class="mtab" onclick="switchMain('models')" data-i18n="tab_models">🌋 Models</button>
+    <button class="mtab" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
     <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
     <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
     <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
 
   <!-- PRICING TAB -->
-  <div class="tab-panel on" id="panel-pricing">
+  <div class="tab-panel" id="panel-pricing">
     <div class="cards-row">
       <div class="card">
         <div class="card-label">BSM Price</div>
@@ -629,6 +659,393 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
   </div>
 
   <!-- PORTFOLIO TAB -->
+  <!-- MARKET DATA TAB -->
+  <div class="tab-panel on" id="panel-market">
+    <div class="tab-hdr"><h2 id="market-h2">📡 Market Data</h2></div>
+    <p class="struct-hint" id="market-hint">
+      A desk's day starts here, and in this order: rates, then the forward for each expiry, then the volatility surface, then the arbitrage checks, then publish. Pricing comes after, and reads the one published mark &mdash; no consumer fits its own surface.
+    </p>
+
+    <!-- 1. where the quotes come from -->
+    <div class="analysis-block">
+      <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+        <span id="lbl-md-src-hdr">1 &middot; Source &mdash; which chain is being marked</span><span>▼</span>
+      </div>
+      <div class="analysis-body open">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:150px">
+            <label id="lbl-md-und">Underlying</label>
+            <select id="md-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+              <option value="IO">IO (CSI 300 index options)</option>
+              <option value="HO">HO (SSE 50 index options)</option>
+              <option value="MO">MO (CSI 1000 index options)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:160px">
+            <label id="lbl-md-source">Source</label>
+            <select id="md-source" onchange="onMarketSourceChange()">
+              <option value="snapshot">Committed snapshot</option>
+              <option value="csv">CSV upload</option>
+              <option value="wind">Wind panel</option>
+              <option value="akshare">akshare (live)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:110px">
+            <label id="lbl-md-rate">Rate (%)</label>
+            <input type="number" id="md-rate" value="2" step="0.1"/>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:150px" id="md-asof-wrap">
+            <label id="lbl-md-asof">Panel date (YYYY-MM-DD)</label>
+            <input type="text" id="md-asof" placeholder="2024-12-25"/>
+          </div>
+        </div>
+
+        <div id="md-csv-wrap" style="display:none;border-left:3px solid var(--blue);background:var(--tint-info);border-radius:4px;padding:10px 12px;margin-bottom:10px">
+          <p class="hint" id="lbl-md-csv-hint">Columns: <code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>, and optionally <code>as_of</code> &mdash; the date the quotes were taken. Without it the chain dates itself today, which fits identically and labels the published mark with the wrong day. The file is stored under a hash of its contents; the name you send is never used as a path.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+            <input type="file" id="md-csv-file" accept=".csv,text/csv"/>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="uploadMarketCsv()" id="btn-md-upload" data-i18n="btn_md_upload">▲ Upload</button>
+          </div>
+          <div class="hint" id="md-csv-status" style="margin-top:8px"></div>
+        </div>
+
+        <button class="btn btn-p" style="width:auto;padding:6px 16px" onclick="fitMarketSurface()" id="btn-md-fit" data-i18n="btn_md_fit">▶ Fit Surface</button>
+        <div class="hint" id="md-fit-status" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div id="md-results" style="display:none">
+      <!-- 2. what was thrown away -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-screen-hdr">2 &middot; Screening &mdash; what was discarded, and why</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-screen-hint">Most of a board never reaches the fit. Reported because a surface fitted to 42 of 126 quotes is a different claim from one fitted to all of them, and the reasons are the ones that decide whether the remainder is representative.</p>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-md-recv">Quotes Received</div><div class="metric-val" id="md-recv">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-used">Used in the Fit</div><div class="metric-val" id="md-used">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-kept">Kept</div><div class="metric-val" id="md-kept">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-slices">Usable Expiries</div><div class="metric-val" id="md-slices">—</div></div>
+          </div>
+          <div id="md-reject-table"></div>
+          <div id="md-slice-table"></div>
+        </div>
+      </div>
+
+      <!-- 3. the forward, which the moneyness is measured against -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-fwd-hdr">3 &middot; Forwards &mdash; what moneyness is measured against</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-fwd-hint">One forward per expiry, implied from put-call parity rather than taken from spot and a dividend guess. It has to come first because the surface is parameterised in log-moneyness <code>k = log(K/F(T))</code>: a wrong forward slides the whole smile sideways, and every strike is then quoted against the wrong centre.</p>
+          <div id="chart-md-forward" style="height:300px"></div>
+          <div id="md-fwd-table"></div>
+        </div>
+      </div>
+
+      <!-- 4. rates, and an honest note about what is actually used -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-rates-hdr">4 &middot; Rates &mdash; and what is actually being used</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="md-rates-note">—</p>
+        </div>
+      </div>
+
+      <!-- 5. the gates, and the publish -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-gate-hdr">5 &middot; Gates and publish &mdash; nothing prices until this passes</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-gate-hint">Five checks, all reported whether they pass or not: a reader deciding whether to override needs to know if one thing is marginal or everything is wrong. The fit tolerance is set from this project's own data &mdash; the committed chains fit to 0.654 and 0.587 volatility points, so a 5bp gate borrowed from a listed-vanilla desk would reject every surface here, and a gate nothing passes gets switched off rather than checked.</p>
+          <div id="md-gate-table"></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0">
+            <button class="btn btn-ok" style="width:auto;padding:6px 16px" onclick="publishMark()" id="btn-md-publish" data-i18n="btn_md_publish">✓ Publish as today's mark</button>
+            <label class="chk"><input type="checkbox" id="md-force"/> <span id="lbl-md-force">Force past a failed gate</span></label>
+          </div>
+          <div id="md-publish-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the mark that is currently published, independent of any fit above -->
+    <div class="analysis-block">
+      <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+        <span id="lbl-md-mark-hdr">Current mark &mdash; what everything is pricing off</span><span>▼</span>
+      </div>
+      <div class="analysis-body open">
+        <p class="hint" id="lbl-md-mark-hint">Reading this re-fits the mark's own inputs and checks the fingerprint. A surface that no longer reproduces is reported rather than served: the point of a mark is that the whole book values off one surface, and one that no longer matches its own fingerprint is a different surface wearing yesterday's blessing.</p>
+        <button class="btn btn-s" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="readMark()" id="btn-md-mark" data-i18n="btn_md_mark">↻ Read the published mark</button>
+        <div id="md-mark-out"></div>
+      </div>
+    </div>
+  </div><!-- /panel-market -->
+
+  <!-- MODELS TAB -->
+  <div class="tab-panel" id="panel-models">
+    <div class="tab-hdr"><h2 id="models-h2">🌋 Volatility Models</h2></div>
+    <p class="struct-hint" id="models-hint">
+      Everything the snowball and shark fin can be priced <i>against</i>, and the evidence for each. These were reachable only through the API until now, which meant the flat-volatility number was the only one anyone saw.
+    </p>
+
+    <!-- SSVI surface -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-vs-hdr">📈 SSVI Surface — fit, and whether it is arbitrage-free</span><span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="lbl-vs-hint">An arbitrage-free SSVI surface (Gatheral–Jacquier) fitted to a committed quote snapshot. The diagnostics come first: a surface that fits well and admits arbitrage is worse than one that fits worse and does not, because the arbitrage is what a barrier payoff will find.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:130px">
+            <label id="lbl-vs-und">Underlying</label>
+            <select id="vs-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:110px">
+            <label id="lbl-vs-rate">Rate (%)</label>
+            <input type="number" id="vs-rate" value="2" step="0.1"/>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcSurface()" id="btn-vs" data-i18n="btn_run_fit">▶ Fit Surface</button>
+        </div>
+        <div id="vs-results" style="display:none">
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-rms">Fit RMS Error</div><div class="metric-val" id="vs-rms">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-bf">Butterfly Margin</div><div class="metric-val" id="vs-bf">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-cal">Calendar Margin</div><div class="metric-val" id="vs-cal">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-arb">Arbitrage-Free</div><div class="metric-val" id="vs-arb">—</div></div>
+          </div>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-exp">Expiries Fitted</div><div class="metric-val" id="vs-exp">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-reach">Longest Expiry</div><div class="metric-val" id="vs-reach">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-extrap">3y Extrapolated</div><div class="metric-val" id="vs-extrap">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-vs-asof">As Of</div><div class="metric-val" style="font-size:11px" id="vs-asof">—</div></div>
+          </div>
+          <p class="hint" id="vs-note">—</p>
+
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0">
+            <label class="chk"><input type="checkbox" id="vs-show-quotes" checked onchange="redrawSurface()"/> <span id="lbl-vs-quotes">Show the quotes it was fitted to</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:120px">
+              <label id="lbl-vs-horizon">Draw out to (y)</label>
+              <select id="vs-horizon" onchange="calcSurface()">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+              </select>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-vs-stretch">Time axis</label>
+              <input type="range" id="vs-stretch" min="0.4" max="2.4" step="0.1" value="1.1" oninput="stretchSurface()"/>
+            </div>
+          </div>
+
+          <div id="chart-surface" style="height:460px;margin-top:4px"></div>
+          <p class="hint" id="vs-pick">Click the surface to pin a point; the two charts below follow it.</p>
+          <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+            <div>
+              <div class="hint" id="lbl-vs-slice-k">Fixed expiry, along strike &mdash; the smile</div>
+              <div id="chart-vs-smile" style="height:260px"></div>
+            </div>
+            <div>
+              <div class="hint" id="lbl-vs-slice-t">Fixed moneyness, along time &mdash; the term structure</div>
+              <div id="chart-vs-term" style="height:260px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dupire local volatility -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-lv-hdr">📉 Dupire Local Volatility — and how much of it is invented</span><span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="lbl-lv-hint">The surface the engines actually step through. Local volatility is <i>not</i> implied volatility — reading one as the other is a standing trap — so the heatmap is labelled and the tooltip gives both. The extrapolated share leads because it is the largest single assumption behind any long-dated price, and no amount of grid refinement touches it.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:130px">
+            <label id="lbl-lv-und">Underlying</label>
+            <select id="lv-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:100px">
+            <label id="lbl-lv-rate">Rate (%)</label>
+            <input type="number" id="lv-rate" value="2" step="0.1"/>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:110px">
+            <label id="lbl-lv-hz">Horizon (y)</label>
+            <select id="lv-hz">
+              <option value="3">3</option>
+              <option value="2">2</option>
+              <option value="1">1</option>
+            </select>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcLocalVol()" id="btn-lv" data-i18n="btn_run_lv">▶ Build Surface</button>
+        </div>
+        <div id="lv-results" style="display:none">
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-extrap">Extrapolated Share</div><div class="metric-val" id="lv-extrap">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-quoted">Last Quoted Expiry</div><div class="metric-val" id="lv-quoted">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-range">Solver Vol Range</div><div class="metric-val" style="font-size:12px" id="lv-range">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-wd">Well-Defined</div><div class="metric-val" id="lv-wd">—</div></div>
+          </div>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-denom">Min Dupire Denominator</div><div class="metric-val" id="lv-denom">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-clamp">Clamped</div><div class="metric-val" id="lv-clamp">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-peclet">Max Péclet</div><div class="metric-val" id="lv-peclet">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-lv-asof">As Of</div><div class="metric-val" style="font-size:11px" id="lv-asof">—</div></div>
+          </div>
+          <p class="hint" id="lv-note">—</p>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0">
+            <label class="chk"><input type="checkbox" id="lv-show-implied" checked onchange="redrawLocalVol()"/> <span id="lbl-lv-implied">Overlay the implied surface it came from</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-lv-stretch">Time axis</label>
+              <input type="range" id="lv-stretch" min="0.4" max="2.4" step="0.1" value="1.1" oninput="stretchLocalVol()"/>
+            </div>
+          </div>
+          <div id="chart-localvol" style="height:460px;margin-top:4px"></div>
+          <p class="hint" id="lv-pick">Click the surface to pin a point; the two charts below follow it.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+            <div>
+              <div class="hint" id="lbl-lv-slice-k">Fixed time, along price</div>
+              <div id="chart-lv-slice-k" style="height:260px"></div>
+            </div>
+            <div>
+              <div class="hint" id="lbl-lv-slice-t">Fixed price, along time</div>
+              <div id="chart-lv-slice-t" style="height:260px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- The round trip: the only evidence that any of the above is right -->
+        <div style="border-top:1px solid #1c3a60;margin-top:14px;padding-top:12px">
+          <p class="hint" id="lbl-lv-rt-hint">Dupire guarantees in continuous time that a local volatility reprices the options it was derived from. So the round trip is not a nicety — it is the one check that separates a correct surface from a plausible one, and any residual is the engine&rsquo;s discretisation and nothing else. Which makes the natural budget the surface&rsquo;s own fit error: an engine adding less noise than the data already carries is as accurate as the inputs can justify.</p>
+          <button class="btn btn-s" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcLocalVolRoundTrip()" id="btn-lv-rt" data-i18n="btn_run_lv_rt">▶ Reprice the Vanillas (slow, ~7s)</button>
+          <div id="lv-rt-results" style="display:none">
+            <div class="metric-grid" style="margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-lv-rt-worst">Worst Error</div><div class="metric-val" id="lv-rt-worst">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-lv-rt-budget">Fit-Error Budget</div><div class="metric-val" id="lv-rt-budget">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-lv-rt-share">Share of Budget</div><div class="metric-val" id="lv-rt-share">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-lv-rt-verdict">Verdict</div><div class="metric-val" id="lv-rt-verdict">—</div></div>
+            </div>
+            <div id="lv-rt-table"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Heston -->
+    <div class="analysis-block">
+      <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+        <span id="lbl-hs-hdr">🌀 Heston — one engine only, and it fits worse</span><span>▼</span>
+      </div>
+      <div class="analysis-body">
+        <p class="hint" id="lbl-hs-hint">Heston is here for a forward smile that does not flatten, not for accuracy — and the three things wrong with it go above the numbers rather than below them. The first calibration takes about 19 seconds; it is cached for the rest of the server&rsquo;s life, after which everything on this panel is instant.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:130px">
+            <label id="lbl-hs-und">Underlying</label>
+            <select id="hs-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:100px">
+            <label id="lbl-hs-rate">Rate (%)</label>
+            <input type="number" id="hs-rate" value="2" step="0.1"/>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px" onclick="calcHeston()" id="btn-hs" data-i18n="btn_run_hs">▶ Calibrate (slow first time)</button>
+        </div>
+
+        <div id="hs-results" style="display:none">
+          <!-- The caveats, deliberately above everything else -->
+          <div id="hs-caveats" style="border-left:3px solid var(--yellow);background:#140f00;border-radius:4px;padding:9px 12px;margin-bottom:12px;font-size:11px;line-height:1.55;color:#d9c89a"></div>
+
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-vs">Fit vs SSVI</div><div class="metric-val" id="hs-vs">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-ident">Well-Identified</div><div class="metric-val" id="hs-ident">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-feller">Feller</div><div class="metric-val" id="hs-feller">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-conv">Converged</div><div class="metric-val" id="hs-conv">—</div></div>
+          </div>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-rms">Heston RMS</div><div class="metric-val" id="hs-rms">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-ssvi">SSVI RMS</div><div class="metric-val" id="hs-ssvi">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-pts">Quotes Fitted</div><div class="metric-val" id="hs-pts">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-hs-asof">As Of</div><div class="metric-val" style="font-size:11px" id="hs-asof">—</div></div>
+          </div>
+          <div id="hs-params"></div>
+        </div>
+
+        <!-- European by COS: the one layer here that does have a second engine -->
+        <div style="border-top:1px solid #1c3a60;margin-top:14px;padding-top:12px">
+          <p class="hint" id="lbl-hs-eu-hint">A European by the COS method, which is the one number on this panel with an independent second engine behind it: it agrees with QuantLib&rsquo;s analytic Heston engine to 5e-09 across three parameter sets, four maturities and three strikes. Puts are integrated and calls come from parity, because a call&rsquo;s cosine coefficients overflow on a wide density.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div class="fg" style="margin-bottom:0;min-width:100px">
+              <label id="lbl-hs-K">Strike</label>
+              <input type="number" id="hs-K" value="4.1" step="0.05"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-T">Maturity (y)</label>
+              <input type="number" id="hs-T" value="0.5" step="0.25"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-flag">Type</label>
+              <select id="hs-flag"><option value="c">Call</option><option value="p">Put</option></select>
+            </div>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="calcHestonEuropean()" id="btn-hs-eu" data-i18n="btn_run_hs_eu">▶ Price</button>
+          </div>
+          <div id="hs-eu-out" class="hint" style="display:none"></div>
+        </div>
+
+        <!-- Snowball by QE: the single-engine number -->
+        <div style="border-top:1px solid #1c3a60;margin-top:14px;padding-top:12px">
+          <p class="hint" id="lbl-hs-sb-hint">A snowball under Heston by Andersen&rsquo;s QE scheme. QE is a requirement here rather than a refinement: the calibrated parameters violate Feller, so the variance reaches zero and a Euler step would take it negative. This number is the only one the service returns without a second engine behind it, and the response says so — reproduced below rather than quietly dropped.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-T">Tenor (y)</label>
+              <input type="number" id="hs-sb-T" value="1" step="0.5"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-ko">KO (%)</label>
+              <input type="number" id="hs-sb-ko" value="103" step="1"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:90px">
+              <label id="lbl-hs-sb-ki">KI (%)</label>
+              <input type="number" id="hs-sb-ki" value="75" step="1"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:100px">
+              <label id="lbl-hs-sb-cpn">Coupon (%)</label>
+              <input type="number" id="hs-sb-cpn" value="20" step="0.5"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-hs-sb-paths">Paths</label>
+              <input type="number" id="hs-sb-paths" value="100000" step="50000"/>
+            </div>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="calcHestonSnowball()" id="btn-hs-sb" data-i18n="btn_run_hs_sb">▶ Simulate</button>
+          </div>
+          <div id="hs-sb-results" style="display:none">
+            <div id="hs-sb-warn" style="border-left:3px solid var(--red);background:#1a0c0c;border-radius:4px;padding:9px 12px;margin-bottom:10px;font-size:11px;line-height:1.55;color:#e8b4b4"></div>
+            <div class="metric-grid" style="margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-px">Price</div><div class="metric-val" id="hs-sb-px">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ci">95% CI</div><div class="metric-val" style="font-size:12px" id="hs-sb-ci">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ko-p">KO Probability</div><div class="metric-val" id="hs-sb-ko-p">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-hs-sb-ki-p">KI, Never KO</div><div class="metric-val" id="hs-sb-ki-p">—</div></div>
+            </div>
+            <p class="hint" id="hs-sb-note">—</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /panel-models -->
+
   <div class="tab-panel" id="panel-portfolio">
     <div class="tab-hdr">
       <h2 id="port-h2">Portfolio Exposure Monitor</h2>
@@ -701,7 +1118,7 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
           <span class="badge">NumPy</span>
           <span class="badge">Pandas</span>
           <span class="badge">openpyxl</span>
-          <span class="badge">ECharts 5</span>
+          <span class="badge">Plotly 2</span>
         </div>
       </div>
       <div class="a-sec"><h3>Target Roles</h3>
@@ -736,7 +1153,7 @@ python app.py
           <span class="badge">NumPy</span>
           <span class="badge">Pandas</span>
           <span class="badge">openpyxl</span>
-          <span class="badge">ECharts 5</span>
+          <span class="badge">Plotly 2</span>
         </div>
       </div>
       <div class="a-sec"><h3>目标岗位</h3>
@@ -810,6 +1227,86 @@ python app.py
               </table>
             </div>
           </div>
+        </div>
+      </div>
+      <!-- Snowball Par Coupon Quote -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-quote-hdr">💰 Par Coupon — what this note can carry</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-quote-hint">Solves for the coupon that makes the note worth par — the number a desk actually quotes. Exact rather than iterated: the price is affine in the coupon, so this comes from three solves and the collinearity is measured on every call. The Coupon Rate input above is ignored here; it is the unknown.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballQuote()" id="btn-sb-quote" data-i18n="btn_run_quote">▶ Solve Par Coupon</button>
+          <div id="sb-quote-results" style="display:none">
+            <div class="metric-grid" style="margin-top:8px;margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-par">Par Coupon</div><div class="metric-val" id="sb-q-par">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-ann">Coupon Annuity</div><div class="metric-val" id="sb-q-ann">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-ki">Knock-In Leg</div><div class="metric-val" id="sb-q-ki">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-aff">Affinity Residual</div><div class="metric-val" id="sb-q-aff">—</div></div>
+            </div>
+            <div class="panel-title" style="margin-top:6px;margin-bottom:6px" id="lbl-sb-q-split-hdr">📊 What pays for it</div>
+            <div class="metric-grid" style="margin-bottom:10px">
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-vol">Volatility</div><div class="metric-val" id="sb-q-vol">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-carry">Futures Carry</div><div class="metric-val" id="sb-q-carry">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-share">Carry Share</div><div class="metric-val" id="sb-q-share">—</div></div>
+              <div class="metric-card"><div class="metric-label" id="lbl-sb-q-mc">MC Check (z)</div><div class="metric-val" id="sb-q-mc">—</div></div>
+            </div>
+            <p class="hint" id="sb-q-note">—</p>
+          </div>
+        </div>
+      </div>
+      <!-- Snowball Risk + Two-Engine Reconciliation -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-recon-hdr">⚖ Greeks &amp; Two-Engine Reconciliation</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-recon-hint">Six Greeks from the Crank-Nicolson surface, each checked against an independent Monte Carlo with common random numbers. The budget is built from the simulation's own measured standard error rather than from a chosen tolerance, so a pass carried by a wide interval is visibly weaker than one with both engines tight.</p>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballRecon()" id="btn-sb-recon" data-i18n="btn_run_recon">▶ Run Both Engines</button>
+          <div id="sb-recon-results" style="display:none">
+            <div class="tscroll">
+              <table class="dtable" style="font-size:11px">
+                <thead><tr>
+                  <th style="text-align:left">Greek</th>
+                  <th>PDE (production)</th>
+                  <th>Monte Carlo</th>
+                  <th>Gap</th>
+                  <th>Budget</th>
+                  <th>Agree</th>
+                </tr></thead>
+                <tbody id="sb-recon-body"></tbody>
+              </table>
+            </div>
+            <p class="hint" id="sb-recon-note">—</p>
+          </div>
+        </div>
+      </div>
+      <!-- Snowball Quote Report -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-sb-rep-hdr">📋 Quote Report — read top to bottom</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="lbl-sb-rep-hint">The whole picture in the order it should be read. Carry coverage leads, because 52% of a one-year note's carry is unmeasured and 84% of a three-year note's — and the carry more than doubles the quotable coupon, so the largest input is also the least observed.</p>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <label class="chk"><input type="checkbox" id="sb-rep-quote" checked/> <span id="lbl-sb-rep-quote">Par coupon</span></label>
+            <label class="chk"><input type="checkbox" id="sb-rep-mc" checked/> <span id="lbl-sb-rep-mc">Outcome probabilities</span></label>
+            <label class="chk"><input type="checkbox" id="sb-rep-xc"/> <span id="lbl-sb-rep-xc">Two-engine reconciliation (slow)</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:150px">
+              <label id="lbl-sb-rep-asof">Measure carry on (YYYY-MM-DD)</label>
+              <input type="text" id="sb-rep-asof" placeholder="2024-12-25"/>
+            </div>
+            <div class="fg" style="margin-bottom:0;min-width:130px">
+              <label id="lbl-sb-rep-tail">Carry beyond the board</label>
+              <select id="sb-rep-tail">
+                <option value="hold_last">hold_last</option>
+                <option value="zero">zero</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-p" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="calcSnowballReport()" id="btn-sb-rep" data-i18n="btn_run_report">▶ Build Report</button>
+          <div id="sb-rep-warn" class="hint" style="display:none;color:var(--yellow)"></div>
+          <pre id="sb-rep-out" style="display:none;background:#0b1420;border:1px solid #1c3a60;border-radius:4px;padding:12px;font-size:10.5px;line-height:1.45;color:#c6d6e8;overflow-x:auto;max-height:640px"></pre>
         </div>
       </div>
       <!-- Snowball Sensitivity -->
@@ -967,8 +1464,89 @@ python app.py
 let currentFlag='c', currentProduct='call', currentLang='en';
 let tUnit='days', rUnit='pct', sUnit='pct', qUnit='pct';
 let positions=[], posIdCounter=1, lastResult=null, lastParams=null;
-let chartPrice=null, chartSmile=null, chartMC=null;
-let gcCharts={delta:null,gamma:null,vega:null,theta:null,rho:null};
+// ========== PALETTE AND PLOTTING ==========
+// Read from the stylesheet rather than repeated here, so the palette has
+// exactly one definition. Changing the theme is a CSS edit and nothing below
+// moves.
+const CSSVAR = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let PAL = {};
+function readPalette(){
+  PAL = {
+    tx:CSSVAR('--tx'), tx2:CSSVAR('--tx2'), bd:CSSVAR('--bd'), bd2:CSSVAR('--bd2'),
+    blue:CSSVAR('--c-blue'), green:CSSVAR('--c-green'), amber:CSSVAR('--c-amber'),
+    red:CSSVAR('--c-red'), purple:CSSVAR('--c-purple'),
+  };
+}
+readPalette();
+
+const FONT = "'Microsoft YaHei','Segoe UI',Arial,sans-serif";
+const PCFG = {
+  responsive:true, displaylogo:false, scrollZoom:false,
+  toImageButtonOptions:{format:'png', scale:2},
+  modeBarButtonsToRemove:['sendDataToCloud','lasso2d','select2d','autoScale2d'],
+};
+
+// Every chart starts from this. The ECharts version repeated its axis colours
+// in all ten option blocks -- thirty-three literals -- which is why a theme
+// change used to mean editing every chart.
+//
+// `x` / `y` are shorthand for the axis titles; `xaxis` / `yaxis` merge into
+// the styled axes; `title` and `legend` get their own handling. **Everything
+// else is forwarded to the layout verbatim via the rest spread**, and that
+// matters: the first version named the keys it understood and silently
+// dropped the rest, so the Monte Carlo chart's `bargap:0` vanished and its
+// bars drew with gaps where the ECharts version had them touching. Nothing
+// reported it -- a layout key Plotly never receives is not an error. Any
+// valid Plotly layout key now works here without this function having to
+// know about it.
+function PLOT(o){
+  const {x, y, xaxis, yaxis, title, legend, hovermode, margin, ...rest} = o || {};
+  const axFont = {color:PAL.tx2, size:10, family:FONT};
+  const axis = extra => ({
+    tickfont:axFont, gridcolor:PAL.bd2, zerolinecolor:PAL.bd, linecolor:PAL.bd,
+    automargin:true, ...extra,
+  });
+  const layout = {
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:margin || {l:58, r:22, t:title ? 36 : 14, b:46},
+    xaxis:axis({title:{text:x||'', font:axFont}, ...(xaxis||{})}),
+    yaxis:axis({title:{text:y||'', font:axFont}, ...(yaxis||{})}),
+    showlegend:legend === true,
+    legend:{orientation:'h', x:0, y:1.12, font:{size:10, color:PAL.tx2}},
+    hovermode:hovermode || 'closest',
+    ...rest,
+  };
+  if(title) layout.title = {text:title, font:{size:12, color:PAL.tx}, x:0.5, xanchor:'center', y:0.97};
+  return layout;
+}
+
+// A vertical reference line: a strike, a barrier, a confidence bound.
+function vline(x, color, dash){
+  return {type:'line', x0:x, x1:x, yref:'paper', y0:0, y1:1,
+          line:{color, dash:dash||'dot', width:1.4}};
+}
+function vlabel(x, text, color){
+  return {x, xref:'x', y:1.02, yref:'paper', text, showarrow:false,
+          font:{size:10, color}, yanchor:'bottom'};
+}
+
+// Plotly draws into the div, so there is no instance object to hold. This
+// records which divs carry a chart, so the tab-switch and font-size hooks can
+// resize them: responsive:true handles window resizes but not a container
+// that was display:none at the moment the chart was created, which is the
+// case this interface actually hits.
+const PLOTS = new Set();
+function draw(id, traces, layout){
+  PLOTS.add(id);
+  return Plotly.react(id, traces, layout, PCFG);
+}
+function resizePlots(){
+  PLOTS.forEach(id => {
+    const el = $(id);
+    if(el && el.offsetParent !== null) Plotly.Plots.resize(el);
+  });
+}
 let smileRowCount=0;
 
 // ========== UTILS ==========
@@ -1092,33 +1670,33 @@ function loadPreset(i){
 }
 
 // ========== TABS ==========
-const PANELS={pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
+// Order matters: switchMain pairs these keys with the .mtab buttons by
+// index, so this object and the button row have to stay in the same order.
+// Inserting a tab in one and not the other sends every later tab to the wrong
+// panel, silently -- and not cleanly, since the lookup below is by key, so
+// the right panel still shows while the highlight lands on the wrong button.
+// tests/test_frontend.py asserts the two orders match.
+//
+// The order itself follows a desk's day: calibrate, then price.
+const PANELS={market:'panel-market',models:'panel-models',pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
   $(PANELS[key]).classList.add('on');
-  requestAnimationFrame(()=>{
-    if(chartPrice) chartPrice.resize();
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-    Object.values(gcCharts).forEach(c=>c&&c.resize());
-  });
+  requestAnimationFrame(resizePlots);
 }
 function switchInner(key){
   document.querySelectorAll('.itab').forEach((b,i)=>b.classList.toggle('on',['price-curve','greeks-curves'][i]===key));
   $('inner-price-curve').style.display=key==='price-curve'?'flex':'none';
   $('inner-greeks-curves').style.display=key==='greeks-curves'?'flex':'none';
-  // Force DOM reflow so ECharts gets correct container dimensions
+  // Force DOM reflow so the chart gets correct container dimensions
   void $('inner-greeks-curves').offsetWidth;
   setTimeout(()=>{
     if(key==='price-curve'){
-      if(chartPrice) chartPrice.resize();
-    } else {
-      if(lastResult && lastParams){
-        _doRenderGreeksCharts(lastResult, lastParams);
-        // Second resize pass after ECharts has initialised
-        setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 120);
-      }
+      resizePlots();
+    } else if(lastResult && lastParams){
+      _doRenderGreeksCharts(lastResult, lastParams);
+      setTimeout(resizePlots, 120);
     }
   }, 80);
 }
@@ -1168,20 +1746,16 @@ function renderPricing(d,p){
 }
 
 function renderPriceChart(d,p){
-  if(!chartPrice) chartPrice=echarts.init($('chart-price'));
   const xs=d.price_curve.spots, ys=d.price_curve.prices;
-  const kLine=[[p.K,0],[p.K,Math.max(...ys)*1.1]];
-  chartPrice.setOption({
-    backgroundColor:'transparent',
-    grid:{left:50,right:20,top:30,bottom:40},
-    tooltip:{trigger:'axis',formatter:arr=>`Spot: ${arr[0].axisValue}<br/>Price: ${fmt(arr[0].data,2)}`},
-    xAxis:{type:'value',name:'Spot Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    yAxis:{type:'value',name:'Option Price',nameLocation:'middle',nameGap:40,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    series:[
-      {type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color:'#4e9eff',width:2},showSymbol:false,areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(78,158,255,0.25)'},{offset:1,color:'rgba(78,158,255,0.02)'}]}}},
-      {type:'line',data:kLine,lineStyle:{color:'#f7b731',type:'dashed',width:1.5},showSymbol:false,tooltip:{show:false}},
-    ]
-  });
+  draw('chart-price',[
+    {type:'scatter', mode:'lines', x:xs, y:ys, name:'Price',
+     fill:'tozeroy', fillcolor:'rgba(59,130,246,0.10)',
+     line:{color:PAL.blue, width:2, shape:'spline'},
+     hovertemplate:'Spot %{x}<br>Price %{y:.2f}<extra></extra>'},
+  ], PLOT({x:'Spot Price', y:'Option Price',
+           shapes:[vline(p.K, PAL.amber, 'dash')],
+           annotations:[vlabel(p.K, 'K', PAL.amber)],
+           margin:{l:58,r:22,t:22,b:46}}));
 }
 
 function renderGreeksCharts(d,p){
@@ -1196,30 +1770,25 @@ function renderGreeksCharts(d,p){
 function _doRenderGreeksCharts(d,p){
   const xs=d.price_curve.spots;
   const greekDefs=[
-    {key:'delta',label:'Delta',color:'#4e9eff'},
-    {key:'gamma',label:'Gamma',color:'#20bf6b'},
-    {key:'vega',label:'Vega',color:'#f7b731'},
-    {key:'theta',label:'Theta',color:'#ff6b6b'},
-    {key:'rho',label:'Rho',color:'#a55eea'},
+    {key:'delta',label:'Delta',color:PAL.blue},
+    {key:'gamma',label:'Gamma',color:PAL.green},
+    {key:'vega',label:'Vega',color:PAL.amber},
+    {key:'theta',label:'Theta',color:PAL.red},
+    {key:'rho',label:'Rho',color:PAL.purple},
   ];
   greekDefs.forEach(({key,label,color})=>{
-    const el=$('gc-'+key);
-    // Dispose and re-init to ensure correct sizing when previously hidden
-    if(gcCharts[key]){ gcCharts[key].dispose(); gcCharts[key]=null; }
-    gcCharts[key]=echarts.init(el);
     const ys=d.greeks_curve[key]||[];
-    gcCharts[key].setOption({
-      backgroundColor:'transparent',
-      title:{text:label,textStyle:{color:'#d4e0ef',fontSize:11},left:8,top:4},
-      grid:{left:40,right:10,top:28,bottom:30},
-      tooltip:{trigger:'axis',formatter:a=>`Spot: ${a[0].axisValue}<br/>${label}: ${fmt(a[0].data,4)}`},
-      xAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-      yAxis:{type:'value',axisLabel:{color:'#6b8db0',fontSize:9},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-      series:[{type:'line',data:xs.map((x,i)=>[x,ys[i]]),smooth:true,lineStyle:{color,width:1.5},showSymbol:false}]
-    });
+    draw('gc-'+key,[
+      {type:'scatter', mode:'lines', x:xs, y:ys, name:label,
+       line:{color, width:1.6, shape:'spline'},
+       hovertemplate:'Spot %{x}<br>'+label+' %{y:.4f}<extra></extra>'},
+    ], PLOT({title:label, margin:{l:46,r:12,t:30,b:32},
+             xaxis:{tickfont:{color:PAL.tx2, size:9, family:FONT}},
+             yaxis:{tickfont:{color:PAL.tx2, size:9, family:FONT}}}));
   });
-  // Trigger a resize pass to correct any dimension issues
-  setTimeout(()=>Object.values(gcCharts).forEach(c=>c&&c.resize()), 150);
+  // One resize pass: these five live in a container that is display:none
+  // until the Greeks tab is opened, so they are created at zero width.
+  setTimeout(resizePlots, 150);
 }
 </script>
 
@@ -1487,17 +2056,16 @@ async function calcVolSmile(){
   }catch(e){showErr('Vol smile error: '+e.message);}
 }
 function renderVolSmile(d){
-  if(!chartSmile) chartSmile=echarts.init($('chart-smile'));
   const valid=d.results.filter(r=>!r.error&&r.iv!=null);
-  chartSmile.setOption({
-    backgroundColor:'transparent',
-    title:{text:'Volatility Smile',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
-    grid:{left:55,right:20,top:40,bottom:40},
-    tooltip:{trigger:'axis',formatter:a=>`Strike: ${a[0].axisValue}<br/>IV: ${fmt(a[0].data,2)}%`},
-    xAxis:{type:'value',name:'Strike Price',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    yAxis:{type:'value',name:'Implied Vol (%)',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    series:[{type:'line',data:valid.map(r=>[r.K,r.iv]),smooth:true,lineStyle:{color:'#f7b731',width:2.5},symbol:'circle',symbolSize:7,itemStyle:{color:'#f7b731'},label:{show:true,formatter:p=>`${fmt(p.data[1],1)}%`,color:'#f7b731',fontSize:10,position:'top'}}]
-  });
+  draw('chart-smile',[
+    {type:'scatter', mode:'lines+markers+text', x:valid.map(r=>r.K), y:valid.map(r=>r.iv),
+     name:'IV', line:{color:PAL.amber, width:2.5, shape:'spline'},
+     marker:{color:PAL.amber, size:7},
+     text:valid.map(r=>fmt(r.iv,1)+'%'), textposition:'top center',
+     textfont:{color:PAL.amber, size:10, family:FONT},
+     hovertemplate:'Strike %{x}<br>IV %{y:.2f}%<extra></extra>'},
+  ], PLOT({title:'Volatility Smile', x:'Strike Price', y:'Implied Vol (%)',
+           margin:{l:58,r:22,t:38,b:46}}));
 }
 
 // ========== MC DISTRIBUTION ==========
@@ -1520,25 +2088,20 @@ function renderMCDist(d){
     <div class="stat-card"><div class="stat-label">95% CI Upper</div><div class="stat-val">${fmt(st.ci95_upper,2)}</div></div>
     <div class="stat-card"><div class="stat-label">Std Dev</div><div class="stat-val">${fmt(st.std,2)}</div></div>
     <div class="stat-card"><div class="stat-label">Paths</div><div class="stat-val">${(st.n_paths/1000).toFixed(0)}k</div></div>`;
-  if(!chartMC) chartMC=echarts.init($('chart-mc'));
   const bins=d.bins, counts=d.counts;
-  chartMC.setOption({
-    backgroundColor:'transparent',
-    title:{text:'Monte Carlo Payoff Distribution',textStyle:{color:'#d4e0ef',fontSize:12},left:'center',top:4},
-    grid:{left:55,right:30,top:45,bottom:40},
-    tooltip:{trigger:'axis',formatter:a=>`Payoff: ${fmt(a[0].axisValue,2)}<br/>Count: ${a[0].data}`},
-    xAxis:{type:'value',name:'Payoff',nameLocation:'middle',nameGap:28,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{show:false}},
-    yAxis:{type:'value',name:'Frequency',nameLocation:'middle',nameGap:42,axisLabel:{color:'#6b8db0',fontSize:10},axisLine:{lineStyle:{color:'#1c3a60'}},splitLine:{lineStyle:{color:'#0d1826'}}},
-    markLine:{data:[{xAxis:st.mean,name:'Mean'},{xAxis:st.ci95_lower,name:'CI Lower'},{xAxis:st.ci95_upper,name:'CI Upper'}]},
-    series:[
-      {type:'bar',data:bins.map((b,i)=>[b,counts[i]]),barWidth:'99%',itemStyle:{color:'rgba(78,158,255,0.7)',borderColor:'rgba(78,158,255,0.3)',borderWidth:0.5}},
-      {type:'line',markLine:{silent:true,symbol:'none',data:[
-        {xAxis:st.mean,lineStyle:{color:'#f7b731',type:'dashed'},label:{formatter:'Mean',color:'#f7b731',fontSize:10}},
-        {xAxis:st.ci95_lower,lineStyle:{color:'#ff6b6b',type:'dotted'},label:{formatter:'5%',color:'#ff6b6b',fontSize:10}},
-        {xAxis:st.ci95_upper,lineStyle:{color:'#20bf6b',type:'dotted'},label:{formatter:'95%',color:'#20bf6b',fontSize:10}},
-      ]},data:[]}
-    ]
-  });
+  draw('chart-mc',[
+    {type:'bar', x:bins, y:counts, name:'Frequency',
+     marker:{color:'rgba(59,130,246,0.65)', line:{color:'rgba(59,130,246,0.9)', width:0.5}},
+     hovertemplate:'Payoff %{x:.2f}<br>Count %{y}<extra></extra>'},
+  ], PLOT({title:'Monte Carlo Payoff Distribution', x:'Payoff', y:'Frequency',
+           margin:{l:58,r:30,t:42,b:46},
+           xaxis:{showgrid:false}, bargap:0,
+           shapes:[vline(st.mean, PAL.amber, 'dash'),
+                   vline(st.ci95_lower, PAL.red, 'dot'),
+                   vline(st.ci95_upper, PAL.green, 'dot')],
+           annotations:[vlabel(st.mean, 'Mean', PAL.amber),
+                        vlabel(st.ci95_lower, '5%', PAL.red),
+                        vlabel(st.ci95_upper, '95%', PAL.green)]}));
 }
 
 // ========== SENSITIVITY ==========
@@ -1634,6 +2197,92 @@ const I18N = {
     lbl_sb_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
     lbl_sb_cnfdm_hint:'Re-price the Snowball using Crank-Nicolson FDM (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.',
     lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
+    lbl_3greeks:'📐 Three-Method Greeks Comparison',
+    tab_market:'\ud83d\udce1 Market Data',
+    market_h2:'\ud83d\udce1 Market Data',
+    market_hint:"A desk's day starts here, and in this order: rates, then the forward for each expiry, then the volatility surface, then the arbitrage checks, then publish. Pricing comes after, and reads the one published mark \u2014 no consumer fits its own surface.",
+    lbl_md_src_hdr:'1 \u00b7 Source \u2014 which chain is being marked',
+    lbl_md_und:'Underlying', lbl_md_source:'Source', lbl_md_rate:'Rate (%)',
+    lbl_md_asof:'Panel date (YYYY-MM-DD)',
+    lbl_md_csv_hint:'Columns: <code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>, and optionally <code>as_of</code> \u2014 the date the quotes were taken. Without it the chain dates itself today, which fits identically and labels the published mark with the wrong day. The file is stored under a hash of its contents; the name you send is never used as a path.',
+    btn_md_upload:'\u25b2 Upload',
+    btn_md_fit:'\u25b6 Fit Surface',
+    lbl_md_screen_hdr:'2 \u00b7 Screening \u2014 what was discarded, and why',
+    lbl_md_screen_hint:'Most of a board never reaches the fit. Reported because a surface fitted to 42 of 126 quotes is a different claim from one fitted to all of them, and the reasons are the ones that decide whether the remainder is representative.',
+    lbl_md_recv:'Quotes Received', lbl_md_used:'Used in the Fit',
+    lbl_md_kept:'Kept', lbl_md_slices:'Usable Expiries',
+    lbl_md_fwd_hdr:'3 \u00b7 Forwards \u2014 what moneyness is measured against',
+    lbl_md_fwd_hint:'One forward per expiry, implied from put-call parity rather than taken from spot and a dividend guess. It has to come first because the surface is parameterised in log-moneyness <code>k = log(K/F(T))</code>: a wrong forward slides the whole smile sideways, and every strike is then quoted against the wrong centre.',
+    lbl_md_rates_hdr:'4 \u00b7 Rates \u2014 and what is actually being used',
+    lbl_md_gate_hdr:'5 \u00b7 Gates and publish \u2014 nothing prices until this passes',
+    lbl_md_gate_hint:"Five checks, all reported whether they pass or not: a reader deciding whether to override needs to know if one thing is marginal or everything is wrong. The fit tolerance is set from this project's own data \u2014 the committed chains fit to 0.654 and 0.587 volatility points, so a 5bp gate borrowed from a listed-vanilla desk would reject every surface here, and a gate nothing passes gets switched off rather than checked.",
+    btn_md_publish:"\u2713 Publish as today's mark",
+    lbl_md_force:'Force past a failed gate',
+    lbl_md_mark_hdr:'Current mark \u2014 what everything is pricing off',
+    lbl_md_mark_hint:"Reading this re-fits the mark's own inputs and checks the fingerprint. A surface that no longer reproduces is reported rather than served: the point of a mark is that the whole book values off one surface, and one that no longer matches its own fingerprint is a different surface wearing yesterday's blessing.",
+    btn_md_mark:'\u21bb Read the published mark',
+    tab_models:'🌋 Models',
+    models_h2:'🌋 Volatility Models',
+    models_hint:'Everything the snowball and shark fin can be priced <i>against</i>, and the evidence for each. These were reachable only through the API until now, which meant the flat-volatility number was the only one anyone saw.',
+    lbl_vs_hdr:'📈 SSVI Surface — fit, and whether it is arbitrage-free',
+    lbl_vs_hint:'An arbitrage-free SSVI surface (Gatheral–Jacquier) fitted to a committed quote snapshot. The diagnostics come first: a surface that fits well and admits arbitrage is worse than one that fits worse and does not, because the arbitrage is what a barrier payoff will find.',
+    btn_run_fit:'▶ Fit Surface',
+    lbl_vs_und:'Underlying', lbl_vs_rate:'Rate (%)',
+    lbl_vs_rms:'Fit RMS Error', lbl_vs_bf:'Butterfly Margin',
+    lbl_vs_cal:'Calendar Margin', lbl_vs_arb:'Arbitrage-Free',
+    lbl_vs_exp:'Expiries Fitted', lbl_vs_reach:'Longest Expiry',
+    lbl_vs_extrap:'3y Extrapolated', lbl_vs_asof:'As Of',
+    lbl_lv_hdr:'\ud83d\udcc9 Dupire Local Volatility \u2014 and how much of it is invented',
+    lbl_lv_hint:'The surface the engines actually step through. Local volatility is <i>not</i> implied volatility \u2014 reading one as the other is a standing trap \u2014 so the heatmap is labelled and the tooltip gives both. The extrapolated share leads because it is the largest single assumption behind any long-dated price, and no amount of grid refinement touches it.',
+    btn_run_lv:'\u25b6 Build Surface',
+    lbl_lv_und:'Underlying', lbl_lv_rate:'Rate (%)', lbl_lv_hz:'Horizon (y)',
+    lbl_lv_extrap:'Extrapolated Share', lbl_lv_quoted:'Last Quoted Expiry',
+    lbl_lv_range:'Solver Vol Range', lbl_lv_wd:'Well-Defined',
+    lbl_lv_denom:'Min Dupire Denominator', lbl_lv_clamp:'Clamped',
+    lbl_lv_peclet:'Max P\u00e9clet', lbl_lv_asof:'As Of',
+    lbl_lv_rt_hint:'Dupire guarantees in continuous time that a local volatility reprices the options it was derived from. So the round trip is not a nicety \u2014 it is the one check that separates a correct surface from a plausible one, and any residual is the engine\u2019s discretisation and nothing else. Which makes the natural budget the surface\u2019s own fit error: an engine adding less noise than the data already carries is as accurate as the inputs can justify.',
+    btn_run_lv_rt:'\u25b6 Reprice the Vanillas (slow, ~7s)',
+    lbl_lv_rt_worst:'Worst Error', lbl_lv_rt_budget:'Fit-Error Budget',
+    lbl_lv_rt_share:'Share of Budget', lbl_lv_rt_verdict:'Verdict',
+    lbl_hs_hdr:'\ud83c\udf00 Heston \u2014 one engine only, and it fits worse',
+    lbl_hs_hint:'Heston is here for a forward smile that does not flatten, not for accuracy \u2014 and the three things wrong with it go above the numbers rather than below them. The first calibration takes about 19 seconds; it is cached for the rest of the server\u2019s life, after which everything on this panel is instant.',
+    btn_run_hs:'\u25b6 Calibrate (slow first time)',
+    lbl_hs_und:'Underlying', lbl_hs_rate:'Rate (%)',
+    lbl_hs_vs:'Fit vs SSVI', lbl_hs_ident:'Well-Identified',
+    lbl_hs_feller:'Feller', lbl_hs_conv:'Converged',
+    lbl_hs_rms:'Heston RMS', lbl_hs_ssvi:'SSVI RMS',
+    lbl_hs_pts:'Quotes Fitted', lbl_hs_asof:'As Of',
+    lbl_hs_eu_hint:'A European by the COS method, which is the one number on this panel with an independent second engine behind it: it agrees with QuantLib\u2019s analytic Heston engine to 5e-09 across three parameter sets, four maturities and three strikes. Puts are integrated and calls come from parity, because a call\u2019s cosine coefficients overflow on a wide density.',
+    btn_run_hs_eu:'\u25b6 Price',
+    lbl_hs_K:'Strike', lbl_hs_T:'Maturity (y)', lbl_hs_flag:'Type',
+    lbl_hs_sb_hint:'A snowball under Heston by Andersen\u2019s QE scheme. QE is a requirement here rather than a refinement: the calibrated parameters violate Feller, so the variance reaches zero and a Euler step would take it negative. This number is the only one the service returns without a second engine behind it, and the response says so \u2014 reproduced below rather than quietly dropped.',
+    btn_run_hs_sb:'\u25b6 Simulate',
+    lbl_hs_sb_T:'Tenor (y)', lbl_hs_sb_ko:'KO (%)', lbl_hs_sb_ki:'KI (%)',
+    lbl_hs_sb_cpn:'Coupon (%)', lbl_hs_sb_paths:'Paths',
+    lbl_hs_sb_px:'Price', lbl_hs_sb_ci:'95% CI',
+    lbl_hs_sb_ko_p:'KO Probability', lbl_hs_sb_ki_p:'KI, Never KO',
+    lbl_sb_rep_hdr:'📋 Quote Report — read top to bottom',
+    lbl_sb_rep_hint:"The whole picture in the order it should be read. Carry coverage leads, because 52% of a one-year note's carry is unmeasured and 84% of a three-year note's — and the carry more than doubles the quotable coupon, so the largest input is also the least observed.",
+    btn_run_report:'▶ Build Report',
+    lbl_sb_rep_quote:'Par coupon',
+    lbl_sb_rep_mc:'Outcome probabilities',
+    lbl_sb_rep_xc:'Two-engine reconciliation (slow)',
+    lbl_sb_rep_asof:'Measure carry on (YYYY-MM-DD)',
+    lbl_sb_rep_tail:'Carry beyond the board',
+    // Phase 5: the par coupon panel
+    lbl_sb_basis:'Futures Carry 贴水 (%/yr)',
+    lbl_sb_basis_hint:'Total carry from the futures discount. Positive = future below spot. Measured at +10.2%/yr on the CSI 1000 board, where it more than doubles the quotable coupon.',
+    lbl_sb_quote_hdr:'💰 Par Coupon — what this note can carry',
+    lbl_sb_quote_hint:'Solves for the coupon that makes the note worth par — the number a desk actually quotes. Exact rather than iterated: the price is affine in the coupon, so this comes from three solves and the collinearity is measured on every call. The Coupon Rate input above is ignored here; it is the unknown.',
+    btn_run_quote:'▶ Solve Par Coupon',
+    lbl_sb_q_par:'Par Coupon', lbl_sb_q_ann:'Coupon Annuity',
+    lbl_sb_q_ki:'Knock-In Leg', lbl_sb_q_aff:'Affinity Residual',
+    lbl_sb_q_split_hdr:'📊 What pays for it',
+    lbl_sb_q_vol:'Volatility', lbl_sb_q_carry:'Futures Carry',
+    lbl_sb_q_share:'Carry Share', lbl_sb_q_mc:'MC Check (z)',
+    lbl_sb_recon_hdr:'⚖ Greeks & Two-Engine Reconciliation',
+    lbl_sb_recon_hint:"Six Greeks from the Crank-Nicolson surface, each checked against an independent Monte Carlo with common random numbers. The budget is built from the simulation's own measured standard error rather than from a chosen tolerance, so a pass carried by a wide interval is visibly weaker than one with both engines tight.",
+    btn_run_recon:'▶ Run Both Engines',
     lbl_sf_cnfdm_hdr:'🔢 CN-FDM Reprice (Crank-Nicolson PDE)',
     lbl_sf_cnfdm_hint:'Re-price the Shark Fin (Up-and-Out Call) using Crank-Nicolson FDM. PDE-based validation and full Greeks.',
     lbl_sf_cnfdm_price:'CN-FDM Price', lbl_sf_cnfdm_vs:'vs. Haug Analytical',
@@ -1729,6 +2378,92 @@ const I18N = {
     lbl_sb_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
     lbl_sb_cnfdm_hint:'使用Crank-Nicolson有限差分法（BS偏微分方程+Rannacher平滑）重新定价雪球，提供独立验证及完整希腊字母。',
     lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
+    lbl_3greeks:'📐 三种方法希腊字母对比',
+    tab_market:'\ud83d\udce1 市场数据',
+    market_h2:'\ud83d\udce1 市场数据',
+    market_hint:'交易台的一天从这里开始，而且是这个顺序：利率，然后每个到期的远期，然后波动率曲面，然后无套利校验，然后发布。定价排在后面，并且读那一份已发布的 mark \u2014\u2014 没有任何下游自己拟合曲面。',
+    lbl_md_src_hdr:'1 \u00b7 数据源 \u2014\u2014 正在给哪条链做标记',
+    lbl_md_und:'标的', lbl_md_source:'来源', lbl_md_rate:'利率 (%)',
+    lbl_md_asof:'面板日期 (YYYY-MM-DD)',
+    lbl_md_csv_hint:'列：<code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>，以及可选的 <code>as_of</code> \u2014\u2014 行情取自哪一天。没有它，这条链会把自己标成今天：拟合结果一模一样，但发布出去的 mark 记的是错的日子。文件按内容哈希存放；你传的文件名绝不会被当成路径用。',
+    btn_md_upload:'\u25b2 上传',
+    btn_md_fit:'\u25b6 拟合曲面',
+    lbl_md_screen_hdr:'2 \u00b7 报价筛选 \u2014\u2014 剔掉了什么，为什么',
+    lbl_md_screen_hint:'一个盘面上的报价大部分进不了拟合。要报出来，是因为「用 126 条里的 42 条拟出的曲面」和「用全部拟出的曲面」是两种不同的主张，而剔除原因恰好决定了剩下那些有没有代表性。',
+    lbl_md_recv:'收到报价', lbl_md_used:'进入拟合',
+    lbl_md_kept:'留用比例', lbl_md_slices:'可用到期',
+    lbl_md_fwd_hdr:'3 \u00b7 远期 \u2014\u2014 虚实值是相对谁度量的',
+    lbl_md_fwd_hint:'每个到期一个远期，由认购认沽平价反解，而不是拿现价加一个分红猜测。它必须排在前面，因为曲面是以对数虚实值 <code>k = log(K/F(T))</code> 参数化的：远期错了，整条微笑就整体平移，之后每一个行权价都是相对错的中心在报。',
+    lbl_md_rates_hdr:'4 \u00b7 利率 \u2014\u2014 以及实际在用的是什么',
+    lbl_md_gate_hdr:'5 \u00b7 门禁与发布 \u2014\u2014 过不了就什么都别定价',
+    lbl_md_gate_hint:'五道检查，通过与否全部报出：要判断该不该强制放行，得知道是一项勉强还是全盘不对。拟合容差是按这个项目自己的数据定的 \u2014\u2014 入库的两条链分别拟到 0.654 和 0.587 个波动率点，所以照搬场内香草台子的 5bp 会把这里每一张曲面都拒掉，而没人过得去的门禁只会被关掉，不会被遵守。',
+    btn_md_publish:'\u2713 发布为今日 mark',
+    lbl_md_force:'强制越过失败的门禁',
+    lbl_md_mark_hdr:'当前 mark \u2014\u2014 现在所有定价依据的那一张',
+    lbl_md_mark_hint:'读它会用 mark 自己记录的输入重新拟合一遍，并校验指纹。拟不出同一张曲面时报错而不是照样给出：mark 的意义就在于整本账用同一张曲面估值，而一张对不上自己指纹的曲面，是披着昨天那份祝福的另一张曲面。',
+    btn_md_mark:'\u21bb 读取已发布的 mark',
+    tab_models:'🌋 波动率模型',
+    models_h2:'🌋 波动率模型',
+    models_hint:'雪球与鲨鱼鳍可以<i>基于</i>什么来定价，以及每一样的证据。在此之前这些只能通过 API 触及，也就是说界面上能看到的只有平坦波动率那一个数。',
+    lbl_vs_hdr:'📈 SSVI 曲面 —— 拟合质量与是否无套利',
+    lbl_vs_hint:'对入库报价快照拟合的无套利 SSVI 曲面（Gatheral–Jacquier）。诊断先行：拟合得好但容许套利的曲面，比拟合略差而无套利的更糟 —— 因为障碍型payoff 恰恰会找到那个套利。',
+    btn_run_fit:'▶ 拟合曲面',
+    lbl_vs_und:'标的', lbl_vs_rate:'利率 (%)',
+    lbl_vs_rms:'拟合 RMS 误差', lbl_vs_bf:'蝶式边际',
+    lbl_vs_cal:'日历边际', lbl_vs_arb:'无套利',
+    lbl_vs_exp:'拟合到期数', lbl_vs_reach:'最远到期',
+    lbl_vs_extrap:'三年期外推占比', lbl_vs_asof:'数据日期',
+    lbl_lv_hdr:'\ud83d\udcc9 Dupire 局部波动率 \u2014\u2014 以及其中有多少是编出来的',
+    lbl_lv_hint:'引擎真正在上面步进的那张曲面。局部波动率<i>不是</i>隐含波动率 \u2014\u2014 把两者当成一回事是个长期陷阱 \u2014\u2014 所以热力图标明了画的是哪一个，提示框里两个都给。外推占比放在最前面，因为它是任何长期限价格背后最大的单一假设，而且再怎么加密网格也动不了它。',
+    btn_run_lv:'\u25b6 构建曲面',
+    lbl_lv_und:'标的', lbl_lv_rate:'利率 (%)', lbl_lv_hz:'期限 (年)',
+    lbl_lv_extrap:'外推占比', lbl_lv_quoted:'最远报价期限',
+    lbl_lv_range:'求解域波动率区间', lbl_lv_wd:'定义良好',
+    lbl_lv_denom:'Dupire 分母最小值', lbl_lv_clamp:'被截断',
+    lbl_lv_peclet:'最大 P\u00e9clet 数', lbl_lv_asof:'数据日期',
+    lbl_lv_rt_hint:'Dupire 在连续时间下保证：由某张隐含曲面导出的局部波动率，能把它所由来的那些期权重新定价回去。所以往返重定价不是锦上添花 \u2014\u2014 它是把一张正确的曲面和一张只是看起来像的曲面区分开的唯一检验，而任何残差只能是引擎的离散误差、别无其他。于是自然的预算就是曲面自己的拟合误差：引擎引入的噪声比数据本身已经带着的更小，就已经精确到输入所能支撑的极限了。',
+    btn_run_lv_rt:'\u25b6 重新定价这些香草期权（慢，约 7 秒）',
+    lbl_lv_rt_worst:'最大误差', lbl_lv_rt_budget:'拟合误差预算',
+    lbl_lv_rt_share:'占预算比例', lbl_lv_rt_verdict:'结论',
+    lbl_hs_hdr:'\ud83c\udf00 Heston \u2014\u2014 只有一个引擎，而且拟合更差',
+    lbl_hs_hint:'Heston 放在这里是为了一个不会被压平的远期微笑，不是为了精度 \u2014\u2014 它的三个毛病写在数字上面，而不是下面。第一次标定大约 19 秒；之后在服务进程生命周期内缓存，这一整块都是秒出。',
+    btn_run_hs:'\u25b6 标定（首次较慢）',
+    lbl_hs_und:'标的', lbl_hs_rate:'利率 (%)',
+    lbl_hs_vs:'相对 SSVI 的拟合', lbl_hs_ident:'参数可辨识',
+    lbl_hs_feller:'Feller 条件', lbl_hs_conv:'已收敛',
+    lbl_hs_rms:'Heston RMS', lbl_hs_ssvi:'SSVI RMS',
+    lbl_hs_pts:'拟合报价数', lbl_hs_asof:'数据日期',
+    lbl_hs_eu_hint:'用 COS 方法算的欧式期权 \u2014\u2014 这是本面板上唯一有独立第二引擎背书的数：在三组参数、四个到期、三个行权价上与 QuantLib 的解析 Heston 引擎一致到 5e-09。看跌期权直接积分，看涨由平价关系得到，因为看涨的余弦系数在密度较宽时会溢出。',
+    btn_run_hs_eu:'\u25b6 定价',
+    lbl_hs_K:'行权价', lbl_hs_T:'到期 (年)', lbl_hs_flag:'类型',
+    lbl_hs_sb_hint:'用 Andersen 的 QE 方案在 Heston 下给雪球定价。这里用 QE 是必需而非优化：标定出来的参数违反 Feller 条件，方差会触零，Euler 步进会把它推到负数。这个数是本服务返回的唯一没有第二引擎背书的数，响应里就是这么说的 \u2014\u2014 下面原样照搬，而不是悄悄省掉。',
+    btn_run_hs_sb:'\u25b6 模拟',
+    lbl_hs_sb_T:'期限 (年)', lbl_hs_sb_ko:'敲出 (%)', lbl_hs_sb_ki:'敲入 (%)',
+    lbl_hs_sb_cpn:'票息 (%)', lbl_hs_sb_paths:'路径数',
+    lbl_hs_sb_px:'价格', lbl_hs_sb_ci:'95% 置信区间',
+    lbl_hs_sb_ko_p:'敲出概率', lbl_hs_sb_ki_p:'敲入且未敲出',
+    lbl_sb_rep_hdr:'📋 报价报告 —— 请从头往下读',
+    lbl_sb_rep_hint:'把整件事按该读的顺序排好。贴水覆盖率领头：一年期雪球有 52% 的 carry 测不到，三年期是 84%，而 carry 能让可报票息翻倍以上 —— 最大的那个输入恰好也是最没被观测到的。',
+    btn_run_report:'▶ 生成报告',
+    lbl_sb_rep_quote:'可报票息',
+    lbl_sb_rep_mc:'结局概率',
+    lbl_sb_rep_xc:'两引擎对账（慢）',
+    lbl_sb_rep_asof:'按哪天测贴水 (YYYY-MM-DD)',
+    lbl_sb_rep_tail:'盘面之外的 carry',
+    // Phase 5：票息求解面板
+    lbl_sb_basis:'期货贴水 carry (%/年)',
+    lbl_sb_basis_hint:'期货贴水带来的总 carry。正数表示期货低于现货。中证1000盘面实测约 +10.2%/年，在该水平下可报票息翻倍以上。',
+    lbl_sb_quote_hdr:'💰 票息求解 —— 这笔票子能报多少',
+    lbl_sb_quote_hint:'求使价格为零的票息，也就是交易台真正报出的那个数。是解析而非迭代：价格对票息精确仿射，所以只需三次求解，而且每次调用都会实测共线性残差。上方的「票息」输入在这里被忽略 —— 它就是待求的未知量。',
+    btn_run_quote:'▶ 求解票息',
+    lbl_sb_q_par:'可报票息', lbl_sb_q_ann:'票息年金',
+    lbl_sb_q_ki:'敲入腿现值', lbl_sb_q_aff:'仿射残差',
+    lbl_sb_q_split_hdr:'📊 票息由什么支付',
+    lbl_sb_q_vol:'波动率贡献', lbl_sb_q_carry:'贴水贡献',
+    lbl_sb_q_share:'贴水占比', lbl_sb_q_mc:'MC 复核 (z)',
+    lbl_sb_recon_hdr:'⚖ 希腊字母与两引擎对账',
+    lbl_sb_recon_hint:'六个希腊字母取自 Crank-Nicolson 解曲面，每一个都由独立的蒙特卡洛（共同随机数）交叉校验。容差由模拟自身实测的标准误构成，而不是挑一个数 —— 所以「靠宽区间过关」与「两个引擎都很紧」在表上一眼可辨。',
+    btn_run_recon:'▶ 运行两个引擎',
     lbl_sf_cnfdm_hdr:'🔢 CN有限差分重新定价（Crank-Nicolson PDE）',
     lbl_sf_cnfdm_hint:'使用Crank-Nicolson有限差分法重新定价鲨鱼鳍（向上敲出看涨期权），提供PDE独立验证及完整希腊字母。',
     lbl_sf_cnfdm_price:'CN-FDM理论价格', lbl_sf_cnfdm_vs:'对比Haug解析公式',
@@ -1822,6 +2557,62 @@ function switchLang(lang) {
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
     'lbl-sb-cnfdm-hdr':'lbl_sb_cnfdm_hdr','lbl-sb-cnfdm-hint':'lbl_sb_cnfdm_hint',
     'lbl-sb-cnfdm-price':'lbl_sb_cnfdm_price','lbl-sb-cnfdm-method':'lbl_sb_cnfdm_method',
+    'market-h2':'market_h2','market-hint':'market_hint',
+    'lbl-md-src-hdr':'lbl_md_src_hdr',
+    'lbl-md-und':'lbl_md_und','lbl-md-source':'lbl_md_source',
+    'lbl-md-rate':'lbl_md_rate','lbl-md-asof':'lbl_md_asof',
+    'lbl-md-csv-hint':'lbl_md_csv_hint',
+    'lbl-md-screen-hdr':'lbl_md_screen_hdr','lbl-md-screen-hint':'lbl_md_screen_hint',
+    'lbl-md-recv':'lbl_md_recv','lbl-md-used':'lbl_md_used',
+    'lbl-md-kept':'lbl_md_kept','lbl-md-slices':'lbl_md_slices',
+    'lbl-md-fwd-hdr':'lbl_md_fwd_hdr','lbl-md-fwd-hint':'lbl_md_fwd_hint',
+    'lbl-md-rates-hdr':'lbl_md_rates_hdr',
+    'lbl-md-gate-hdr':'lbl_md_gate_hdr','lbl-md-gate-hint':'lbl_md_gate_hint',
+    'lbl-md-force':'lbl_md_force',
+    'lbl-md-mark-hdr':'lbl_md_mark_hdr','lbl-md-mark-hint':'lbl_md_mark_hint',
+    'models-h2':'models_h2','models-hint':'models_hint',
+    'lbl-vs-hdr':'lbl_vs_hdr','lbl-vs-hint':'lbl_vs_hint',
+    'lbl-vs-und':'lbl_vs_und','lbl-vs-rate':'lbl_vs_rate',
+    'lbl-vs-rms':'lbl_vs_rms','lbl-vs-bf':'lbl_vs_bf',
+    'lbl-vs-cal':'lbl_vs_cal','lbl-vs-arb':'lbl_vs_arb',
+    'lbl-vs-exp':'lbl_vs_exp','lbl-vs-reach':'lbl_vs_reach',
+    'lbl-vs-extrap':'lbl_vs_extrap','lbl-vs-asof':'lbl_vs_asof',
+    'lbl-lv-hdr':'lbl_lv_hdr','lbl-lv-hint':'lbl_lv_hint',
+    'lbl-lv-und':'lbl_lv_und','lbl-lv-rate':'lbl_lv_rate','lbl-lv-hz':'lbl_lv_hz',
+    'lbl-lv-extrap':'lbl_lv_extrap','lbl-lv-quoted':'lbl_lv_quoted',
+    'lbl-lv-range':'lbl_lv_range','lbl-lv-wd':'lbl_lv_wd',
+    'lbl-lv-denom':'lbl_lv_denom','lbl-lv-clamp':'lbl_lv_clamp',
+    'lbl-lv-peclet':'lbl_lv_peclet','lbl-lv-asof':'lbl_lv_asof',
+    'lbl-lv-rt-hint':'lbl_lv_rt_hint',
+    'lbl-lv-rt-worst':'lbl_lv_rt_worst','lbl-lv-rt-budget':'lbl_lv_rt_budget',
+    'lbl-lv-rt-share':'lbl_lv_rt_share','lbl-lv-rt-verdict':'lbl_lv_rt_verdict',
+    'lbl-hs-hdr':'lbl_hs_hdr','lbl-hs-hint':'lbl_hs_hint',
+    'lbl-hs-und':'lbl_hs_und','lbl-hs-rate':'lbl_hs_rate',
+    'lbl-hs-vs':'lbl_hs_vs','lbl-hs-ident':'lbl_hs_ident',
+    'lbl-hs-feller':'lbl_hs_feller','lbl-hs-conv':'lbl_hs_conv',
+    'lbl-hs-rms':'lbl_hs_rms','lbl-hs-ssvi':'lbl_hs_ssvi',
+    'lbl-hs-pts':'lbl_hs_pts','lbl-hs-asof':'lbl_hs_asof',
+    'lbl-hs-eu-hint':'lbl_hs_eu_hint',
+    'lbl-hs-K':'lbl_hs_K','lbl-hs-T':'lbl_hs_T','lbl-hs-flag':'lbl_hs_flag',
+    'lbl-hs-sb-hint':'lbl_hs_sb_hint',
+    'lbl-hs-sb-T':'lbl_hs_sb_T','lbl-hs-sb-ko':'lbl_hs_sb_ko',
+    'lbl-hs-sb-ki':'lbl_hs_sb_ki','lbl-hs-sb-cpn':'lbl_hs_sb_cpn',
+    'lbl-hs-sb-paths':'lbl_hs_sb_paths',
+    'lbl-hs-sb-px':'lbl_hs_sb_px','lbl-hs-sb-ci':'lbl_hs_sb_ci',
+    'lbl-hs-sb-ko-p':'lbl_hs_sb_ko_p','lbl-hs-sb-ki-p':'lbl_hs_sb_ki_p',
+    'lbl-sb-rep-hdr':'lbl_sb_rep_hdr','lbl-sb-rep-hint':'lbl_sb_rep_hint',
+    'lbl-sb-rep-quote':'lbl_sb_rep_quote','lbl-sb-rep-mc':'lbl_sb_rep_mc',
+    'lbl-sb-rep-xc':'lbl_sb_rep_xc','lbl-sb-rep-asof':'lbl_sb_rep_asof',
+    'lbl-sb-rep-tail':'lbl_sb_rep_tail',
+    // Phase 5: the par coupon panel
+    'lbl-sb-basis':'lbl_sb_basis','lbl-sb-basis-hint':'lbl_sb_basis_hint',
+    'lbl-sb-quote-hdr':'lbl_sb_quote_hdr','lbl-sb-quote-hint':'lbl_sb_quote_hint',
+    'lbl-sb-q-par':'lbl_sb_q_par','lbl-sb-q-ann':'lbl_sb_q_ann',
+    'lbl-sb-q-ki':'lbl_sb_q_ki','lbl-sb-q-aff':'lbl_sb_q_aff',
+    'lbl-sb-q-split-hdr':'lbl_sb_q_split_hdr',
+    'lbl-sb-q-vol':'lbl_sb_q_vol','lbl-sb-q-carry':'lbl_sb_q_carry',
+    'lbl-sb-q-share':'lbl_sb_q_share','lbl-sb-q-mc':'lbl_sb_q_mc',
+    'lbl-sb-recon-hdr':'lbl_sb_recon_hdr','lbl-sb-recon-hint':'lbl_sb_recon_hint',
     'lbl-sf-cnfdm-hdr':'lbl_sf_cnfdm_hdr','lbl-sf-cnfdm-hint':'lbl_sf_cnfdm_hint',
     'lbl-sf-cnfdm-price':'lbl_sf_cnfdm_price','lbl-sf-cnfdm-vs':'lbl_sf_cnfdm_vs',
     'lbl-sf-vanilla':'lbl_sf_vanilla','lbl-sf-disc':'lbl_sf_disc','lbl-sf-rebate-pv':'lbl_sf_rebate_pv',
@@ -1889,13 +2680,10 @@ function switchFont(size){
     const btn = document.getElementById('font-'+s);
     if(btn) btn.classList.toggle('on', s===size);
   });
-  // Resize ECharts
-  setTimeout(()=>{
-    if(chartPrice) chartPrice.resize();
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-    Object.values(gcCharts).forEach(c=>c&&c.resize());
-  }, 100);
+  // The font size changes the tick label metrics, so the plots have to
+  // re-measure. Also re-read the palette: a future theme switch would change
+  // the variables this reads from.
+  setTimeout(()=>{ readPalette(); resizePlots(); }, 100);
 }
 // Apply saved font size on load
 (function(){
@@ -1919,11 +2707,12 @@ async function calcSnowball(){
   const ki  = +$('sb-ki').value / 100, cpn = +$('sb-cpn').value / 100;
   const freq= +$('sb-freq').value, sp  = +$('sb-spread').value / 100;
   const n   = +$('sb-paths').value;
+  const basis = +$('sb-basis').value / 100;
   if(!S||!sig||!T){showErr('Fill all Snowball parameters.'); return;}
   try{
     const res = await fetch('/api/snowball',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({S,sigma:sig,r,q,T,KO_pct:ko,KI_pct:ki,coupon_pa:cpn,obs_freq:freq,spread:sp,n_paths:n})});
+      body: JSON.stringify({S,sigma:sig,r,q,T,KO_pct:ko,KI_pct:ki,coupon_pa:cpn,obs_freq:freq,spread:sp,n_paths:n,basis_pa:basis})});
     const d = await res.json();
     if(d.error){showErr(d.error); return;}
     $('sb-mid').textContent = fmt(d.mid*100, 3)+'%';
@@ -1937,6 +2726,1210 @@ async function calcSnowball(){
     $('sb-ki-lv').textContent = fmt(d.params.KI, 1);
     lastStructResults['snowball'] = {bid:fmt(d.bid*100,3)+'%', mid:fmt(d.mid*100,3)+'%', ask:fmt(d.ask*100,3)+'%', ko_prob:fmt(d.ko_prob*100,1)+'%', ki_prob:fmt(d.ki_prob*100,1)+'%'};
   }catch(e){showErr('Snowball error: '+e.message);}
+}
+
+// ========== SNOWBALL PAR COUPON ==========
+// The contract, read once. Every snowball call below sends the same shape,
+// and the coupon is deliberately absent from the quote payload: it is the
+// unknown there, and sending it would invite the reader to think it mattered.
+function snowballBody(){
+  return {
+    S:   +$('sb-S').value,
+    S0:  +$('sb-S').value,
+    sigma: +$('sb-sig').value / 100,
+    r:   +$('sb-r').value / 100,
+    q:   +$('sb-q').value / 100,
+    T:   +$('sb-T').value,
+    KO_pct: +$('sb-ko').value / 100,
+    KI_pct: +$('sb-ki').value / 100,
+    obs_freq: +$('sb-freq').value,
+    basis_pa: +$('sb-basis').value / 100,
+  };
+}
+
+async function calcSnowballQuote(){
+  const btn = $('btn-sb-quote');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Solving…'; }
+  try{
+    const res = await fetch('/api/snowball_quote',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(snowballBody())});
+    const d = await res.json();
+    if(d.error){ showErr('Par coupon: ' + d.error); return; }
+
+    $('sb-q-par').textContent = fmt(d.par_coupon_pct, 3) + '%';
+    $('sb-q-ann').textContent = fmt(d.coupon_annuity, 4);
+    $('sb-q-ki').textContent  = fmt(d.knock_in_value, 5);
+    // Scientific, because it is a machine-precision residual rather than a
+    // price. Rounding it to four places would print 0.0000 and hide what it
+    // is for.
+    $('sb-q-aff').textContent = d.affinity_residual.toExponential(1);
+
+    if(d.decomposition){
+      $('sb-q-vol').textContent   = fmt(d.decomposition.volatility_part_pct, 3) + '%';
+      $('sb-q-carry').textContent = fmt(d.decomposition.basis_part_pct, 3) + '%';
+      $('sb-q-share').textContent = fmt(d.decomposition.basis_share * 100, 1) + '%';
+    } else {
+      $('sb-q-vol').textContent = $('sb-q-carry').textContent = $('sb-q-share').textContent = '—';
+    }
+
+    const mcEl = $('sb-q-mc');
+    if(d.mc_verification){
+      const z = d.mc_verification.z_score;
+      mcEl.textContent = fmt(z, 2) + (d.mc_verification.passes ? ' ✓' : ' ✗');
+      mcEl.className = 'metric-val ' + (d.mc_verification.passes ? 'pos' : 'neg');
+    } else {
+      mcEl.textContent = '—'; mcEl.className = 'metric-val';
+    }
+
+    const grid = d.grid;
+    $('sb-q-note').textContent =
+      `${d.method} on a ${grid.space_nodes}×${grid.steps_per_year} grid. ` +
+      `The residual at the solved coupon is ${d.residual.toExponential(1)} — machine ` +
+      `precision, because the solve is exact rather than converged to a tolerance. ` +
+      `Volatility model: ${d.volatility.vol_model}.`;
+
+    $('sb-quote-results').style.display = '';
+  }catch(e){ showErr('Par coupon error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Solve Par Coupon'; } }
+}
+
+async function calcSnowballRecon(){
+  const btn = $('btn-sb-recon');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Running both engines…'; }
+  try{
+    const body = snowballBody();
+    body.coupon_pa = +$('sb-cpn').value / 100;   // risk is taken at a stated coupon
+    body.n_paths = 200000;
+    const res = await fetch('/api/snowball_risk_crosscheck',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ showErr('Reconciliation: ' + d.error); return; }
+
+    // Ordering is fixed rather than taken from the response, so theta and
+    // carry_rho -- the two that only acquired a second engine in Phase 4 --
+    // sit where a reader will look for them.
+    const order = ['delta','gamma','vega','theta','rho','carry_rho'];
+    const symbols = {delta:'Δ Delta', gamma:'Γ Gamma', vega:'ν Vega',
+                     theta:'Θ Theta', rho:'ρ Rho', carry_rho:'⊂ Carry Rho'};
+    const rows = [];
+    for(const name of order){
+      const v = d.verdicts[name];
+      if(!v) continue;
+      const ok = v.within_budget;
+      const decimals = name === 'gamma' ? 9 : 7;
+      rows.push(
+        `<tr><td style="text-align:left;font-weight:600">${symbols[name]}</td>` +
+        `<td>${fmt(v.pde, decimals)}</td>` +
+        `<td>${fmt(v.mc, decimals)}</td>` +
+        `<td>${v.gap.toExponential(1)}</td>` +
+        `<td>${v.budget.toExponential(1)}</td>` +
+        `<td class="${ok ? 'pos' : 'neg'}">${ok ? 'yes' : 'NO'}</td></tr>`
+      );
+    }
+    $('sb-recon-body').innerHTML = rows.join('');
+
+    // Theta is the weakest row and the easiest to over-read, so its own
+    // caveat goes under the table rather than only in the JSON.
+    const theta = d.verdicts.theta;
+    let note = d.agree ? 'Every Greek is inside its budget.' : 'At least one Greek is outside its budget.';
+    if(theta && theta.mc_error_share_of_value != null){
+      note += ` Theta is the weakest: three sampling errors come to ` +
+              `${fmt(theta.mc_error_share_of_value * 100, 0)}% of its value, and the two ` +
+              `estimates are difference quotients over horizons four times apart — so read ` +
+              `that row as agreement rather than as confirmation.`;
+    }
+    note += ` Volatility model: ${d.volatility.vol_model}.`;
+    $('sb-recon-note').textContent = note;
+
+    $('sb-recon-results').style.display = '';
+  }catch(e){ showErr('Reconciliation error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Run Both Engines'; } }
+}
+
+// ========== MARKET DATA ==========
+// The page a desk opens first. Everything below answers one question in the
+// order it has to be answered: which chain, what got thrown away, what the
+// forward is, what rate is actually in use, and may this be published.
+
+// Set by a successful upload, consumed by every later call. Null means no
+// uploaded chain is in play.
+let mdCsvToken = null;
+// The fit the gates were run against, kept so publishing cannot act on a
+// different surface from the one on screen.
+let mdLastFit = null;
+
+function onMarketSourceChange(){
+  const kind = $('md-source').value;
+  $('md-csv-wrap').style.display = kind === 'csv' ? '' : 'none';
+  // The panel date is a Wind-only argument: the panel holds 725 of them and
+  // none is a sensible default, which is why build_source refuses without it.
+  $('md-asof-wrap').style.display = kind === 'wind' ? '' : 'none';
+}
+
+function marketRequest(){
+  const kind = $('md-source').value;
+  const body = {underlying: $('md-und').value, r: +$('md-rate').value / 100};
+  if(kind === 'csv'){
+    if(!mdCsvToken) throw new Error('upload a CSV first, or pick another source');
+    body.csv_token = mdCsvToken;
+  } else {
+    body.source = kind;
+  }
+  if(kind === 'wind'){
+    const asOf = $('md-asof').value.trim();
+    if(!asOf) throw new Error('the Wind panel needs a date: it holds 725 of them');
+    body.as_of = asOf;
+  }
+  return body;
+}
+
+async function uploadMarketCsv(){
+  const input = $('md-csv-file');
+  const file = input.files && input.files[0];
+  const status = $('md-csv-status');
+  if(!file){ status.innerHTML = '<span class="neg">Choose a file first.</span>'; return; }
+
+  const btn = $('btn-md-upload');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Uploading\u2026'; }
+  try{
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/marketdata/upload', {method:'POST', body:form});
+    const d = await res.json();
+    if(d.error){
+      mdCsvToken = null;
+      status.innerHTML = '<span class="neg">' + d.error + '</span>' +
+        (d.columns_found ? '<br/>Columns found: ' + d.columns_found.join(', ') : '');
+      return;
+    }
+    mdCsvToken = d.token;
+    status.innerHTML =
+      `<span class="pos">Stored.</span> token <code>${d.token}</code> &middot; ` +
+      `${d.rows} rows &middot; ${d.bytes} bytes &middot; ` +
+      `as_of ${d.as_of || '<span class="neg">absent &mdash; will date itself today</span>'}` +
+      `<br/>${d.note}`;
+  }catch(e){ status.innerHTML = '<span class="neg">Upload error: ' + e.message + '</span>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b2 Upload'; } }
+}
+
+async function fitMarketSurface(){
+  const btn = $('btn-md-fit');
+  const status = $('md-fit-status');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Fitting\u2026'; }
+  status.textContent = '';
+  try{
+    const body = marketRequest();
+    const res = await fetch('/api/vol_surface/fit', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ status.innerHTML = '<span class="neg">' + d.error + '</span>'; return; }
+
+    mdLastFit = {request: body, response: d};
+    status.innerHTML = `<span class="pos">Fitted.</span> ${d.underlying} as of ${d.as_of} ` +
+      `&middot; source <code>${d.source}</code>`;
+
+    renderScreening(d);
+    renderForwards(d);
+    renderRatesNote(d, body);
+    await renderGates(body);
+    $('md-results').style.display = '';
+    setTimeout(resizePlots, 80);
+  }catch(e){ status.innerHTML = '<span class="neg">' + e.message + '</span>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Fit Surface'; } }
+}
+
+function renderScreening(d){
+  const input = d.input, cal = d.calibration;
+  const received = input.n_points + input.n_rejected;
+  $('md-recv').textContent = String(received);
+  $('md-used').textContent = String(cal.n_points);
+
+  // The share kept, not the share discarded: a reader wants to know how much
+  // of the board the surface actually rests on.
+  const kept = received ? cal.n_points / received : 0;
+  const keptEl = $('md-kept');
+  keptEl.textContent = fmt(kept * 100, 1) + '%';
+  keptEl.className = 'metric-val ' + (kept < 0.25 ? 'neg' : kept < 0.5 ? '' : 'pos');
+  $('md-slices').textContent = `${input.n_usable_slices} of ${input.slices.length}`;
+
+  const reasons = Object.entries(input.rejections || {})
+    .sort((a, b) => b[1] - a[1]);
+  $('md-reject-table').innerHTML = reasons.length
+    ? '<div class="tscroll"><table class="dtable"><thead><tr>' +
+      '<th>Why a quote was dropped</th><th>Count</th><th>Share of received</th>' +
+      '</tr></thead><tbody>' +
+      reasons.map(([why, n]) =>
+        `<tr><td>${why}</td><td>${n}</td><td>${fmt(received ? n/received*100 : 0, 1)}%</td></tr>`
+      ).join('') + '</tbody></table></div>'
+    : '<p class="hint">Nothing was dropped, which is unusual enough to check.</p>';
+
+  $('md-slice-table').innerHTML =
+    '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Expiry</th><th>Usable</th><th>T (y)</th><th>Used</th><th>Forward</th>' +
+    '<th>ATM Vol</th><th>Why not, or what was dropped</th>' +
+    '</tr></thead><tbody>' +
+    d.input.slices.map(sl => {
+      const dropped = Object.entries(sl.rejections || {})
+        .map(([k, v]) => `${k} ${v}`).join(', ');
+      const atm = (sl.atm_vol == null || !isFinite(sl.atm_vol))
+        ? '\u2014' : fmt(sl.atm_vol * 100, 2) + '%';
+      return `<tr><td>${sl.expiry_tag}</td>` +
+        `<td class="${sl.usable ? 'pos' : 'neg'}">${sl.usable ? 'yes' : 'no'}</td>` +
+        `<td>${fmt(sl.year_fraction, 4)}</td><td>${sl.n_points}</td>` +
+        `<td>${fmt(sl.forward, 4)}</td><td>${atm}</td>` +
+        `<td style="white-space:normal;max-width:460px">${sl.reason || dropped || '\u2014'}</td></tr>`;
+    }).join('') + '</tbody></table></div>';
+}
+
+function renderForwards(d){
+  // Expiry tag -> forward, paired with that slice's own year fraction so the
+  // curve is drawn against time rather than against a tag ordering.
+  const byTag = {};
+  d.input.slices.forEach(sl => { byTag[sl.expiry_tag] = sl; });
+  const points = Object.entries(d.forwards)
+    .map(([tag, f]) => ({tag, f, T: byTag[tag] ? byTag[tag].year_fraction : null,
+                         usable: byTag[tag] ? byTag[tag].usable : false}))
+    .filter(p => p.T != null)
+    .sort((a, b) => a.T - b.T);
+
+  const used = points.filter(p => p.usable);
+  const dropped = points.filter(p => !p.usable);
+
+  draw('chart-md-forward', [
+    {type:'scatter', mode:'lines+markers', x:used.map(p=>p.T), y:used.map(p=>p.f),
+     name:'in the fit', line:{color:PAL.blue, width:2},
+     marker:{color:PAL.blue, size:9},
+     hovertemplate:'T %{x:.4f}y<br>F %{y:.4f}<extra></extra>'},
+    {type:'scatter', mode:'markers', x:dropped.map(p=>p.T), y:dropped.map(p=>p.f),
+     name:'screened out', marker:{color:PAL.red, size:9, symbol:'x'},
+     hovertemplate:'T %{x:.4f}y<br>F %{y:.4f}<br>screened out<extra></extra>'},
+  ], PLOT({title:'Implied forward by expiry', x:'maturity (y)', y:'forward',
+           legend:true, margin:{l:62,r:22,t:38,b:48}}));
+
+  // Segment drift between consecutive forwards: log(F2/F1)/(T2-T1). Shown
+  // rather than a carry, because a carry needs a spot and this response
+  // carries none -- the surface is parameterised in forward terms on purpose.
+  let html = '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Segment</th><th>From</th><th>To</th><th>Forward from</th><th>Forward to</th>' +
+    '<th>Implied drift (ann.)</th></tr></thead><tbody>';
+  for(let i = 1; i < points.length; i++){
+    const a = points[i-1], b = points[i];
+    const dt = b.T - a.T;
+    const drift = dt > 0 ? Math.log(b.f / a.f) / dt : null;
+    html += `<tr><td>${a.tag} \u2192 ${b.tag}</td><td>${fmt(a.T,4)}</td><td>${fmt(b.T,4)}</td>` +
+            `<td>${fmt(a.f,4)}</td><td>${fmt(b.f,4)}</td>` +
+            `<td class="${drift != null && drift < 0 ? 'neg' : ''}">` +
+            `${drift == null ? '\u2014' : fmt(drift * 100, 3) + '%'}</td></tr>`;
+  }
+  html += '</tbody></table></div>';
+  $('md-fwd-table').innerHTML = points.length > 1 ? html : '';
+}
+
+function renderRatesNote(d, body){
+  // Deliberately plain about what is in use. The project has a rate curve --
+  // rate_curve_from_panel reads 1y and 10y government yields off the Wind
+  // panel -- and that panel is institutional data this checkout may not have.
+  // A page that drew a flat line and called it a curve would be the kind of
+  // claim the rest of this interface exists to avoid.
+  const flat = fmt(d.input.rate * 100, 4);
+  $('md-rates-note').innerHTML =
+    `This fit discounted and implied its forwards at a <b>flat ${flat}%</b> ` +
+    `continuously compounded, applied at every tenor.` +
+    `<br/><br/>A term structure is available but needs the Wind panel: ` +
+    `<code>rate_curve_from_panel</code> reads 1-year and 10-year government ` +
+    `yields, converts to continuous compounding, and interpolates between them ` +
+    `&mdash; inside a year it holds the 1-year flat. That panel is institutional ` +
+    `data and is not committed here, so with <code>OTCPRICER_WIND_DIR</code> unset ` +
+    `the honest description of this section is the single number above, not a curve.` +
+    `<br/><br/>What it costs: the rate enters each slice's implied forward through ` +
+    `the discount factor in put-call parity, so a wrong rate moves the forward and ` +
+    `slides the whole smile. At these tenors (under half a year) the effect is small; ` +
+    `at the one-to-three years a snowball runs it is not.`;
+}
+
+async function renderGates(body){
+  // The gates are computed by the publish route, which refuses rather than
+  // publishing when one fails -- so they are read here from a dry run that
+  // deliberately does not force. A 409 carries the same gate list as a 200.
+  const table = $('md-gate-table');
+  table.innerHTML = '<p class="hint">Checking\u2026</p>';
+  try{
+    const res = await fetch('/api/marketdata/publish', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...body, dry_run: true})});
+    const d = await res.json();
+    renderGateTable(d.gates || []);
+  }catch(e){ table.innerHTML = '<p class="hint neg">Gate check failed: ' + e.message + '</p>'; }
+}
+
+function renderGateTable(gates){
+  if(!gates.length){ $('md-gate-table').innerHTML = '<p class="hint">No gate results.</p>'; return; }
+  $('md-gate-table').innerHTML =
+    '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Gate</th><th>Verdict</th><th>Value</th><th>Threshold</th><th>What it is</th>' +
+    '</tr></thead><tbody>' +
+    gates.map(g =>
+      `<tr><td>${g.name}</td>` +
+      `<td class="${g.passed ? 'pos' : 'neg'}">${g.passed ? 'pass' : 'FAIL'}</td>` +
+      `<td>${g.value == null ? '\u2014' : fmt(g.value, 6)}</td>` +
+      `<td>${g.threshold == null ? '\u2014' : g.threshold}</td>` +
+      `<td style="white-space:normal;max-width:520px">${g.note}</td></tr>`
+    ).join('') + '</tbody></table></div>';
+}
+
+async function publishMark(){
+  const btn = $('btn-md-publish');
+  const status = $('md-publish-status');
+  if(!mdLastFit){ status.innerHTML = '<p class="hint neg">Fit a surface first.</p>'; return; }
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Publishing\u2026'; }
+  try{
+    // The same request the gates were run against, so publishing cannot act
+    // on a different surface from the one on screen.
+    const body = {...mdLastFit.request, force: $('md-force').checked};
+    const res = await fetch('/api/marketdata/publish', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    renderGateTable(d.gates || []);
+
+    if(!d.published){
+      // The route's own refusal, verbatim: it already names the gate, the
+      // distance and how to override. Rewording it here would be the place
+      // that softened it.
+      status.innerHTML =
+        `<div style="border-left:3px solid var(--red);background:var(--tint-err);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>Refused.</b> ${d.error || 'no reason given'}</div>`;
+      return;
+    }
+    const m = d.mark;
+    status.innerHTML =
+      `<div style="border-left:3px solid var(--green);background:var(--tint-ok);` +
+      `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+      `<b>Published${d.forced ? ' with an override' : ''}.</b> ` +
+      `${m.underlying} as of ${m.as_of}, fingerprint <code>${m.fingerprint}</code>, ` +
+      `fit ${fmt(m.rms_vol_points, 4)} vol points, at ${m.published_at}.` +
+      (d.forced
+        ? '<br/>A gate failed and was overridden. The mark records that, so the ' +
+          'next reader can see a decision was made.'
+        : '') +
+      `</div>`;
+    await readMark();
+  }catch(e){ status.innerHTML = '<p class="hint neg">Publish error: ' + e.message + '</p>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = "\u2713 Publish as today's mark"; } }
+}
+
+async function readMark(){
+  const btn = $('btn-md-mark');
+  const out = $('md-mark-out');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Reading\u2026'; }
+  try{
+    const res = await fetch('/api/marketdata/mark', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({underlying: $('md-und').value})});
+    const d = await res.json();
+
+    if(d.error && !d.marked){ out.innerHTML = '<p class="hint neg">' + d.error + '</p>'; return; }
+    if(!d.marked){
+      out.innerHTML =
+        `<div style="border-left:3px solid var(--yellow);background:var(--bgi);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>Nothing published for ${d.underlying}.</b> ${d.note}</div>`;
+      return;
+    }
+    if(!d.reproduces){
+      // The failure this mechanism exists to catch.
+      out.innerHTML =
+        `<div style="border-left:3px solid var(--red);background:var(--tint-err);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>The mark no longer reproduces.</b> ${d.error}<br/>` +
+        `Published ${d.mark.published_at} with fingerprint ` +
+        `<code>${d.mark.fingerprint}</code>. Until it is re-published, nothing ` +
+        `should be priced off it.</div>`;
+      renderGateTable(d.mark.gates || []);
+      return;
+    }
+
+    const m = d.mark;
+    const failed = (m.gates || []).filter(g => !g.passed);
+    out.innerHTML =
+      `<div class="metric-grid" style="margin-bottom:10px">` +
+      `<div class="metric-card"><div class="metric-label">Fingerprint</div>` +
+      `<div class="metric-val" style="font-size:11px">${m.fingerprint}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">As Of</div>` +
+      `<div class="metric-val" style="font-size:12px">${m.as_of}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">Fit</div>` +
+      `<div class="metric-val">${fmt(m.rms_vol_points, 4)}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">Reproduces</div>` +
+      `<div class="metric-val pos">yes</div></div></div>` +
+      `<p class="hint">Published ${m.published_at} from <code>${m.source}</code> ` +
+      `at r = ${fmt(m.rate * 100, 4)}%` +
+      (m.csv_token ? ` &middot; uploaded chain <code>${m.csv_token}</code>` : '') +
+      `. Re-fitted from those inputs just now and the fingerprint matched.` +
+      (failed.length
+        ? ` <span class="neg">${failed.length} gate(s) were overridden when this ` +
+          `was published: ${failed.map(g => g.name).join(', ')}.</span>`
+        : '') +
+      `</p>`;
+    renderGateTable(m.gates || []);
+  }catch(e){ out.innerHTML = '<p class="hint neg">Read error: ' + e.message + '</p>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u21bb Read the published mark'; } }
+}
+
+// ========== VOLATILITY SURFACE ==========
+function surfaceRequest(){
+  return {
+    underlying: $('vs-und').value,
+    source: 'snapshot',
+    r: +$('vs-rate').value / 100,
+  };
+}
+
+// Everything the surface panel is currently showing, so the quote overlay can
+// be toggled and the axis stretched without re-fitting or re-querying.
+let vsState = null;
+
+async function calcSurface(){
+  const btn = $('btn-vs');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Fitting…'; }
+  try{
+    const req = surfaceRequest();
+    const res = await fetch('/api/vol_surface/fit',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...req, include_quotes: true})});
+    const d = await res.json();
+    if(d.error){ showErr('Surface: ' + d.error); return; }
+
+    const cal = d.calibration, arb = d.arbitrage;
+
+    // Diagnostics before the picture. A surface that fits well and admits
+    // arbitrage is worse than one that fits worse and does not, because a
+    // barrier payoff is concentrated where the arbitrage would be.
+    $('vs-rms').textContent = fmt(cal.rms_vol_error * 100, 3) + ' vol pts';
+    $('vs-bf').textContent  = fmt(arb.min_butterfly, 3);
+    $('vs-cal').textContent = fmt(arb.min_calendar, 4);
+
+    const free = arb.arbitrage_free;
+    const arbEl = $('vs-arb');
+    arbEl.textContent = free ? 'yes' : 'NO';
+    arbEl.className = 'metric-val ' + (free ? 'pos' : 'neg');
+
+    const quoted = d.input.slices || cal.slices || [];
+    $('vs-exp').textContent = String(cal.slices ? cal.slices.length : quoted.length);
+    $('vs-asof').textContent = d.as_of + '  (' + d.source + ')';
+
+    // The extrapolation share is the largest single assumption behind any
+    // long-dated number, so it sits beside the fit quality rather than in a
+    // footnote.
+    const lastQuoted = cal.slices && cal.slices.length
+      ? Math.max(...cal.slices.map(sl => sl.maturity)) : null;
+    if(lastQuoted){
+      $('vs-reach').textContent = fmt(lastQuoted, 3) + ' y';
+      const share = Math.max(0, 1 - lastQuoted / 3.0);
+      const el = $('vs-extrap');
+      el.textContent = fmt(share * 100, 1) + '%';
+      el.className = 'metric-val ' + (share > 0.5 ? 'neg' : '');
+    } else {
+      $('vs-reach').textContent = '—';
+      $('vs-extrap').textContent = '—';
+    }
+
+    $('vs-note').textContent =
+      `${cal.n_points} quotes across ${cal.slices ? cal.slices.length : '?'} expiries, ` +
+      `RMS ${fmt(cal.rms_vol_error * 100, 3)} and worst ${fmt(cal.max_vol_error * 100, 3)} vol points. ` +
+      `${arb.n_checked.toLocaleString()} arbitrage checks, ${arb.n_violations} violations. ` +
+      (lastQuoted
+        ? `The quotes stop at ${fmt(lastQuoted, 2)} years while the notes run one to three, so a ` +
+          `three-year price is ${fmt(Math.max(0, 1 - lastQuoted / 3) * 100, 0)}% extrapolated — ` +
+          `no amount of grid refinement touches that.`
+        : '');
+
+    await loadSurfaceGrid(req, d);
+    $('vs-results').style.display = '';
+  }catch(e){ showErr('Surface error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Fit Surface'; } }
+}
+
+async function loadSurfaceGrid(req, fit){
+  // Sampled around the surface's own reference forward rather than around
+  // spot: SSVI is parameterised in k = log(K/F), so a strike grid centred
+  // anywhere else samples the wrong part of it. That is the same mistake, in
+  // a different place, as the spot/forward mismatch Phase 2 removed from the
+  // engine.
+  const probe = await fetch('/api/vol_surface/query',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({...req, strikes:[1.0], maturities:[0.5]})});
+  const first = await probe.json();
+  if(first.error){ showErr('Surface query: ' + first.error); return; }
+  const F = first.reference_forward;
+
+  const horizon = +$('vs-horizon').value;
+  // Denser than the old heat map: a surface is read as a shape, so the
+  // sampling has to be fine enough that the shape is the surface's and not
+  // the grid's. 31 x 25 draws in well under a second.
+  const moneyness = [];
+  for(let k = -0.40; k <= 0.4001; k += 0.80/30) moneyness.push(+k.toFixed(6));
+  const strikes = moneyness.map(k => +(F * Math.exp(k)).toFixed(6));
+  const maturities = [];
+  for(let n = 0; n < 25; n++) maturities.push(+(0.04 + n*(horizon-0.04)/24).toFixed(6));
+
+  const res = await fetch('/api/vol_surface/query',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({...req, strikes, maturities})});
+  const q = await res.json();
+  if(q.error){ showErr('Surface query: ' + q.error); return; }
+
+  vsState = {q, F, fit, quotes: fit.quotes || [],
+             lastQuoted: Math.max(...q.quoted_maturities)};
+  redrawSurface();
+  // Pin the middle of the quoted region so the slices below are not empty.
+  vsPick(0, q.maturities.findIndex(t => t >= vsState.lastQuoted * 0.5));
+}
+
+function redrawSurface(){
+  if(!vsState) return;
+  const {q, F, quotes, lastQuoted} = vsState;
+
+  // z is [row][col] = [y][x] and the endpoint returns implied_vol[i][j] at
+  // maturities[i], moneyness[j] -- so maturity is y and the grid goes in as
+  // it arrives. Transposing it would be the easiest mistake here and the
+  // hardest to see, since a transposed smile still looks like a smile.
+  const z = q.implied_vol.map(row => row.map(v =>
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(3)));
+
+  const traces = [{
+    type:'surface', x:q.moneyness, y:q.maturities, z,
+    colorscale:'Viridis', opacity:0.88, showscale:true, name:'SSVI',
+    colorbar:{title:{text:'IV %', font:{size:10, color:PAL.tx2}},
+              tickfont:{size:9, color:PAL.tx2}, len:0.65, thickness:12},
+    contours:{z:{show:true, usecolormap:true, project:{z:false},
+                 highlightcolor:PAL.amber, width:1}},
+    hovertemplate:'k %{x:.3f}<br>T %{y:.3f}y<br>IV %{z:.2f}%<extra>SSVI</extra>',
+  }];
+
+  // The quotes the fit actually used, on top of the surface it produced. This
+  // is the whole credibility of the picture: a fitted surface looks smooth and
+  // plausible whether or not it goes through anything.
+  if($('vs-show-quotes').checked && quotes.length){
+    const kx = [], ty = [], vz = [], txt = [];
+    quotes.forEach(sl => sl.log_moneyness.forEach((k, i) => {
+      kx.push(k); ty.push(sl.year_fraction); vz.push(sl.implied_vol[i]*100);
+      txt.push(`${sl.expiry_tag} &middot; K ${fmt(sl.strike[i],4)} &middot; ` +
+               `${sl.option_type[i] === 'c' ? 'call' : 'put'}`);
+    }));
+    traces.push({
+      type:'scatter3d', mode:'markers', x:kx, y:ty, z:vz, name:'quotes fitted',
+      marker:{size:3.2, color:PAL.red, line:{width:0}},
+      text:txt,
+      hovertemplate:'%{text}<br>k %{x:.3f}<br>T %{y:.3f}y<br>IV %{z:.2f}%<extra></extra>',
+    });
+  }
+
+  const stretch = +$('vs-stretch').value;
+  Plotly.react('chart-surface', traces, {
+    paper_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:{l:0, r:0, t:10, b:0},
+    showlegend:true,
+    legend:{orientation:'h', x:0, y:1.0, font:{size:10, color:PAL.tx2}},
+    scene:{
+      xaxis:{title:{text:'k = log(K/F)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      yaxis:{title:{text:'maturity (y)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      zaxis:{title:{text:'implied vol (%)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      aspectmode:'manual', aspectratio:{x:1.15, y:stretch, z:0.65},
+      camera:{eye:{x:1.6, y:-1.65, z:0.85}},
+      dragmode:'orbit',
+      // Keeps the camera where the reader put it across a redraw, which is
+      // what makes the quote toggle usable rather than disorienting.
+      uirevision:'surface-camera',
+    },
+  }, PCFG);
+  PLOTS.add('chart-surface');
+
+  const el = $('chart-surface');
+  if(el && !el._vsClickBound){
+    el._vsClickBound = true;
+    el.on('plotly_click', e => {
+      const p = e.points[0];
+      if(p.data.type !== 'surface') return;
+      const j = nearestIndex(vsState.q.moneyness, p.x);
+      const i = nearestIndex(vsState.q.maturities, p.y);
+      vsPick(j, i);
+    });
+  }
+
+  $('vs-pick').textContent =
+    `Quotes reach ${fmt(lastQuoted,3)}y; the surface is drawn to ` +
+    `${fmt(Math.max(...q.maturities),2)}y, so everything past the quoted edge ` +
+    `is the parameterisation's own extension. Click the surface to pin a point.`;
+}
+
+function nearestIndex(values, target){
+  let best = 0;
+  for(let i = 1; i < values.length; i++){
+    if(Math.abs(values[i]-target) < Math.abs(values[best]-target)) best = i;
+  }
+  return best;
+}
+
+function stretchSurface(){
+  if(!vsState) return;
+  Plotly.relayout('chart-surface',
+    {'scene.aspectratio': {x:1.15, y:+$('vs-stretch').value, z:0.65}});
+}
+
+// The two slices through the point that was clicked. Fixed expiry along
+// strike is the smile; fixed moneyness along time is the term structure. Both
+// carry the market quotes that belong to that cut, which is what makes them
+// worth having over reading the 3D picture by eye.
+function vsPick(j, i){
+  if(!vsState) return;
+  const {q, quotes, lastQuoted} = vsState;
+  j = Math.max(0, Math.min(j, q.moneyness.length - 1));
+  i = Math.max(0, Math.min(i, q.maturities.length - 1));
+  const kPicked = q.moneyness[j], tPicked = q.maturities[i];
+
+  // --- fixed expiry, along strike -----------------------------------------
+  const smileTraces = [{
+    type:'scatter', mode:'lines', x:q.moneyness,
+    y:q.implied_vol[i].map(v => v == null ? null : v*100),
+    name:`SSVI at T=${fmt(tPicked,3)}y`, line:{color:PAL.blue, width:2},
+    connectgaps:false,
+    hovertemplate:'k %{x:.3f}<br>IV %{y:.2f}%<extra></extra>',
+  }];
+  // The nearest quoted expiry's own points, labelled with how far away it is:
+  // a smile drawn at 1.8 years next to quotes from 0.4 is not a comparison.
+  const near = nearestQuotedSlice(tPicked);
+  if(near){
+    smileTraces.push({
+      type:'scatter', mode:'markers', x:near.log_moneyness,
+      y:near.implied_vol.map(v => v*100),
+      name:`quotes at T=${fmt(near.year_fraction,3)}y`,
+      marker:{color:PAL.red, size:7},
+      hovertemplate:'k %{x:.3f}<br>IV %{y:.2f}%<extra>market</extra>',
+    });
+  }
+  draw('chart-vs-smile', smileTraces, PLOT({
+    x:'k = log(K/F)', y:'implied vol (%)', legend:true,
+    margin:{l:56,r:16,t:26,b:44},
+    shapes:[vline(0, PAL.tx2, 'dot')],
+    annotations:[vlabel(0, 'at the money', PAL.tx2)],
+  }));
+
+  // --- fixed moneyness, along time ----------------------------------------
+  const termTraces = [{
+    type:'scatter', mode:'lines', x:q.maturities,
+    y:q.maturities.map((_, r) => {
+      const v = q.implied_vol[r][j];
+      return v == null ? null : v*100;
+    }),
+    name:`SSVI at k=${fmt(kPicked,3)}`, line:{color:PAL.blue, width:2},
+    connectgaps:false,
+    hovertemplate:'T %{x:.3f}y<br>IV %{y:.2f}%<extra></extra>',
+  }];
+  // One market point per quoted expiry, taken at the quote nearest the picked
+  // moneyness -- the boards do not have a contract at every k.
+  const tx = [], ty = [], tt = [];
+  quotes.forEach(sl => {
+    let b = 0;
+    for(let n = 1; n < sl.log_moneyness.length; n++){
+      if(Math.abs(sl.log_moneyness[n]-kPicked) < Math.abs(sl.log_moneyness[b]-kPicked)) b = n;
+    }
+    tx.push(sl.year_fraction); ty.push(sl.implied_vol[b]*100);
+    tt.push(`${sl.expiry_tag} &middot; nearest quote at k ${fmt(sl.log_moneyness[b],3)}`);
+  });
+  if(tx.length){
+    termTraces.push({type:'scatter', mode:'markers', x:tx, y:ty, text:tt,
+      name:'nearest quote', marker:{color:PAL.red, size:7},
+      hovertemplate:'%{text}<br>IV %{y:.2f}%<extra></extra>'});
+  }
+  draw('chart-vs-term', termTraces, PLOT({
+    x:'maturity (y)', y:'implied vol (%)', legend:true,
+    margin:{l:56,r:16,t:26,b:44},
+    shapes:[vline(lastQuoted, PAL.red, 'dash')],
+    annotations:[vlabel(lastQuoted, 'quotes end', PAL.red)],
+  }));
+
+  $('lbl-vs-slice-k').textContent =
+    `Fixed expiry T = ${fmt(tPicked,3)}y, along strike \u2014 the smile`;
+  $('lbl-vs-slice-t').textContent =
+    `Fixed moneyness k = ${fmt(kPicked,3)}, along time \u2014 the term structure`;
+}
+
+function nearestQuotedSlice(t){
+  if(!vsState || !vsState.quotes.length) return null;
+  let best = vsState.quotes[0];
+  for(const sl of vsState.quotes){
+    if(Math.abs(sl.year_fraction - t) < Math.abs(best.year_fraction - t)) best = sl;
+  }
+  return best;
+}
+
+// ========== HESTON ==========
+function hestonRequest(){
+  return {
+    underlying: $('hs-und').value,
+    source: 'snapshot',
+    r: +$('hs-rate').value / 100,
+  };
+}
+
+async function calcHeston(){
+  const btn = $('btn-hs');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Calibrating\u2026'; }
+  try{
+    const res = await fetch('/api/heston/calibrate',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(hestonRequest())});
+    const d = await res.json();
+    if(d.error){ showErr('Heston: ' + d.error); return; }
+
+    const pr = d.params;
+    const ratio = d.heston_over_ssvi;
+
+    // Three caveats, above the numbers rather than below them. A panel that
+    // leads with a price and buries these reads as an endorsement.
+    const lines = [];
+    if(ratio != null){
+      lines.push(`<b>It fits worse than SSVI</b>, by ${fmt((ratio-1)*100,1)}% on these ` +
+        `${d.n_points} quotes under the same vega-weighted objective \u2014 ` +
+        `${fmt(d.rms_vol_points,3)} against ${fmt(d.ssvi_rms_vol_points,3)} vol points. ` +
+        `Measured across snapshots: 1.10\u20131.12\u00d7 on three expiries and ` +
+        `1.38\u20131.41\u00d7 on six, because SSVI carries one parameter per expiry ` +
+        `against Heston's five in total.`);
+    }
+    if(!d.well_identified){
+      lines.push(`<b>The parameters are not identified.</b> ${d.n_comparable_starts} of ` +
+        `${d.n_starts} starting points reached comparable fit quality with parameters ` +
+        `spread ${fmt(d.parameter_spread,3)} apart, so these five numbers are one member ` +
+        `of a family that fits the quotes equally well \u2014 read them as a surface that ` +
+        `reprices, not as estimated properties of the market.`);
+    }
+    if(!pr.satisfies_feller){
+      lines.push(`<b>Feller is violated</b> (2\u03ba\u03b8 \u2212 \u03c3\u00b2 = ` +
+        `${fmt(pr.feller_margin,3)}), so the variance can reach zero. That is why the ` +
+        `snowball below uses QE rather than Euler \u2014 a requirement, not a refinement. ` +
+        `It is reported rather than imposed: constraining it fits the quotes worse ` +
+        `without making the model more true.`);
+    }
+    $('hs-caveats').innerHTML = lines.length
+      ? lines.map(x => '\u2022 ' + x).join('<br/><br/>')
+      : 'No caveats triggered on this fit, which would itself be worth checking.';
+
+    const vsEl = $('hs-vs');
+    vsEl.textContent = ratio == null ? '\u2014' : fmt(ratio, 4) + '\u00d7';
+    vsEl.className = 'metric-val ' + (d.fits_worse_than_ssvi ? 'neg' : 'pos');
+
+    const idEl = $('hs-ident');
+    idEl.textContent = d.well_identified ? 'yes' : 'NO';
+    idEl.className = 'metric-val ' + (d.well_identified ? 'pos' : 'neg');
+
+    const feEl = $('hs-feller');
+    feEl.textContent = pr.satisfies_feller
+      ? 'satisfied' : 'violated (' + fmt(pr.feller_margin, 3) + ')';
+    feEl.className = 'metric-val ' + (pr.satisfies_feller ? 'pos' : 'neg');
+    feEl.style.fontSize = '12px';
+
+    const cvEl = $('hs-conv');
+    cvEl.textContent = d.converged ? 'yes' : 'NO';
+    cvEl.className = 'metric-val ' + (d.converged ? 'pos' : 'neg');
+
+    $('hs-rms').textContent  = fmt(d.rms_vol_points, 3) + ' vol pts';
+    $('hs-ssvi').textContent = fmt(d.ssvi_rms_vol_points, 3) + ' vol pts';
+    $('hs-pts').textContent  = String(d.n_points);
+    $('hs-asof').textContent = d.as_of;
+
+    // Both the raw parameters and what they mean as volatilities: kappa and
+    // sigma are not comparable to anything a reader has intuition for, while
+    // sqrt(v0) and sqrt(theta) are.
+    $('hs-params').innerHTML =
+      '<div class="tscroll"><table class="dtable"><thead><tr>' +
+      '<th>v0</th><th>kappa</th><th>theta</th><th>sigma</th><th>rho</th>' +
+      '<th>Initial Vol</th><th>Long-Run Vol</th><th>Worst Quote Error</th>' +
+      '</tr></thead><tbody><tr>' +
+      `<td>${fmt(pr.v0,6)}</td><td>${fmt(pr.kappa,4)}</td><td>${fmt(pr.theta,6)}</td>` +
+      `<td>${fmt(pr.sigma,4)}</td><td>${fmt(pr.rho,4)}</td>` +
+      `<td>${fmt(pr.initial_vol*100,2)}%</td><td>${fmt(pr.long_run_vol*100,2)}%</td>` +
+      `<td>${fmt(d.max_vol_error*100,3)} vol pts</td>` +
+      '</tr></tbody></table></div>';
+
+    $('hs-results').style.display = '';
+  }catch(e){ showErr('Heston error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Calibrate (slow first time)'; } }
+}
+
+async function calcHestonEuropean(){
+  const btn = $('btn-hs-eu');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Pricing\u2026'; }
+  try{
+    const res = await fetch('/api/heston/european',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...hestonRequest(),
+        K: +$('hs-K').value, T: +$('hs-T').value, flag: $('hs-flag').value})});
+    const d = await res.json();
+    if(d.error){ showErr('Heston European: ' + d.error); return; }
+
+    // The spot is the surface's own implied one unless a caller supplies it --
+    // an SSVI surface is parameterised in forward terms and carries no spot --
+    // so it is shown rather than assumed to be understood.
+    $('hs-eu-out').innerHTML =
+      `<b>${fmt(d.price, 6)}</b> &nbsp; ` +
+      `(${d.flag === 'c' ? 'call' : 'put'}, K = ${fmt(d.strike,4)}, T = ${fmt(d.T,3)}y, ` +
+      `spot ${fmt(d.spot,4)} implied from the surface's nearest forward) &nbsp;\u00b7&nbsp; ` +
+      `${d.method}, ${d.terms} terms, truncation [${fmt(d.truncation[0],2)}, ` +
+      `${fmt(d.truncation[1],2)}] set from the model's own cumulants &nbsp;\u00b7&nbsp; ` +
+      `parameters: ${d.params_source}`;
+    $('hs-eu-out').style.display = '';
+  }catch(e){ showErr('Heston European error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Price'; } }
+}
+
+async function calcHestonSnowball(){
+  const btn = $('btn-hs-sb');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Simulating\u2026'; }
+  try{
+    const res = await fetch('/api/heston/snowball',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...hestonRequest(),
+        S0: 100.0,
+        T: +$('hs-sb-T').value,
+        ko_pct: +$('hs-sb-ko').value / 100,
+        ki_pct: +$('hs-sb-ki').value / 100,
+        coupon_pa: +$('hs-sb-cpn').value / 100,
+        paths: +$('hs-sb-paths').value})});
+    const d = await res.json();
+    if(d.error){ showErr('Heston snowball: ' + d.error); return; }
+
+    // The response's own words, not a paraphrase. This is the only number the
+    // service returns without a second engine, and a UI that softened the
+    // wording would be the place that quietly dropped it.
+    const checked = d.cross_checked_by_a_second_engine;
+    $('hs-sb-warn').innerHTML =
+      `<b>Cross-checked by a second engine: ${checked ? 'yes' : 'NO'}.</b> ` +
+      (d.single_engine_note || '');
+
+    $('hs-sb-px').textContent   = fmt(d.price, 6);
+    $('hs-sb-ci').textContent   = '\u00b1' + fmt(d.ci95, 6);
+    $('hs-sb-ko-p').textContent = fmt(d.ko_prob * 100, 2) + '%';
+    $('hs-sb-ki-p').textContent = fmt(d.ki_no_ko_prob * 100, 2) + '%';
+
+    $('hs-sb-note').textContent =
+      `${d.paths.toLocaleString()} paths at ${d.steps_per_year} steps a year under ` +
+      `${d.vol_model}, standard error ${fmt(d.std_error,6)}. ` +
+      `Knocks out ${fmt(d.ko_prob*100,2)}% of the time with an expected knock-out at ` +
+      `${fmt(d.expected_ko_time,3)} years; knocks in ${fmt(d.ki_prob*100,2)}% and ends ` +
+      `knocked in without ever having knocked out ${fmt(d.ki_no_ko_prob*100,2)}% \u2014 ` +
+      `that last figure is the one the coupon is paid for. ` +
+      `Parameters: ${d.params_source}.`;
+
+    $('hs-sb-results').style.display = '';
+  }catch(e){ showErr('Heston snowball error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Simulate'; } }
+}
+
+// ========== DUPIRE LOCAL VOLATILITY ==========
+function localVolRequest(){
+  return {
+    underlying: $('lv-und').value,
+    source: 'snapshot',
+    r: +$('lv-rate').value / 100,
+  };
+}
+
+async function calcLocalVol(){
+  const btn = $('btn-lv');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Building\u2026'; }
+  try{
+    const horizon = +$('lv-hz').value;
+    // 31 x 25. The heat map used 21 x 15 because a denser grid of coloured
+    // cells buys nothing a tooltip does not already give; a surface is read
+    // as a shape, so the sampling has to be fine enough that the shape is the
+    // surface's and not the grid's.
+    const res = await fetch('/api/local_vol/surface',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...localVolRequest(), horizon, n_spots:31, n_times:25})});
+    const d = await res.json();
+    if(d.error){ showErr('Local vol: ' + d.error); return; }
+
+    const g = d.diagnostics;
+    const quoted = Math.max(...d.forward_curve.maturities);
+
+    const drawn = d.local_vol.flat().filter(v => v != null && isFinite(v));
+    const drawnLo = Math.min(...drawn) * 100, drawnHi = Math.max(...drawn) * 100;
+
+    // The headline. It grows with the horizon -- 59% at one year, 86% at
+    // three on this snapshot -- which is the point: the assumption is not a
+    // fixed property of the surface, it is a property of how far you ask.
+    // metric-val is yellow by default, so the three states are green for fine,
+    // the plain yellow for worth-knowing, and red past a half.
+    const share = d.extrapolated_fraction;
+    const ex = $('lv-extrap');
+    ex.textContent = fmt(share * 100, 1) + '%';
+    ex.className = 'metric-val ' + (share > 0.5 ? 'neg' : share > 0.25 ? '' : 'pos');
+
+    $('lv-quoted').textContent = fmt(quoted, 3) + ' y';
+    // The diagnostics scan the solver's own region, which reaches +/-2.65 in
+    // log-moneyness at three years -- far wider than the window drawn. So this
+    // card is labelled for the solver and the note gives the drawn range: a
+    // reader seeing 141.9% here against a heatmap topping out at 86.3% has no
+    // way to tell which of the two is wrong, and neither is.
+    $('lv-range').textContent =
+      fmt(g.min_vol * 100, 1) + '% \u2013 ' + fmt(g.max_vol * 100, 1) + '%';
+
+    const wd = g.well_defined;
+    const wdEl = $('lv-wd');
+    wdEl.textContent = wd ? 'yes' : 'NO';
+    wdEl.className = 'metric-val ' + (wd ? 'pos' : 'neg');
+
+    // Dupire divides by this. A denominator approaching zero is how a fitted
+    // surface announces it is not arbitrage-free, so it is reported as a
+    // number rather than folded into the verdict above.
+    $('lv-denom').textContent = fmt(g.min_denominator, 4);
+    const cl = g.clamped_fraction;
+    const clEl = $('lv-clamp');
+    clEl.textContent = cl > 0
+      ? fmt(cl * 100, 2) + '%  (' + (g.n_floored + g.n_capped) + '/' + g.n_evaluated + ')'
+      : 'none';
+    clEl.className = 'metric-val ' + (cl > 0 ? '' : 'pos');
+    clEl.style.fontSize = cl > 0 ? '12px' : '';
+    $('lv-peclet').textContent = fmt(g.max_peclet, 4);
+    $('lv-asof').textContent = d.as_of;
+
+    $('lv-note').textContent =
+      `${g.n_evaluated.toLocaleString()} points scanned across the solver's own region ` +
+      `(log-moneyness ${fmt(d.solver_moneyness_range[0],2)} to ${fmt(d.solver_moneyness_range[1],2)}), ` +
+      `not just the ones drawn. ` +
+      `${g.n_undefined} undefined, ${g.n_floored} floored, ${g.n_capped} capped. ` +
+      `The heatmap draws a narrower window (three at-the-money standard deviations, ` +
+      `k from ${fmt(d.moneyness[0],2)} to ${fmt(d.moneyness[d.moneyness.length-1],2)}), ` +
+      `where local volatility runs ${fmt(drawnLo,1)}% to ${fmt(drawnHi,1)}% -- the card above ` +
+      `is the solver's wider region. ` +
+      `The quotes reach ${fmt(quoted,3)} years and you asked for ${fmt(horizon,0)}, so ` +
+      `${fmt(share*100,1)}% of this surface is the tail assumption rather than market data \u2014 ` +
+      `and local volatility is roughly the slope of implied variance in time, which makes it ` +
+      `more sensitive to that assumption than the implied surface it came from, not less.`;
+
+    drawLocalVolHeatmap(d, quoted, horizon);
+    $('lv-results').style.display = '';
+  }catch(e){ showErr('Local vol error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Build Surface'; } }
+}
+
+// Everything the local-volatility panel is showing, so the implied overlay
+// can be toggled and the axis stretched without re-fetching.
+let lvState = null;
+
+function drawLocalVolHeatmap(d, quoted, horizon){
+  lvState = {d, quoted, horizon};
+  redrawLocalVol();
+  // Pin halfway along the drawn window so the slices below are not empty.
+  lvPick(Math.floor(d.moneyness.length / 2), Math.floor(d.times.length / 2));
+}
+
+function redrawLocalVol(){
+  if(!lvState) return;
+  const {d, quoted} = lvState;
+
+  // z is [row][col] = [y][x] and the endpoint returns local_vol[i][j] at
+  // times[i], moneyness[j] -- so time is y and the grid goes in as it
+  // arrives. A transposed local-volatility surface still looks like a
+  // plausible surface, which is what makes transposing it worth ruling out
+  // by construction rather than by inspection.
+  const toPct = g => g.map(row => row.map(v =>
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(3)));
+  const zLocal = toPct(d.local_vol);
+  const zImplied = toPct(d.implied_vol);
+
+  const traces = [{
+    type:'surface', x:d.moneyness, y:d.times, z:zLocal,
+    colorscale:'Plasma', opacity:0.92, showscale:true, name:'local',
+    colorbar:{title:{text:'local %', font:{size:10, color:PAL.tx2}},
+              tickfont:{size:9, color:PAL.tx2}, len:0.65, thickness:12},
+    contours:{z:{show:true, usecolormap:true, highlightcolor:PAL.amber, width:1}},
+    hovertemplate:'k %{x:.3f}<br>t %{y:.3f}y<br><b>local %{z:.2f}%</b><extra></extra>',
+  }];
+
+  // The implied surface the local one was derived from, in the same scene.
+  // This panel exists because reading local volatility as implied volatility
+  // is a standing trap, and two surfaces at the same (k, t) make the
+  // difference a shape rather than a sentence: on the committed chain the
+  // local surface spans roughly 13% to 86% across the drawn window while the
+  // implied one stays inside 19% to 36%.
+  if($('lv-show-implied').checked){
+    traces.push({
+      type:'surface', x:d.moneyness, y:d.times, z:zImplied,
+      showscale:false, opacity:0.45, name:'implied',
+      colorscale:[[0, '#94a3b8'], [1, '#334155']],
+      hovertemplate:'k %{x:.3f}<br>t %{y:.3f}y<br>implied %{z:.2f}%<extra></extra>',
+    });
+  }
+
+  Plotly.react('chart-localvol', traces, {
+    paper_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:{l:0, r:0, t:10, b:0},
+    showlegend:true,
+    legend:{orientation:'h', x:0, y:1.0, font:{size:10, color:PAL.tx2}},
+    scene:{
+      xaxis:{title:{text:'k = log(S/spot)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      yaxis:{title:{text:'time (y)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      zaxis:{title:{text:'volatility (%)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      aspectmode:'manual',
+      aspectratio:{x:1.15, y:+$('lv-stretch').value, z:0.65},
+      camera:{eye:{x:1.6, y:-1.65, z:0.85}},
+      dragmode:'orbit', uirevision:'localvol-camera',
+    },
+  }, PCFG);
+  PLOTS.add('chart-localvol');
+
+  const el = $('chart-localvol');
+  if(el && !el._lvClickBound){
+    el._lvClickBound = true;
+    el.on('plotly_click', e => {
+      const p = e.points[0];
+      if(p.data.type !== 'surface') return;
+      lvPick(nearestIndex(lvState.d.moneyness, p.x),
+             nearestIndex(lvState.d.times, p.y));
+    });
+  }
+
+  $('lv-pick').textContent =
+    `Quotes reach ${fmt(quoted,3)}y and this is drawn to ` +
+    `${fmt(Math.max(...d.times),2)}y, so most of what is shown is the tail ` +
+    `assumption rather than market data. Click the surface to pin a point.`;
+}
+
+function stretchLocalVol(){
+  if(!lvState) return;
+  Plotly.relayout('chart-localvol',
+    {'scene.aspectratio': {x:1.15, y:+$('lv-stretch').value, z:0.65}});
+}
+
+// Both slices carry local and implied together, for the same reason the 3D
+// scene does.
+function lvPick(j, i){
+  if(!lvState) return;
+  const {d, quoted} = lvState;
+  j = Math.max(0, Math.min(j, d.moneyness.length - 1));
+  i = Math.max(0, Math.min(i, d.times.length - 1));
+  const pct = v => (v == null || !isFinite(v)) ? null : v*100;
+
+  draw('chart-lv-slice-k', [
+    {type:'scatter', mode:'lines', x:d.moneyness,
+     y:d.local_vol[i].map(pct), name:'local', connectgaps:false,
+     line:{color:PAL.purple, width:2},
+     hovertemplate:'k %{x:.3f}<br>local %{y:.2f}%<extra></extra>'},
+    {type:'scatter', mode:'lines', x:d.moneyness,
+     y:d.implied_vol[i].map(pct), name:'implied', connectgaps:false,
+     line:{color:PAL.tx2, width:1.6, dash:'dash'},
+     hovertemplate:'k %{x:.3f}<br>implied %{y:.2f}%<extra></extra>'},
+  ], PLOT({x:'k = log(S/spot)', y:'volatility (%)', legend:true,
+           margin:{l:56,r:16,t:26,b:44},
+           shapes:[vline(0, PAL.tx2, 'dot')],
+           annotations:[vlabel(0, 'spot', PAL.tx2)]}));
+
+  const col = g => d.times.map((_, r) => pct(g[r][j]));
+  draw('chart-lv-slice-t', [
+    {type:'scatter', mode:'lines', x:d.times, y:col(d.local_vol),
+     name:'local', connectgaps:false, line:{color:PAL.purple, width:2},
+     hovertemplate:'t %{x:.3f}y<br>local %{y:.2f}%<extra></extra>'},
+    {type:'scatter', mode:'lines', x:d.times, y:col(d.implied_vol),
+     name:'implied', connectgaps:false,
+     line:{color:PAL.tx2, width:1.6, dash:'dash'},
+     hovertemplate:'t %{x:.3f}y<br>implied %{y:.2f}%<extra></extra>'},
+  ], PLOT({x:'time (y)', y:'volatility (%)', legend:true,
+           margin:{l:56,r:16,t:26,b:44},
+           shapes:[vline(quoted, PAL.green, 'dash')],
+           annotations:[vlabel(quoted, 'quotes end', PAL.green)]}));
+
+  $('lbl-lv-slice-k').textContent =
+    `Fixed time t = ${fmt(d.times[i],3)}y, along price \u2014 ` +
+    `local against implied`;
+  $('lbl-lv-slice-t').textContent =
+    `Fixed price k = ${fmt(d.moneyness[j],3)} (S = ${fmt(d.spots[j],3)}), ` +
+    `along time`;
+}
+
+async function calcLocalVolRoundTrip(){
+  const btn = $('btn-lv-rt');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Repricing\u2026'; }
+  try{
+    const res = await fetch('/api/local_vol/validate',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(localVolRequest())});
+    const d = await res.json();
+    if(d.error){ showErr('Round trip: ' + d.error); return; }
+
+    $('lv-rt-worst').textContent  = fmt(d.worst_error_vol_points, 4) + ' vol pts';
+    $('lv-rt-budget').textContent = fmt(d.calibration_rms_vol_points, 3) + ' vol pts';
+    $('lv-rt-share').textContent  = d.share_of_budget == null
+      ? '\u2014' : fmt(d.share_of_budget * 100, 2) + '%';
+
+    const v = $('lv-rt-verdict');
+    v.textContent = d.passes ? 'within budget' : 'EXCEEDS BUDGET';
+    v.className = 'metric-val ' + (d.passes ? 'pos' : 'neg');
+    v.style.fontSize = '12px';
+
+    const budget = d.calibration_rms_vol_points;
+    let html = '<div class="tscroll"><table class="dtable"><thead><tr>' +
+      '<th>Maturity</th><th>Moneyness</th><th>Strike</th>' +
+      '<th>Target Vol</th><th>Recovered</th><th>Error (vol pts)</th><th>% of Budget</th>' +
+      '</tr></thead><tbody>';
+    for(const r of d.rows){
+      const err = Math.abs(r.error_vol_points);
+      const pct = budget ? err / budget * 100 : null;
+      html += `<tr><td>${fmt(r.maturity,4)}</td><td>${fmt(r.moneyness,2)}</td>` +
+              `<td>${fmt(r.strike,4)}</td><td>${fmt(r.target_vol*100,3)}%</td>` +
+              `<td>${fmt(r.recovered_vol*100,3)}%</td>` +
+              `<td>${fmt(r.error_vol_points,4)}</td>` +
+              `<td class="${pct!=null&&pct>100?'neg':''}">${pct==null?'\u2014':fmt(pct,2)+'%'}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    $('lv-rt-table').innerHTML = html;
+    $('lv-rt-results').style.display = '';
+  }catch(e){ showErr('Round trip error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Reprice the Vanillas (slow, ~7s)'; } }
+}
+
+// ========== SNOWBALL QUOTE REPORT ==========
+async function calcSnowballReport(){
+  const btn = $('btn-sb-rep');
+  const warn = $('sb-rep-warn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Building…'; }
+  warn.style.display = 'none';
+  try{
+    const body = snowballBody();
+    body.coupon_pa = +$('sb-cpn').value / 100;
+    body.quote = $('sb-rep-quote').checked;
+    body.mc    = $('sb-rep-mc').checked;
+    body.crosscheck = $('sb-rep-xc').checked;
+    body.n_paths = 100000;
+    const asOf = $('sb-rep-asof').value.trim();
+    if(asOf){
+      body.carry_as_of = asOf;
+      body.tail = $('sb-rep-tail').value;
+    }
+
+    const res = await fetch('/api/snowball_report',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ showErr('Report: ' + d.error); return; }
+
+    // A carry measurement that could not be taken is shown, not swallowed.
+    // The report still prints -- that is exactly the case its leading
+    // section is written for -- so hiding the reason would leave the reader
+    // wondering why the section says "supplied by the caller".
+    if(d.carry_error){
+      warn.textContent = 'Carry not measured: ' + d.carry_error;
+      warn.style.display = '';
+    }
+
+    $('sb-rep-out').textContent = d.report;
+    $('sb-rep-out').style.display = '';
+  }catch(e){ showErr('Report error: ' + e.message); }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Build Report'; } }
 }
 
 // ========== SHARK FIN PRICING ==========
@@ -2040,10 +4033,7 @@ function toggleAnalysis(hdr){
   hdr.classList.toggle('open');
   const body = hdr.nextElementSibling;
   if(body) body.classList.toggle('open');
-  setTimeout(()=>{
-    if(chartSmile) chartSmile.resize();
-    if(chartMC) chartMC.resize();
-  }, 100);
+  setTimeout(resizePlots, 100);
 }
 
 // ========== CN-FDM REPRICE ==========
@@ -2066,8 +4056,9 @@ async function calcCnFdm(productType){
       const ki  = +$('sb-ki').value / 100;
       const cpn = +$('sb-cpn').value / 100;
       const freq = +$('sb-freq').value;
+      const basis = +$('sb-basis').value / 100;
       payload = { product_type:'snowball', S0:S, sigma:sig, r, q, T,
-                  KO_pct: ko, KI_pct: ki,
+                  KO_pct: ko, KI_pct: ki, basis_pa: basis,
                   coupon_pa: cpn, obs_freq: freq, mc_paths: 50000 };
     } else {
       const S      = +$('sf-S').value;

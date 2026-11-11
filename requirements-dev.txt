@@ -1,0 +1,30 @@
+# ============================================================
+#  Development / test-only dependencies
+#
+#  None of these are needed to RUN the app -- requirements.txt
+#  alone is enough for that. These back the test suite, static
+#  checks, and the numerical acceleration used by the MC engines.
+#
+#  Install:  pip install -r requirements.txt -r requirements-dev.txt
+# ============================================================
+
+# Independent benchmark for the self-built models. QuantLib is the
+# reference implementation we cross-validate against in tests -- it is
+# deliberately NOT a runtime dependency, so the shipped pricing code
+# stays self-contained and readable.
+QuantLib==1.44
+
+# JIT acceleration for path-dependent MC (snowball, LSMC).
+# NOTE: numba pins numpy<2.3, which is why requirements.txt caps
+# numpy at 2.2.6 rather than the latest 2.4.x.
+numba==0.61.2
+
+# Test + static analysis
+pytest==8.4.2
+mypy==2.4.0
+pre-commit==4.7.0
+# ruff is already present in the env; pinned here for CI reproducibility
+ruff
+
+# Market data (Phase 2: real A-share option chains + index futures basis)
+akshare==1.18.63

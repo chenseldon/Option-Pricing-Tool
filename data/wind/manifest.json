@@ -1,0 +1,85 @@
+{
+  "format_version": 1,
+  "generated_at": "2026-11-02T23:57:20",
+  "git_revision": "3f3a1fa390fd437593206284b91cb2b7c71afec8",
+  "roots": [
+    "IO",
+    "HO",
+    "MO"
+  ],
+  "n_dates": 725,
+  "n_rows": 2175,
+  "first_date": "2023-06-30",
+  "last_date": "2026-06-29",
+  "inputs": {
+    "option_static": {
+      "sha256": "16fe73b63bb082714f095f7e87562122f9a97ffa8957261650d46559ab87f44a",
+      "bytes": 306609
+    },
+    "option_quotes": {
+      "sha256": "cb9f0b4aa386b2f377154b9f95a14d97c644abfe579e08a74fa80fd1473966d0",
+      "bytes": 34016810
+    },
+    "index_quotes": {
+      "sha256": "c2ad1b73b25d1e4b2de5e7d2ed53221ec1c133678d2e4f380fddfb26222ffba6",
+      "bytes": 193738
+    },
+    "futures_static": {
+      "sha256": "373f2591d26d906b08aaad1b89e5a21fdb6caf8ecd56f86c2e7bae5f7bbe180d",
+      "bytes": 5281
+    },
+    "futures_quotes": {
+      "sha256": "be55b545e2c2998b5fd00c596c398f068149313af9fbb1602101bbef83204bb1",
+      "bytes": 200397
+    },
+    "rates": {
+      "sha256": "4fa13551a9b13d1c5875e2cc3e6a3dcd14b72c5f4fd44567c4ba968347867eb8",
+      "bytes": 28380
+    }
+  },
+  "anchor_sha256": "001efa0bb0838ff399251f216f49378fbc3d5c326de16e5f7d43707a062efc14",
+  "thresholds": {
+    "DEFAULT_RATE": 0.02,
+    "MIN_PAIRED_STRIKES": 4,
+    "MAX_PARITY_RESIDUAL_REL": 0.01,
+    "MAX_VOL_UNCERTAINTY": 0.01,
+    "MAX_TICK_VOL_UNCERTAINTY": 0.02,
+    "MAX_MONEYNESS_SD": 3.0,
+    "MIN_MATURITY_YEARS": 0.019178082191780823,
+    "MIN_POINTS_PER_SLICE": 4,
+    "MIN_USABLE_SLICES": 2,
+    "tick_size": {
+      "IO": 0.2,
+      "HO": 0.2,
+      "MO": 0.2
+    },
+    "price_convention": "settle",
+    "traded_from": "volume",
+    "drop_adjusted": true,
+    "rate_source": "wind-cgb-2tenor-linear-flat-outside",
+    "day_count": "ACT/365F"
+  },
+  "spot_check_dates": {
+    "best_fit": [
+      "2024-08-27",
+      "IO"
+    ],
+    "worst_fit": [
+      "2024-10-09",
+      "IO"
+    ],
+    "median_fit": [
+      "2023-11-07",
+      "MO"
+    ],
+    "widest_futures_gap": [
+      "2024-02-05",
+      "MO"
+    ],
+    "first_degraded": [
+      "2023-07-21",
+      "IO"
+    ]
+  },
+  "note": "Regenerate with scripts/build_wind_anchor.py. The thresholds block is asserted against the live modules by tests/test_wind_anchor.py, so tuning a screen without re-sweeping fails loudly."
+}

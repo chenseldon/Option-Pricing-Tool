@@ -1,0 +1,1237 @@
+{
+  "format_version": 1,
+  "underlying": "IO",
+  "underlying_name": "沪深300股指期权",
+  "as_of": "2024-08-27",
+  "captured_at": "2026-11-02T23:57:20",
+  "source": "wind:2024-08-27:settle",
+  "warnings": [
+    "rejections: 0 of 198 raw rows ({'raw_rows': 198, 'no_static_record': 0, 'adjusted_contract': 0, 'non_positive_price': 0, 'expired': 0, 'total_rejected': 0})"
+  ],
+  "slices": [
+    {
+      "expiry": "2024-09-20",
+      "days_to_expiry": 24,
+      "quotes": [
+        {
+          "code": "IO2409-C-2800.CFE",
+          "last": 504.4,
+          "previous_settlement": 520.2,
+          "strike": 2800.0
+        },
+        {
+          "code": "IO2409-C-2900.CFE",
+          "last": 401.0,
+          "previous_settlement": 422.0,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2409-C-2950.CFE",
+          "last": 351.4,
+          "previous_settlement": 366.0,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2409-C-3000.CFE",
+          "last": 0.0,
+          "previous_settlement": 316.4,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2409-C-3050.CFE",
+          "last": 256.6,
+          "previous_settlement": 272.6,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2409-C-3100.CFE",
+          "last": 207.2,
+          "previous_settlement": 223.2,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2409-C-3150.CFE",
+          "last": 160.0,
+          "previous_settlement": 176.0,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2409-C-3200.CFE",
+          "last": 115.4,
+          "previous_settlement": 130.0,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2409-C-3250.CFE",
+          "last": 75.2,
+          "previous_settlement": 90.0,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2409-C-3300.CFE",
+          "last": 44.8,
+          "previous_settlement": 55.8,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2409-C-3350.CFE",
+          "last": 24.4,
+          "previous_settlement": 31.2,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2409-C-3400.CFE",
+          "last": 13.0,
+          "previous_settlement": 16.4,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2409-C-3450.CFE",
+          "last": 6.4,
+          "previous_settlement": 8.0,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2409-C-3500.CFE",
+          "last": 3.6,
+          "previous_settlement": 4.4,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2409-C-3550.CFE",
+          "last": 2.2,
+          "previous_settlement": 2.6,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2409-C-3600.CFE",
+          "last": 1.6,
+          "previous_settlement": 1.8,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2409-C-3650.CFE",
+          "last": 1.0,
+          "previous_settlement": 1.0,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2409-C-3700.CFE",
+          "last": 0.8,
+          "previous_settlement": 0.8,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2409-C-3750.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 3750.0
+        },
+        {
+          "code": "IO2409-C-3800.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2409-C-3850.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 3850.0
+        },
+        {
+          "code": "IO2409-C-3900.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.4,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2409-C-4000.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.4,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2409-C-4100.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.2,
+          "strike": 4100.0
+        },
+        {
+          "code": "IO2409-C-4200.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.2,
+          "strike": 4200.0
+        },
+        {
+          "code": "IO2409-P-2800.CFE",
+          "last": 0.4,
+          "previous_settlement": 0.2,
+          "strike": 2800.0
+        },
+        {
+          "code": "IO2409-P-2900.CFE",
+          "last": 0.0,
+          "previous_settlement": 0.4,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2409-P-2950.CFE",
+          "last": 0.6,
+          "previous_settlement": 0.6,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2409-P-3000.CFE",
+          "last": 1.2,
+          "previous_settlement": 1.2,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2409-P-3050.CFE",
+          "last": 1.6,
+          "previous_settlement": 1.4,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2409-P-3100.CFE",
+          "last": 2.6,
+          "previous_settlement": 2.4,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2409-P-3150.CFE",
+          "last": 4.8,
+          "previous_settlement": 4.2,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2409-P-3200.CFE",
+          "last": 9.6,
+          "previous_settlement": 8.6,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2409-P-3250.CFE",
+          "last": 20.4,
+          "previous_settlement": 17.0,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2409-P-3300.CFE",
+          "last": 39.6,
+          "previous_settlement": 34.2,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2409-P-3350.CFE",
+          "last": 70.6,
+          "previous_settlement": 60.8,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2409-P-3400.CFE",
+          "last": 107.4,
+          "previous_settlement": 95.0,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2409-P-3450.CFE",
+          "last": 151.4,
+          "previous_settlement": 135.4,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2409-P-3500.CFE",
+          "last": 202.0,
+          "previous_settlement": 187.6,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2409-P-3550.CFE",
+          "last": 250.2,
+          "previous_settlement": 235.6,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2409-P-3600.CFE",
+          "last": 298.4,
+          "previous_settlement": 284.6,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2409-P-3650.CFE",
+          "last": 348.8,
+          "previous_settlement": 334.2,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2409-P-3700.CFE",
+          "last": 398.4,
+          "previous_settlement": 383.8,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2409-P-3750.CFE",
+          "last": 0.0,
+          "previous_settlement": 433.8,
+          "strike": 3750.0
+        },
+        {
+          "code": "IO2409-P-3800.CFE",
+          "last": 498.2,
+          "previous_settlement": 483.6,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2409-P-3850.CFE",
+          "last": 548.0,
+          "previous_settlement": 533.6,
+          "strike": 3850.0
+        },
+        {
+          "code": "IO2409-P-3900.CFE",
+          "last": 0.0,
+          "previous_settlement": 583.6,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2409-P-4000.CFE",
+          "last": 698.0,
+          "previous_settlement": 683.6,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2409-P-4100.CFE",
+          "last": 0.0,
+          "previous_settlement": 783.8,
+          "strike": 4100.0
+        },
+        {
+          "code": "IO2409-P-4200.CFE",
+          "last": 898.4,
+          "previous_settlement": 884.4,
+          "strike": 4200.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-10-18",
+      "days_to_expiry": 52,
+      "quotes": [
+        {
+          "code": "IO2410-C-2950.CFE",
+          "last": 0.0,
+          "previous_settlement": 362.2,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2410-C-3000.CFE",
+          "last": 0.0,
+          "previous_settlement": 313.4,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2410-C-3050.CFE",
+          "last": 257.0,
+          "previous_settlement": 272.4,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2410-C-3100.CFE",
+          "last": 209.8,
+          "previous_settlement": 225.4,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2410-C-3150.CFE",
+          "last": 165.8,
+          "previous_settlement": 180.6,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2410-C-3200.CFE",
+          "last": 124.0,
+          "previous_settlement": 139.2,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2410-C-3250.CFE",
+          "last": 91.2,
+          "previous_settlement": 102.6,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2410-C-3300.CFE",
+          "last": 62.2,
+          "previous_settlement": 71.8,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2410-C-3350.CFE",
+          "last": 40.8,
+          "previous_settlement": 48.6,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2410-C-3400.CFE",
+          "last": 25.6,
+          "previous_settlement": 32.0,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2410-C-3450.CFE",
+          "last": 16.4,
+          "previous_settlement": 20.2,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2410-C-3500.CFE",
+          "last": 10.4,
+          "previous_settlement": 13.0,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2410-C-3550.CFE",
+          "last": 7.2,
+          "previous_settlement": 8.6,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2410-C-3600.CFE",
+          "last": 5.2,
+          "previous_settlement": 6.0,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2410-C-3650.CFE",
+          "last": 3.6,
+          "previous_settlement": 4.2,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2410-C-3700.CFE",
+          "last": 0.0,
+          "previous_settlement": 3.0,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2410-C-3750.CFE",
+          "last": 2.0,
+          "previous_settlement": 2.2,
+          "strike": 3750.0
+        },
+        {
+          "code": "IO2410-C-3800.CFE",
+          "last": 1.8,
+          "previous_settlement": 2.2,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2410-C-3850.CFE",
+          "last": 1.2,
+          "previous_settlement": 1.4,
+          "strike": 3850.0
+        },
+        {
+          "code": "IO2410-C-3900.CFE",
+          "last": 0.0,
+          "previous_settlement": 1.2,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2410-P-2950.CFE",
+          "last": 1.8,
+          "previous_settlement": 1.8,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2410-P-3000.CFE",
+          "last": 3.2,
+          "previous_settlement": 2.8,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2410-P-3050.CFE",
+          "last": 5.2,
+          "previous_settlement": 4.4,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2410-P-3100.CFE",
+          "last": 8.2,
+          "previous_settlement": 7.4,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2410-P-3150.CFE",
+          "last": 13.8,
+          "previous_settlement": 12.2,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2410-P-3200.CFE",
+          "last": 23.0,
+          "previous_settlement": 20.8,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2410-P-3250.CFE",
+          "last": 38.2,
+          "previous_settlement": 34.2,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2410-P-3300.CFE",
+          "last": 60.4,
+          "previous_settlement": 53.4,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2410-P-3350.CFE",
+          "last": 88.0,
+          "previous_settlement": 80.4,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2410-P-3400.CFE",
+          "last": 122.8,
+          "previous_settlement": 111.8,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2410-P-3450.CFE",
+          "last": 163.4,
+          "previous_settlement": 151.0,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2410-P-3500.CFE",
+          "last": 207.2,
+          "previous_settlement": 193.4,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2410-P-3550.CFE",
+          "last": 253.4,
+          "previous_settlement": 238.8,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2410-P-3600.CFE",
+          "last": 305.4,
+          "previous_settlement": 292.6,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2410-P-3650.CFE",
+          "last": 354.0,
+          "previous_settlement": 340.8,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2410-P-3700.CFE",
+          "last": 403.2,
+          "previous_settlement": 389.8,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2410-P-3750.CFE",
+          "last": 452.6,
+          "previous_settlement": 439.0,
+          "strike": 3750.0
+        },
+        {
+          "code": "IO2410-P-3800.CFE",
+          "last": 0.0,
+          "previous_settlement": 488.4,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2410-P-3850.CFE",
+          "last": 0.0,
+          "previous_settlement": 538.2,
+          "strike": 3850.0
+        },
+        {
+          "code": "IO2410-P-3900.CFE",
+          "last": 0.0,
+          "previous_settlement": 587.8,
+          "strike": 3900.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-11-15",
+      "days_to_expiry": 80,
+      "quotes": [
+        {
+          "code": "IO2411-C-2950.CFE",
+          "last": 0.0,
+          "previous_settlement": 368.6,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2411-C-3000.CFE",
+          "last": 306.0,
+          "previous_settlement": 321.4,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2411-C-3050.CFE",
+          "last": 261.0,
+          "previous_settlement": 275.0,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2411-C-3100.CFE",
+          "last": 215.8,
+          "previous_settlement": 230.6,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2411-C-3150.CFE",
+          "last": 0.0,
+          "previous_settlement": 188.6,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2411-C-3200.CFE",
+          "last": 137.8,
+          "previous_settlement": 150.4,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2411-C-3250.CFE",
+          "last": 0.0,
+          "previous_settlement": 116.6,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2411-C-3300.CFE",
+          "last": 79.2,
+          "previous_settlement": 88.4,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2411-C-3350.CFE",
+          "last": 57.6,
+          "previous_settlement": 65.0,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2411-C-3400.CFE",
+          "last": 41.0,
+          "previous_settlement": 47.2,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2411-C-3450.CFE",
+          "last": 29.2,
+          "previous_settlement": 33.0,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2411-C-3500.CFE",
+          "last": 20.2,
+          "previous_settlement": 23.8,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2411-C-3550.CFE",
+          "last": 14.4,
+          "previous_settlement": 17.2,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2411-C-3600.CFE",
+          "last": 10.6,
+          "previous_settlement": 12.2,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2411-C-3650.CFE",
+          "last": 7.8,
+          "previous_settlement": 9.0,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2411-C-3700.CFE",
+          "last": 5.6,
+          "previous_settlement": 6.6,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2411-P-2950.CFE",
+          "last": 4.8,
+          "previous_settlement": 4.6,
+          "strike": 2950.0
+        },
+        {
+          "code": "IO2411-P-3000.CFE",
+          "last": 7.0,
+          "previous_settlement": 6.6,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2411-P-3050.CFE",
+          "last": 10.8,
+          "previous_settlement": 10.0,
+          "strike": 3050.0
+        },
+        {
+          "code": "IO2411-P-3100.CFE",
+          "last": 0.0,
+          "previous_settlement": 15.0,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2411-P-3150.CFE",
+          "last": 25.6,
+          "previous_settlement": 23.4,
+          "strike": 3150.0
+        },
+        {
+          "code": "IO2411-P-3200.CFE",
+          "last": 38.2,
+          "previous_settlement": 34.8,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2411-P-3250.CFE",
+          "last": 55.2,
+          "previous_settlement": 50.4,
+          "strike": 3250.0
+        },
+        {
+          "code": "IO2411-P-3300.CFE",
+          "last": 0.0,
+          "previous_settlement": 71.2,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2411-P-3350.CFE",
+          "last": 105.8,
+          "previous_settlement": 97.6,
+          "strike": 3350.0
+        },
+        {
+          "code": "IO2411-P-3400.CFE",
+          "last": 140.2,
+          "previous_settlement": 129.8,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2411-P-3450.CFE",
+          "last": 0.0,
+          "previous_settlement": 165.8,
+          "strike": 3450.0
+        },
+        {
+          "code": "IO2411-P-3500.CFE",
+          "last": 219.2,
+          "previous_settlement": 205.8,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2411-P-3550.CFE",
+          "last": 262.2,
+          "previous_settlement": 250.6,
+          "strike": 3550.0
+        },
+        {
+          "code": "IO2411-P-3600.CFE",
+          "last": 307.8,
+          "previous_settlement": 293.4,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2411-P-3650.CFE",
+          "last": 354.8,
+          "previous_settlement": 340.2,
+          "strike": 3650.0
+        },
+        {
+          "code": "IO2411-P-3700.CFE",
+          "last": 402.4,
+          "previous_settlement": 395.8,
+          "strike": 3700.0
+        }
+      ]
+    },
+    {
+      "expiry": "2024-12-20",
+      "days_to_expiry": 115,
+      "quotes": [
+        {
+          "code": "IO2412-C-2800.CFE",
+          "last": 505.4,
+          "previous_settlement": 520.0,
+          "strike": 2800.0
+        },
+        {
+          "code": "IO2412-C-2900.CFE",
+          "last": 410.0,
+          "previous_settlement": 423.6,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2412-C-3000.CFE",
+          "last": 318.4,
+          "previous_settlement": 334.6,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2412-C-3100.CFE",
+          "last": 233.0,
+          "previous_settlement": 246.2,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2412-C-3200.CFE",
+          "last": 160.6,
+          "previous_settlement": 171.4,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2412-C-3300.CFE",
+          "last": 101.8,
+          "previous_settlement": 110.8,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2412-C-3400.CFE",
+          "last": 63.8,
+          "previous_settlement": 70.0,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2412-C-3500.CFE",
+          "last": 38.0,
+          "previous_settlement": 41.4,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2412-C-3600.CFE",
+          "last": 22.6,
+          "previous_settlement": 25.0,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2412-C-3700.CFE",
+          "last": 13.6,
+          "previous_settlement": 15.2,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2412-C-3800.CFE",
+          "last": 8.8,
+          "previous_settlement": 10.0,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2412-C-3900.CFE",
+          "last": 6.4,
+          "previous_settlement": 7.0,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2412-C-4000.CFE",
+          "last": 4.4,
+          "previous_settlement": 5.0,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2412-C-4100.CFE",
+          "last": 3.4,
+          "previous_settlement": 4.0,
+          "strike": 4100.0
+        },
+        {
+          "code": "IO2412-P-2800.CFE",
+          "last": 6.4,
+          "previous_settlement": 5.8,
+          "strike": 2800.0
+        },
+        {
+          "code": "IO2412-P-2900.CFE",
+          "last": 10.4,
+          "previous_settlement": 9.6,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2412-P-3000.CFE",
+          "last": 17.8,
+          "previous_settlement": 16.4,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2412-P-3100.CFE",
+          "last": 32.6,
+          "previous_settlement": 29.0,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2412-P-3200.CFE",
+          "last": 58.0,
+          "previous_settlement": 53.6,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2412-P-3300.CFE",
+          "last": 101.0,
+          "previous_settlement": 93.6,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2412-P-3400.CFE",
+          "last": 159.2,
+          "previous_settlement": 150.6,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2412-P-3500.CFE",
+          "last": 233.2,
+          "previous_settlement": 222.6,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2412-P-3600.CFE",
+          "last": 318.0,
+          "previous_settlement": 305.8,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2412-P-3700.CFE",
+          "last": 408.8,
+          "previous_settlement": 395.6,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2412-P-3800.CFE",
+          "last": 504.8,
+          "previous_settlement": 499.0,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2412-P-3900.CFE",
+          "last": 0.0,
+          "previous_settlement": 595.8,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2412-P-4000.CFE",
+          "last": 707.0,
+          "previous_settlement": 693.8,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2412-P-4100.CFE",
+          "last": 0.0,
+          "previous_settlement": 792.4,
+          "strike": 4100.0
+        }
+      ]
+    },
+    {
+      "expiry": "2025-03-21",
+      "days_to_expiry": 206,
+      "quotes": [
+        {
+          "code": "IO2503-C-2900.CFE",
+          "last": 418.8,
+          "previous_settlement": 436.2,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2503-C-3000.CFE",
+          "last": 0.0,
+          "previous_settlement": 350.8,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2503-C-3100.CFE",
+          "last": 0.0,
+          "previous_settlement": 272.8,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2503-C-3200.CFE",
+          "last": 195.0,
+          "previous_settlement": 204.8,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2503-C-3300.CFE",
+          "last": 141.0,
+          "previous_settlement": 149.0,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2503-C-3400.CFE",
+          "last": 99.8,
+          "previous_settlement": 104.8,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2503-C-3500.CFE",
+          "last": 69.2,
+          "previous_settlement": 75.0,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2503-C-3600.CFE",
+          "last": 49.2,
+          "previous_settlement": 52.2,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2503-C-3700.CFE",
+          "last": 34.0,
+          "previous_settlement": 36.8,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2503-C-3800.CFE",
+          "last": 24.0,
+          "previous_settlement": 26.4,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2503-C-3900.CFE",
+          "last": 18.6,
+          "previous_settlement": 19.2,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2503-C-4000.CFE",
+          "last": 13.6,
+          "previous_settlement": 14.2,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2503-C-4100.CFE",
+          "last": 10.4,
+          "previous_settlement": 10.8,
+          "strike": 4100.0
+        },
+        {
+          "code": "IO2503-P-2900.CFE",
+          "last": 25.0,
+          "previous_settlement": 23.8,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2503-P-3000.CFE",
+          "last": 39.0,
+          "previous_settlement": 37.0,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2503-P-3100.CFE",
+          "last": 62.0,
+          "previous_settlement": 58.4,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2503-P-3200.CFE",
+          "last": 93.8,
+          "previous_settlement": 88.2,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2503-P-3300.CFE",
+          "last": 0.0,
+          "previous_settlement": 130.8,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2503-P-3400.CFE",
+          "last": 0.0,
+          "previous_settlement": 186.2,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2503-P-3500.CFE",
+          "last": 264.2,
+          "previous_settlement": 253.8,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2503-P-3600.CFE",
+          "last": 343.0,
+          "previous_settlement": 330.4,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2503-P-3700.CFE",
+          "last": 0.0,
+          "previous_settlement": 414.2,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2503-P-3800.CFE",
+          "last": 0.0,
+          "previous_settlement": 504.4,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2503-P-3900.CFE",
+          "last": 609.2,
+          "previous_settlement": 594.2,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2503-P-4000.CFE",
+          "last": 0.0,
+          "previous_settlement": 705.2,
+          "strike": 4000.0
+        },
+        {
+          "code": "IO2503-P-4100.CFE",
+          "last": 0.0,
+          "previous_settlement": 801.2,
+          "strike": 4100.0
+        }
+      ]
+    },
+    {
+      "expiry": "2025-06-20",
+      "days_to_expiry": 297,
+      "quotes": [
+        {
+          "code": "IO2506-C-2900.CFE",
+          "last": 442.8,
+          "previous_settlement": 455.2,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2506-C-3000.CFE",
+          "last": 364.4,
+          "previous_settlement": 375.6,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2506-C-3100.CFE",
+          "last": 293.0,
+          "previous_settlement": 303.0,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2506-C-3200.CFE",
+          "last": 229.6,
+          "previous_settlement": 238.6,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2506-C-3300.CFE",
+          "last": 178.0,
+          "previous_settlement": 185.8,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2506-C-3400.CFE",
+          "last": 137.2,
+          "previous_settlement": 141.8,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2506-C-3500.CFE",
+          "last": 104.2,
+          "previous_settlement": 108.0,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2506-C-3600.CFE",
+          "last": 78.8,
+          "previous_settlement": 82.2,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2506-C-3700.CFE",
+          "last": 59.4,
+          "previous_settlement": 62.2,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2506-C-3800.CFE",
+          "last": 44.0,
+          "previous_settlement": 47.2,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2506-C-3900.CFE",
+          "last": 34.0,
+          "previous_settlement": 36.0,
+          "strike": 3900.0
+        },
+        {
+          "code": "IO2506-P-2900.CFE",
+          "last": 39.0,
+          "previous_settlement": 37.0,
+          "strike": 2900.0
+        },
+        {
+          "code": "IO2506-P-3000.CFE",
+          "last": 58.2,
+          "previous_settlement": 55.6,
+          "strike": 3000.0
+        },
+        {
+          "code": "IO2506-P-3100.CFE",
+          "last": 84.6,
+          "previous_settlement": 81.2,
+          "strike": 3100.0
+        },
+        {
+          "code": "IO2506-P-3200.CFE",
+          "last": 121.8,
+          "previous_settlement": 116.2,
+          "strike": 3200.0
+        },
+        {
+          "code": "IO2506-P-3300.CFE",
+          "last": 166.4,
+          "previous_settlement": 160.2,
+          "strike": 3300.0
+        },
+        {
+          "code": "IO2506-P-3400.CFE",
+          "last": 0.0,
+          "previous_settlement": 215.0,
+          "strike": 3400.0
+        },
+        {
+          "code": "IO2506-P-3500.CFE",
+          "last": 288.0,
+          "previous_settlement": 278.4,
+          "strike": 3500.0
+        },
+        {
+          "code": "IO2506-P-3600.CFE",
+          "last": 0.0,
+          "previous_settlement": 351.0,
+          "strike": 3600.0
+        },
+        {
+          "code": "IO2506-P-3700.CFE",
+          "last": 439.4,
+          "previous_settlement": 428.2,
+          "strike": 3700.0
+        },
+        {
+          "code": "IO2506-P-3800.CFE",
+          "last": 0.0,
+          "previous_settlement": 511.2,
+          "strike": 3800.0
+        },
+        {
+          "code": "IO2506-P-3900.CFE",
+          "last": 0.0,
+          "previous_settlement": 598.0,
+          "strike": 3900.0
+        }
+      ]
+    }
+  ]
+}

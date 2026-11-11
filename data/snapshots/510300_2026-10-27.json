@@ -1,0 +1,791 @@
+{
+  "format_version": 1,
+  "underlying": "510300",
+  "underlying_name": "华泰柏瑞沪深300ETF",
+  "as_of": "2026-10-27",
+  "captured_at": "2026-10-27T22:01:38",
+  "source": "akshare",
+  "warnings": [],
+  "slices": [
+    {
+      "expiry": "2026-10-28",
+      "days_to_expiry": 1,
+      "quotes": [
+        {
+          "code": "510300C2610M04300",
+          "last": 0.0003,
+          "previous_settlement": 0.0015,
+          "strike": 4.3
+        },
+        {
+          "code": "510300C2610M04400",
+          "last": 0.0002,
+          "previous_settlement": 0.0002,
+          "strike": 4.4
+        },
+        {
+          "code": "510300C2610M04500",
+          "last": 0.0001,
+          "previous_settlement": 0.0002,
+          "strike": 4.5
+        },
+        {
+          "code": "510300C2610M04600",
+          "last": 0.0002,
+          "previous_settlement": 0.0002,
+          "strike": 4.6
+        },
+        {
+          "code": "510300C2610M04700",
+          "last": 0.0001,
+          "previous_settlement": 0.0002,
+          "strike": 4.7
+        },
+        {
+          "code": "510300C2610M04800",
+          "last": 0.0001,
+          "previous_settlement": 0.0001,
+          "strike": 4.8
+        },
+        {
+          "code": "510300C2610M04900",
+          "last": 0.0001,
+          "previous_settlement": 0.0001,
+          "strike": 4.9
+        },
+        {
+          "code": "510300C2610M05000",
+          "last": 0.0001,
+          "previous_settlement": 0.0001,
+          "strike": 5.0
+        },
+        {
+          "code": "510300C2610M05250",
+          "last": 0.0001,
+          "previous_settlement": 0.0001,
+          "strike": 5.25
+        },
+        {
+          "code": "510300P2610M04300",
+          "last": 0.1755,
+          "previous_settlement": 0.1293,
+          "strike": 4.3
+        },
+        {
+          "code": "510300P2610M04400",
+          "last": 0.2788,
+          "previous_settlement": 0.2302,
+          "strike": 4.4
+        },
+        {
+          "code": "510300P2610M04500",
+          "last": 0.3775,
+          "previous_settlement": 0.3286,
+          "strike": 4.5
+        },
+        {
+          "code": "510300P2610M04600",
+          "last": 0.4784,
+          "previous_settlement": 0.4265,
+          "strike": 4.6
+        },
+        {
+          "code": "510300P2610M04700",
+          "last": 0.5766,
+          "previous_settlement": 0.525,
+          "strike": 4.7
+        },
+        {
+          "code": "510300P2610M04800",
+          "last": 0.6747,
+          "previous_settlement": 0.6232,
+          "strike": 4.8
+        },
+        {
+          "code": "510300P2610M04900",
+          "last": 0.7753,
+          "previous_settlement": 0.7257,
+          "strike": 4.9
+        },
+        {
+          "code": "510300P2610M05000",
+          "last": 0.8717,
+          "previous_settlement": 0.829,
+          "strike": 5.0
+        },
+        {
+          "code": "510300P2610M05250",
+          "last": 1.1186,
+          "previous_settlement": 1.0763,
+          "strike": 5.25
+        },
+        {
+          "code": "510300C2610M04200",
+          "last": 0.0026,
+          "previous_settlement": 0.0148,
+          "strike": 4.2
+        },
+        {
+          "code": "510300P2610M04200",
+          "last": 0.08,
+          "previous_settlement": 0.0416,
+          "strike": 4.2
+        },
+        {
+          "code": "510300C2610M04100",
+          "last": 0.0328,
+          "previous_settlement": 0.079,
+          "strike": 4.1
+        },
+        {
+          "code": "510300P2610M04100",
+          "last": 0.0106,
+          "previous_settlement": 0.0071,
+          "strike": 4.1
+        },
+        {
+          "code": "510300C2610M04000",
+          "last": 0.1267,
+          "previous_settlement": 0.179,
+          "strike": 4.0
+        },
+        {
+          "code": "510300P2610M04000",
+          "last": 0.0006,
+          "previous_settlement": 0.0012,
+          "strike": 4.0
+        },
+        {
+          "code": "510300C2610M03900",
+          "last": 0.2219,
+          "previous_settlement": 0.279,
+          "strike": 3.9
+        },
+        {
+          "code": "510300P2610M03900",
+          "last": 0.0002,
+          "previous_settlement": 0.0008,
+          "strike": 3.9
+        },
+        {
+          "code": "510300C2610M03800",
+          "last": 0.33,
+          "previous_settlement": 0.379,
+          "strike": 3.8
+        },
+        {
+          "code": "510300P2610M03800",
+          "last": 0.0001,
+          "previous_settlement": 0.0002,
+          "strike": 3.8
+        },
+        {
+          "code": "510300C2610M03700",
+          "last": 0.4299,
+          "previous_settlement": 0.479,
+          "strike": 3.7
+        },
+        {
+          "code": "510300P2610M03700",
+          "last": 0.0001,
+          "previous_settlement": 0.0001,
+          "strike": 3.7
+        }
+      ]
+    },
+    {
+      "expiry": "2026-11-25",
+      "days_to_expiry": 29,
+      "quotes": [
+        {
+          "code": "510300C2611M04200",
+          "last": 0.0527,
+          "previous_settlement": 0.0735,
+          "strike": 4.2
+        },
+        {
+          "code": "510300C2611M04300",
+          "last": 0.0262,
+          "previous_settlement": 0.0395,
+          "strike": 4.3
+        },
+        {
+          "code": "510300C2611M04400",
+          "last": 0.0119,
+          "previous_settlement": 0.0186,
+          "strike": 4.4
+        },
+        {
+          "code": "510300C2611M04500",
+          "last": 0.0059,
+          "previous_settlement": 0.0088,
+          "strike": 4.5
+        },
+        {
+          "code": "510300C2611M04600",
+          "last": 0.003,
+          "previous_settlement": 0.0049,
+          "strike": 4.6
+        },
+        {
+          "code": "510300C2611M04700",
+          "last": 0.0021,
+          "previous_settlement": 0.0031,
+          "strike": 4.7
+        },
+        {
+          "code": "510300C2611M04800",
+          "last": 0.0018,
+          "previous_settlement": 0.002,
+          "strike": 4.8
+        },
+        {
+          "code": "510300C2611M04900",
+          "last": 0.0012,
+          "previous_settlement": 0.0013,
+          "strike": 4.9
+        },
+        {
+          "code": "510300C2611M05000",
+          "last": 0.0008,
+          "previous_settlement": 0.0012,
+          "strike": 5.0
+        },
+        {
+          "code": "510300P2611M04200",
+          "last": 0.1488,
+          "previous_settlement": 0.1209,
+          "strike": 4.2
+        },
+        {
+          "code": "510300P2611M04300",
+          "last": 0.226,
+          "previous_settlement": 0.183,
+          "strike": 4.3
+        },
+        {
+          "code": "510300P2611M04400",
+          "last": 0.3076,
+          "previous_settlement": 0.2609,
+          "strike": 4.4
+        },
+        {
+          "code": "510300P2611M04500",
+          "last": 0.4032,
+          "previous_settlement": 0.3573,
+          "strike": 4.5
+        },
+        {
+          "code": "510300P2611M04600",
+          "last": 0.4986,
+          "previous_settlement": 0.4498,
+          "strike": 4.6
+        },
+        {
+          "code": "510300P2611M04700",
+          "last": 0.5932,
+          "previous_settlement": 0.5464,
+          "strike": 4.7
+        },
+        {
+          "code": "510300P2611M04800",
+          "last": 0.6976,
+          "previous_settlement": 0.6473,
+          "strike": 4.8
+        },
+        {
+          "code": "510300P2611M04900",
+          "last": 0.7954,
+          "previous_settlement": 0.7454,
+          "strike": 4.9
+        },
+        {
+          "code": "510300P2611M05000",
+          "last": 0.8953,
+          "previous_settlement": 0.845,
+          "strike": 5.0
+        },
+        {
+          "code": "510300C2611M04100",
+          "last": 0.0968,
+          "previous_settlement": 0.125,
+          "strike": 4.1
+        },
+        {
+          "code": "510300P2611M04100",
+          "last": 0.0948,
+          "previous_settlement": 0.0745,
+          "strike": 4.1
+        },
+        {
+          "code": "510300C2611M04000",
+          "last": 0.1552,
+          "previous_settlement": 0.1924,
+          "strike": 4.0
+        },
+        {
+          "code": "510300P2611M04000",
+          "last": 0.0562,
+          "previous_settlement": 0.0409,
+          "strike": 4.0
+        },
+        {
+          "code": "510300C2611M03900",
+          "last": 0.2298,
+          "previous_settlement": 0.279,
+          "strike": 3.9
+        },
+        {
+          "code": "510300P2611M03900",
+          "last": 0.0311,
+          "previous_settlement": 0.023,
+          "strike": 3.9
+        },
+        {
+          "code": "510300C2611M03800",
+          "last": 0.3221,
+          "previous_settlement": 0.379,
+          "strike": 3.8
+        },
+        {
+          "code": "510300P2611M03800",
+          "last": 0.0185,
+          "previous_settlement": 0.0134,
+          "strike": 3.8
+        },
+        {
+          "code": "510300C2611M03700",
+          "last": 0.4163,
+          "previous_settlement": 0.479,
+          "strike": 3.7
+        },
+        {
+          "code": "510300P2611M03700",
+          "last": 0.0104,
+          "previous_settlement": 0.008,
+          "strike": 3.7
+        }
+      ]
+    },
+    {
+      "expiry": "2026-12-23",
+      "days_to_expiry": 57,
+      "quotes": [
+        {
+          "code": "510300C2612M04400",
+          "last": 0.03,
+          "previous_settlement": 0.0395,
+          "strike": 4.4
+        },
+        {
+          "code": "510300C2612M04500",
+          "last": 0.0181,
+          "previous_settlement": 0.0254,
+          "strike": 4.5
+        },
+        {
+          "code": "510300C2612M04600",
+          "last": 0.0125,
+          "previous_settlement": 0.0162,
+          "strike": 4.6
+        },
+        {
+          "code": "510300C2612M04700",
+          "last": 0.0079,
+          "previous_settlement": 0.0107,
+          "strike": 4.7
+        },
+        {
+          "code": "510300C2612M04800",
+          "last": 0.0052,
+          "previous_settlement": 0.0072,
+          "strike": 4.8
+        },
+        {
+          "code": "510300C2612M04900",
+          "last": 0.0035,
+          "previous_settlement": 0.0052,
+          "strike": 4.9
+        },
+        {
+          "code": "510300C2612M05000",
+          "last": 0.0027,
+          "previous_settlement": 0.0041,
+          "strike": 5.0
+        },
+        {
+          "code": "510300C2612M05250",
+          "last": 0.0022,
+          "previous_settlement": 0.0027,
+          "strike": 5.25
+        },
+        {
+          "code": "510300C2612M05500",
+          "last": 0.002,
+          "previous_settlement": 0.002,
+          "strike": 5.5
+        },
+        {
+          "code": "510300P2612M04400",
+          "last": 0.3431,
+          "previous_settlement": 0.3079,
+          "strike": 4.4
+        },
+        {
+          "code": "510300P2612M04500",
+          "last": 0.4303,
+          "previous_settlement": 0.3885,
+          "strike": 4.5
+        },
+        {
+          "code": "510300P2612M04600",
+          "last": 0.5246,
+          "previous_settlement": 0.4801,
+          "strike": 4.6
+        },
+        {
+          "code": "510300P2612M04700",
+          "last": 0.618,
+          "previous_settlement": 0.5718,
+          "strike": 4.7
+        },
+        {
+          "code": "510300P2612M04800",
+          "last": 0.7086,
+          "previous_settlement": 0.6726,
+          "strike": 4.8
+        },
+        {
+          "code": "510300P2612M04900",
+          "last": 0.7956,
+          "previous_settlement": 0.7702,
+          "strike": 4.9
+        },
+        {
+          "code": "510300P2612M05000",
+          "last": 0.896,
+          "previous_settlement": 0.8686,
+          "strike": 5.0
+        },
+        {
+          "code": "510300P2612M05250",
+          "last": 1.1604,
+          "previous_settlement": 1.1154,
+          "strike": 5.25
+        },
+        {
+          "code": "510300P2612M05500",
+          "last": 1.4094,
+          "previous_settlement": 1.3634,
+          "strike": 5.5
+        },
+        {
+          "code": "510300C2612M05750",
+          "last": 0.0019,
+          "previous_settlement": 0.002,
+          "strike": 5.75
+        },
+        {
+          "code": "510300P2612M05750",
+          "last": 1.6102,
+          "previous_settlement": 1.6131,
+          "strike": 5.75
+        },
+        {
+          "code": "510300C2612M06000",
+          "last": 0.0018,
+          "previous_settlement": 0.0019,
+          "strike": 6.0
+        },
+        {
+          "code": "510300P2612M06000",
+          "last": 1.8789,
+          "previous_settlement": 1.8621,
+          "strike": 6.0
+        },
+        {
+          "code": "510300C2612M04300",
+          "last": 0.0474,
+          "previous_settlement": 0.0632,
+          "strike": 4.3
+        },
+        {
+          "code": "510300P2612M04300",
+          "last": 0.2631,
+          "previous_settlement": 0.2282,
+          "strike": 4.3
+        },
+        {
+          "code": "510300C2612M04200",
+          "last": 0.0842,
+          "previous_settlement": 0.0971,
+          "strike": 4.2
+        },
+        {
+          "code": "510300P2612M04200",
+          "last": 0.1971,
+          "previous_settlement": 0.1635,
+          "strike": 4.2
+        },
+        {
+          "code": "510300C2612M04100",
+          "last": 0.117,
+          "previous_settlement": 0.1459,
+          "strike": 4.1
+        },
+        {
+          "code": "510300P2612M04100",
+          "last": 0.1381,
+          "previous_settlement": 0.114,
+          "strike": 4.1
+        },
+        {
+          "code": "510300C2612M04000",
+          "last": 0.1755,
+          "previous_settlement": 0.2076,
+          "strike": 4.0
+        },
+        {
+          "code": "510300P2612M04000",
+          "last": 0.0999,
+          "previous_settlement": 0.0754,
+          "strike": 4.0
+        },
+        {
+          "code": "510300C2612M03900",
+          "last": 0.2517,
+          "previous_settlement": 0.282,
+          "strike": 3.9
+        },
+        {
+          "code": "510300P2612M03900",
+          "last": 0.0623,
+          "previous_settlement": 0.0488,
+          "strike": 3.9
+        },
+        {
+          "code": "510300C2612M03800",
+          "last": 0.3181,
+          "previous_settlement": 0.379,
+          "strike": 3.8
+        },
+        {
+          "code": "510300P2612M03800",
+          "last": 0.0399,
+          "previous_settlement": 0.0324,
+          "strike": 3.8
+        },
+        {
+          "code": "510300C2612M03700",
+          "last": 0.437,
+          "previous_settlement": 0.479,
+          "strike": 3.7
+        },
+        {
+          "code": "510300P2612M03700",
+          "last": 0.025,
+          "previous_settlement": 0.0215,
+          "strike": 3.7
+        }
+      ]
+    },
+    {
+      "expiry": "2027-03-24",
+      "days_to_expiry": 148,
+      "quotes": [
+        {
+          "code": "510300C2703M04400",
+          "last": 0.0738,
+          "previous_settlement": 0.0854,
+          "strike": 4.4
+        },
+        {
+          "code": "510300C2703M04500",
+          "last": 0.0568,
+          "previous_settlement": 0.0653,
+          "strike": 4.5
+        },
+        {
+          "code": "510300C2703M04600",
+          "last": 0.0441,
+          "previous_settlement": 0.0501,
+          "strike": 4.6
+        },
+        {
+          "code": "510300C2703M04700",
+          "last": 0.0356,
+          "previous_settlement": 0.0389,
+          "strike": 4.7
+        },
+        {
+          "code": "510300C2703M04800",
+          "last": 0.0276,
+          "previous_settlement": 0.0302,
+          "strike": 4.8
+        },
+        {
+          "code": "510300C2703M04900",
+          "last": 0.0225,
+          "previous_settlement": 0.0246,
+          "strike": 4.9
+        },
+        {
+          "code": "510300C2703M05000",
+          "last": 0.0186,
+          "previous_settlement": 0.0198,
+          "strike": 5.0
+        },
+        {
+          "code": "510300C2703M05250",
+          "last": 0.0121,
+          "previous_settlement": 0.0127,
+          "strike": 5.25
+        },
+        {
+          "code": "510300C2703M05500",
+          "last": 0.009,
+          "previous_settlement": 0.0092,
+          "strike": 5.5
+        },
+        {
+          "code": "510300P2703M04400",
+          "last": 0.4371,
+          "previous_settlement": 0.4073,
+          "strike": 4.4
+        },
+        {
+          "code": "510300P2703M04500",
+          "last": 0.5118,
+          "previous_settlement": 0.4862,
+          "strike": 4.5
+        },
+        {
+          "code": "510300P2703M04600",
+          "last": 0.6031,
+          "previous_settlement": 0.575,
+          "strike": 4.6
+        },
+        {
+          "code": "510300P2703M04700",
+          "last": 0.6975,
+          "previous_settlement": 0.6592,
+          "strike": 4.7
+        },
+        {
+          "code": "510300P2703M04800",
+          "last": 0.7638,
+          "previous_settlement": 0.7497,
+          "strike": 4.8
+        },
+        {
+          "code": "510300P2703M04900",
+          "last": 0.8567,
+          "previous_settlement": 0.842,
+          "strike": 4.9
+        },
+        {
+          "code": "510300P2703M05000",
+          "last": 0.9453,
+          "previous_settlement": 0.9373,
+          "strike": 5.0
+        },
+        {
+          "code": "510300P2703M05250",
+          "last": 1.2935,
+          "previous_settlement": 1.1775,
+          "strike": 5.25
+        },
+        {
+          "code": "510300P2703M05500",
+          "last": 1.5303,
+          "previous_settlement": 1.422,
+          "strike": 5.5
+        },
+        {
+          "code": "510300C2703M04300",
+          "last": 0.0944,
+          "previous_settlement": 0.11,
+          "strike": 4.3
+        },
+        {
+          "code": "510300P2703M04300",
+          "last": 0.3715,
+          "previous_settlement": 0.3353,
+          "strike": 4.3
+        },
+        {
+          "code": "510300C2703M04200",
+          "last": 0.1251,
+          "previous_settlement": 0.1444,
+          "strike": 4.2
+        },
+        {
+          "code": "510300P2703M04200",
+          "last": 0.3021,
+          "previous_settlement": 0.2708,
+          "strike": 4.2
+        },
+        {
+          "code": "510300C2703M04100",
+          "last": 0.16,
+          "previous_settlement": 0.1859,
+          "strike": 4.1
+        },
+        {
+          "code": "510300P2703M04100",
+          "last": 0.2384,
+          "previous_settlement": 0.2125,
+          "strike": 4.1
+        },
+        {
+          "code": "510300C2703M04000",
+          "last": 0.2048,
+          "previous_settlement": 0.2358,
+          "strike": 4.0
+        },
+        {
+          "code": "510300P2703M04000",
+          "last": 0.1855,
+          "previous_settlement": 0.1644,
+          "strike": 4.0
+        },
+        {
+          "code": "510300C2703M03900",
+          "last": 0.2601,
+          "previous_settlement": 0.2962,
+          "strike": 3.9
+        },
+        {
+          "code": "510300P2703M03900",
+          "last": 0.1423,
+          "previous_settlement": 0.1257,
+          "strike": 3.9
+        },
+        {
+          "code": "510300C2703M03800",
+          "last": 0.3229,
+          "previous_settlement": 0.379,
+          "strike": 3.8
+        },
+        {
+          "code": "510300P2703M03800",
+          "last": 0.1075,
+          "previous_settlement": 0.095,
+          "strike": 3.8
+        },
+        {
+          "code": "510300C2703M03700",
+          "last": 0.4019,
+          "previous_settlement": 0.479,
+          "strike": 3.7
+        },
+        {
+          "code": "510300P2703M03700",
+          "last": 0.0785,
+          "previous_settlement": 0.0706,
+          "strike": 3.7
+        }
+      ]
+    }
+  ]
+}
