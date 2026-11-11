@@ -148,6 +148,7 @@ class TestPublishing:
             source="snapshot:fake",
             source_kind="snapshot",
             snapshot=None,
+            csv_token=None,
             rate=0.02,
             published_at="2026-10-26T00:00:00+00:00",
             fingerprint="0" * 16,

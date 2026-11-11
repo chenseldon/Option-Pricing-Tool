@@ -377,6 +377,12 @@ class TestExistingRoutesUnchanged:
         "/api/snowball_quote",
         "/api/carry",
         "/api/snowball_report",
+        # Phase 7: marking and publishing. Pricing routes fitted their own
+        # surface and nothing made one *the* surface; a desk marks once,
+        # checks, publishes, and values the book off that one mark.
+        "/api/marketdata/upload",
+        "/api/marketdata/publish",
+        "/api/marketdata/mark",
     }
 
     def test_every_prior_route_still_exists(self) -> None:

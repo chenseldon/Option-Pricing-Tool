@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -135,6 +136,30 @@ BODIES: dict[str, dict | None] = {
     },
     "/api/cn_fdm": {**SNOWBALL, "calc_greeks": False},
     "/api/export": {"rows": [{"a": 1, "b": 2}], "filename": "sweep"},
+    "/api/marketdata/mark": {"underlying": "510300"},
+    "/api/marketdata/publish": {
+        "underlying": "510300",
+        "source": "snapshot",
+        "r": 0.02,
+        "force": True,
+    },
+    "/api/marketdata/upload": None,  # raw CSV, see RAW_BODIES
+}
+
+#: Routes that take something other than a JSON object.
+#:
+#: The upload endpoint wants a CSV. A two-row file is enough -- what is
+#: being swept is whether the route answers, and the column contract has
+#: its own tests in tests/test_marketdata.py.
+RAW_BODIES = {
+    "/api/marketdata/upload": "\n".join(
+        [
+            "code,last,previous_settlement,strike,expiry,days_to_expiry,as_of",
+            "510300C2611M04100,0.1,0.101,4.1,2026-11-26,29,2026-10-27",
+            "510300P2611M04100,0.05,0.051,4.1,2026-11-26,29,2026-10-27",
+            "",
+        ]
+    ).encode("utf-8"),
 }
 
 #: The two routes that answer GET rather than POST.
@@ -163,6 +188,14 @@ def main() -> int:
     refusals = expected_refusals()
     client = application.app.test_client()
 
+    # Publishing a mark and storing an upload are the only two routes here
+    # that write anything. A diagnostic sweep should not leave a published
+    # mark behind -- somebody would later read it as a decision -- so both
+    # directories are pointed at a temporary one for the duration.
+    scratch = tempfile.TemporaryDirectory()
+    application.MARK_DIR = Path(scratch.name) / "marks"
+    application.UPLOAD_DIR = Path(scratch.name) / "uploads"
+
     registered = sorted(
         rule.rule
         for rule in application.app.url_map.iter_rules()
@@ -180,6 +213,8 @@ def main() -> int:
         start = time.perf_counter()
         if route in GETS:
             response = client.get(route)
+        elif route in RAW_BODIES:
+            response = client.post(route, data=RAW_BODIES[route], content_type="text/csv")
         else:
             response = client.post(route, json=BODIES.get(route))
         elapsed = time.perf_counter() - start
@@ -208,6 +243,7 @@ def main() -> int:
         print(f"{mark} {route:<34} {status:3d}  {elapsed:6.2f}s  {detail}{tag}")
 
     print()
+    scratch.cleanup()
     print(f"{len(rows)} routes, {bad} not clean, {len(unexercised)} without a body")
     return 1 if (bad or unexercised) else 0
 

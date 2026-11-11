@@ -429,6 +429,9 @@ it would be the place that caveat got softened.
 | `/api/vol_surface/fit` | POST | Fit SSVI to a real option chain; returns the fit quality, rejected quotes, parity residuals and arbitrage verdict |
 | `/api/vol_surface/query` | POST | Sample the fitted surface on a (K, T) grid for a heat map |
 | `/api/vol_surface/snapshots` | GET | List the offline chains available |
+| `/api/marketdata/upload` | POST | Accept an option chain as CSV; returns a content-hash token |
+| `/api/marketdata/publish` | POST | Run the five gates and publish the surface as today's mark |
+| `/api/marketdata/mark` | POST | The published mark, re-fitted from its own inputs and fingerprint-checked |
 | `/api/local_vol/surface` | POST | Dupire local volatility on a (spot, time) grid, with implied vol alongside |
 | `/api/local_vol/validate` | POST | The Dupire round trip — the correctness evidence, with a pass/fail verdict |
 | `/api/european` | POST | European option priced on the local volatility (skew-consistent) |

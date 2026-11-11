@@ -40,6 +40,7 @@ Dependencies:
 Author: GitHub Portfolio Project
 """
 
+import io as io_module
 import os
 import re
 import sys
@@ -102,6 +103,7 @@ from otcpricer.engines.risk import (
 from otcpricer.marketdata.carry import TailCarry, measure_carry
 from otcpricer.marketdata.contracts import SUPPORTED_UNDERLYINGS, resolve_underlying
 from otcpricer.marketdata.forward import DEFAULT_RATE
+from otcpricer.marketdata.marks import evaluate_gates, load_mark, publish_mark
 from otcpricer.marketdata.rates import rate_curve_from_panel
 from otcpricer.marketdata.snapshots import list_snapshots
 from otcpricer.models.heston import HestonParams
@@ -426,6 +428,10 @@ _SURFACE_CACHE = {}
 #: twice one file rather than two.
 UPLOAD_DIR = Path("data/uploads")
 
+#: Where published marks are kept. One file per underlying, gitignored:
+#: a mark records which surface *this* installation blessed.
+MARK_DIR = Path("data/marks")
+
 #: Largest chain this will accept, in bytes. The committed 510300 snapshot is
 #: 126 contracts and about 9 KB as CSV; the CFFEX index option boards are a
 #: few thousand rows. 8 MB is far above anything real and far below anything
@@ -721,6 +727,252 @@ def vol_surface_snapshots():
                 }
                 for code, underlying in sorted(SUPPORTED_UNDERLYINGS.items())
             },
+        }
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# API: Market data -- upload, mark, publish
+# ─────────────────────────────────────────────────────────
+
+
+@app.route("/api/marketdata/upload", methods=["POST"])
+def marketdata_upload():
+    """
+    Accept an option chain as CSV and return a token for it.
+
+    Columns: ``code``, ``last``, ``previous_settlement``, ``strike``,
+    ``expiry``, ``days_to_expiry``, and optionally ``as_of``. One row per
+    contract. ``as_of`` is the date the quotes were taken; without it the
+    chain dates itself today, which fits identically and labels a published
+    mark with the wrong day.
+
+    The file is stored under a hash of its own contents. The name the caller
+    sent is never used for anything but the echo in this response: a
+    client-chosen filename reaching a path join is the oldest defect in the
+    category, and hashing also makes the same chain uploaded twice one file.
+
+    Request: multipart form with a ``file`` field, or a raw CSV body.
+    Response JSON: {token, bytes, rows, as_of, columns, note}
+    """
+    import hashlib
+
+    upload = request.files.get("file")
+    raw = upload.read() if upload is not None else request.get_data()
+    if not raw:
+        return jsonify({"error": "no CSV content; send a 'file' field or a raw body"}), 400
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return jsonify(
+            {
+                "error": (
+                    f"{len(raw)} bytes exceeds the {MAX_UPLOAD_BYTES}-byte limit. "
+                    f"A full CFFEX board is a few thousand rows; anything this "
+                    f"large is not an option chain."
+                )
+            }
+        ), 400
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return jsonify(
+            {"error": "the file is not UTF-8. Save it as UTF-8 (or UTF-8 with BOM)."}
+        ), 400
+
+    import csv as _csv
+
+    reader = _csv.DictReader(io_module.StringIO(text))
+    columns = list(reader.fieldnames or [])
+    required = {"code", "last", "previous_settlement", "strike", "expiry", "days_to_expiry"}
+    missing = sorted(required - set(columns))
+    if missing:
+        return jsonify(
+            {
+                "error": (
+                    f"missing required column(s): {', '.join(missing)}. "
+                    f"Expected {', '.join(sorted(required))} plus an optional as_of."
+                ),
+                "columns_found": columns,
+            }
+        ), 400
+
+    rows = list(reader)
+    if not rows:
+        return jsonify({"error": "the file has a header and no rows"}), 400
+
+    token = hashlib.sha256(raw).hexdigest()[:16]
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / f"{token}.csv").write_bytes(raw)
+
+    stated = sorted({(r.get("as_of") or "").strip() for r in rows} - {""})
+    return jsonify(
+        {
+            "token": token,
+            "bytes": len(raw),
+            "rows": len(rows),
+            "columns": columns,
+            "as_of": stated[0] if len(stated) == 1 else None,
+            "filename_sent": None if upload is None else upload.filename,
+            "note": (
+                "Pass this token as csv_token to any surface endpoint. Stored "
+                "under a hash of the contents, so the same chain uploaded "
+                "again returns the same token rather than a second file."
+                + ("" if stated else " No as_of column, so this chain will date itself today.")
+                + (
+                    f" Two different as_of values present ({', '.join(stated)}); "
+                    f"fitting will refuse it -- one file is one valuation date."
+                    if len(stated) > 1
+                    else ""
+                )
+            ),
+        }
+    )
+
+
+@app.route("/api/marketdata/mark", methods=["GET", "POST"])
+def marketdata_mark():
+    """
+    The published surface for an underlying, or nothing if it has not been marked.
+
+    Reading re-fits the mark's own inputs and checks the fingerprint, so a
+    surface that no longer reproduces is reported rather than served. An
+    unmarked underlying is an ordinary state -- it is every underlying before
+    the first publish of the day -- so it answers 200 with ``marked: false``
+    rather than 404.
+
+    Request JSON: {underlying}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    underlying = str(data.get("underlying") or request.args.get("underlying") or "510300").strip()
+    if underlying not in SUPPORTED_UNDERLYINGS:
+        return jsonify({"error": f"underlying {underlying!r} is not supported"}), 400
+
+    try:
+        stored = load_mark(underlying, directory=MARK_DIR, verify=False)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+    if stored is None:
+        return jsonify(
+            {
+                "underlying": underlying,
+                "marked": False,
+                "note": (
+                    "No published mark. Fit a surface, check the gates, and "
+                    "publish it -- until then every pricing call fits its own."
+                ),
+            }
+        )
+
+    # Rebuilt from what the mark recorded, which is the point of recording the
+    # inputs rather than the surface. A mark published off an uploaded chain
+    # carries its token, so it re-fits from the same file.
+    try:
+        spec = SourceSpec(
+            underlying=underlying,
+            source_kind=stored.source_kind,
+            snapshot=stored.snapshot,
+            rate=stored.rate,
+            csv_path=_upload_path(stored.csv_token) if stored.csv_token else None,
+        )
+    except ValueError as e:
+        return jsonify(
+            {
+                "underlying": underlying,
+                "marked": True,
+                "reproduces": False,
+                "error": f"the mark's own inputs are no longer available: {e}",
+                "mark": stored.as_dict(),
+            }
+        ), 409
+
+    try:
+        fitted = _cached_surface(spec)
+        verified = load_mark(underlying, directory=MARK_DIR, fitted=fitted)
+    except OtcPricerError as e:
+        return jsonify(
+            {
+                "underlying": underlying,
+                "marked": True,
+                "reproduces": False,
+                "error": str(e),
+                "mark": stored.as_dict(),
+            }
+        ), 409
+
+    return jsonify(
+        {
+            "underlying": underlying,
+            "marked": True,
+            "reproduces": True,
+            "mark": (verified or stored).as_dict(),
+            "spec": spec.describe(),
+            "note": (
+                "Re-fitted from the mark's own inputs and the fingerprint "
+                "matched, so this is the surface that was published."
+            ),
+        }
+    )
+
+
+@app.route("/api/marketdata/publish", methods=["POST"])
+def marketdata_publish():
+    """
+    Run the gates on a fitted surface and publish it as today's mark.
+
+    This is the step a desk does once, before pricing anything: fit, check,
+    publish. Five gates run and all five are reported -- fit quality,
+    butterfly, calendar, an independent arbitrage scan, and the move against
+    the previous mark. A failure refuses the publication and says which gate
+    and by how much.
+
+    ``force`` publishes anyway and records that it did. It exists because the
+    alternative to an override is editing the thresholds, which would remove
+    the check for every later day.
+
+    Request JSON: {underlying, source, snapshot, csv_token, as_of, r, force}
+    Response JSON: {published, mark, gates, ...} or 409 with the gate results.
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        spec = _surface_request(data)
+        force = bool(data.get("force", False))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        fitted = _cached_surface(spec)
+    except OtcPricerError as e:
+        return jsonify({"error": str(e)}), 400
+
+    gates = evaluate_gates(fitted, load_mark(spec.underlying, directory=MARK_DIR, verify=False))
+    try:
+        mark = publish_mark(
+            fitted,
+            source_kind=spec.source_kind,
+            snapshot=spec.snapshot,
+            rate=spec.rate,
+            csv_token=None if spec.csv_path is None else spec.csv_path.stem,
+            directory=MARK_DIR,
+            force=force,
+        )
+    except OtcPricerError as e:
+        return jsonify(
+            {
+                "published": False,
+                "error": str(e),
+                "gates": [g.as_dict() for g in gates],
+                "spec": spec.describe(),
+            }
+        ), 409
+
+    return jsonify(
+        {
+            "published": True,
+            "forced": any(not g.passed for g in gates),
+            "mark": mark.as_dict(),
+            "gates": [g.as_dict() for g in gates],
+            "spec": spec.describe(),
+            "surface": fitted.as_dict(),
         }
     )
 

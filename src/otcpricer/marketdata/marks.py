@@ -129,6 +129,7 @@ class SurfaceMark:
     source: str
     source_kind: str | None
     snapshot: str | None
+    csv_token: str | None
     rate: float
     published_at: str
     fingerprint: str
@@ -144,6 +145,7 @@ class SurfaceMark:
             "source": self.source,
             "source_kind": self.source_kind,
             "snapshot": self.snapshot,
+            "csv_token": self.csv_token,
             "rate": self.rate,
             "published_at": self.published_at,
             "fingerprint": self.fingerprint,
@@ -162,6 +164,7 @@ class SurfaceMark:
                 source=str(raw["source"]),
                 source_kind=raw.get("source_kind"),
                 snapshot=raw.get("snapshot"),
+                csv_token=raw.get("csv_token"),
                 rate=float(raw["rate"]),
                 published_at=str(raw["published_at"]),
                 fingerprint=str(raw["fingerprint"]),
@@ -321,6 +324,7 @@ def publish_mark(
     source_kind: str | None,
     snapshot: str | None,
     rate: float,
+    csv_token: str | None = None,
     directory: Path | str = "data/marks",
     force: bool = False,
 ) -> SurfaceMark:
@@ -354,6 +358,7 @@ def publish_mark(
         source=fitted.source,
         source_kind=source_kind,
         snapshot=snapshot,
+        csv_token=csv_token,
         rate=float(rate),
         published_at=datetime.now(UTC).isoformat(timespec="seconds"),
         fingerprint=fingerprint(fitted),
