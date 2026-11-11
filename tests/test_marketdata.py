@@ -13,6 +13,7 @@ that case gets a test of its own.
 
 from __future__ import annotations
 
+import csv
 import json
 from datetime import date
 from pathlib import Path
@@ -20,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from otcpricer.core.exceptions import MarketDataError
+from otcpricer.core.exceptions import MarketDataError, OtcPricerError
 from otcpricer.core.types import OptionType
 from otcpricer.marketdata.contracts import (
     SUPPORTED_UNDERLYINGS,
@@ -51,6 +52,7 @@ from otcpricer.marketdata.surface_input import (
     MAX_MONEYNESS_SD,
     extract_surface_input,
 )
+from otcpricer.models.surface import fit_surface
 
 #: The captured chains committed to the repo, used as regression fixtures.
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots"
@@ -867,3 +869,130 @@ class TestForwardCurve:
         assert payload["kink"] != 0.0
         for key in ("maturities", "forwards", "segment_drifts", "implied_carry", "spot_anchor"):
             assert key in payload
+
+
+class TestTheCsvPathIsReachable:
+    """``CsvSource`` existed, was tested, and could not be used.
+
+    ``build_source`` dispatched to it and ``fit_surface`` -- the function
+    every route and every report calls -- did not forward ``csv_path``, so
+    ``source_kind="csv"`` raised "source 'csv' requires csv_path" with no
+    parameter to supply one through. The same held for ``wind``, which also
+    needs a date. A caller could still get there by constructing the source
+    and passing ``source=``, which is what made the gap easy to miss: the
+    class had tests, the dispatch had a test, and the route-level path had
+    neither.
+    """
+
+    def test_fit_surface_accepts_a_csv_path(self, tmp_path: Path) -> None:
+        path = tmp_path / "chain.csv"
+        path.write_text(
+            "code,last,previous_settlement,strike,expiry,days_to_expiry\n"
+            "510050C2611M02800,0.1000,0.1010,2.800,2026-11-25,29\n"
+            "510050P2611M02800,0.0500,0.0510,2.800,2026-11-25,29\n",
+            encoding="utf-8",
+        )
+        # Two quotes at one strike cannot calibrate a surface; what is being
+        # tested is that the call reaches the reader rather than being refused
+        # for want of a parameter.
+        with pytest.raises(OtcPricerError) as excinfo:
+            fit_surface("510050", source_kind="csv", csv_path=path, rate=0.02)
+        assert "requires csv_path" not in str(excinfo.value)
+
+    def test_a_round_trip_through_csv_reproduces_the_surface(self, tmp_path: Path) -> None:
+        """The strongest check available on this path.
+
+        The committed snapshot is the only chain here whose correct answer is
+        already known, so: export it in the documented format, refit, and
+        compare. Measured -- identical fingerprint d1f5bab96427e6ed, identical
+        42 screened points, identical rms 0.00654086 and rho -0.20866995.
+
+        A difference would mean either the reader or the column contract is
+        wrong, and neither would be visible from a CSV that merely parses.
+        """
+        chain = build_source("snapshot").fetch("510300")
+        path = tmp_path / "chain.csv"
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "code",
+                    "last",
+                    "previous_settlement",
+                    "strike",
+                    "expiry",
+                    "days_to_expiry",
+                    "as_of",
+                ],
+            )
+            writer.writeheader()
+            for sl in chain.slices:
+                for quote in sl.quotes:
+                    writer.writerow(
+                        {
+                            "code": quote.contract.raw,
+                            "last": quote.last,
+                            "previous_settlement": quote.previous_settlement,
+                            "strike": quote.strike,
+                            "expiry": sl.expiry.isoformat(),
+                            "days_to_expiry": sl.days_to_expiry,
+                            "as_of": chain.as_of.isoformat(),
+                        }
+                    )
+
+        from otcpricer.marketdata.marks import fingerprint
+
+        from_snapshot = fit_surface("510300", source_kind="snapshot", rate=0.02)
+        from_csv = fit_surface("510300", source_kind="csv", csv_path=path, rate=0.02)
+
+        assert fingerprint(from_csv) == fingerprint(from_snapshot)
+        assert from_csv.calibration.n_points == from_snapshot.calibration.n_points
+        assert from_csv.calibration.rms_vol_error == from_snapshot.calibration.rms_vol_error
+
+    def test_the_as_of_column_is_honoured(self, tmp_path: Path) -> None:
+        """A CSV of last month's quotes used to label itself today.
+
+        It changes no fitted number -- every tenor comes from
+        ``days_to_expiry`` -- but it is the date the chain reports, and so the
+        date a published mark records. Wrong without anything looking wrong.
+        """
+        chain = build_source("snapshot").fetch("510300")
+        rows = [
+            "code,last,previous_settlement,strike,expiry,days_to_expiry,as_of",
+        ]
+        for sl in chain.slices:
+            for quote in sl.quotes:
+                rows.append(
+                    f"{quote.contract.raw},{quote.last},{quote.previous_settlement},"
+                    f"{quote.strike},{sl.expiry.isoformat()},{sl.days_to_expiry},"
+                    f"{chain.as_of.isoformat()}"
+                )
+        path = tmp_path / "dated.csv"
+        path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+        assert CsvSource(path=path).fetch("510300").as_of == chain.as_of
+
+    def test_without_the_column_it_falls_back_to_today(self, tmp_path: Path) -> None:
+        """Right for a chain someone just exported, and the reason the
+        fallback stays rather than the column becoming required."""
+        path = tmp_path / "undated.csv"
+        path.write_text(
+            "code,last,previous_settlement,strike,expiry,days_to_expiry\n"
+            "510050C2611M02800,0.1000,0.1010,2.800,2026-11-25,29\n",
+            encoding="utf-8",
+        )
+        assert CsvSource(path=path).fetch("510050").as_of == date.today()
+
+    def test_two_different_dates_in_one_file_are_refused(self, tmp_path: Path) -> None:
+        """One file is one valuation date. Two would be fitted as though they
+        were simultaneous, which is a silently wrong surface rather than an
+        error."""
+        path = tmp_path / "mixed.csv"
+        path.write_text(
+            "code,last,previous_settlement,strike,expiry,days_to_expiry,as_of\n"
+            "510050C2611M02800,0.1000,0.1010,2.800,2026-11-25,29,2026-10-27\n"
+            "510050P2611M02800,0.0500,0.0510,2.800,2026-11-25,29,2026-10-28\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MarketDataError, match="two different as_of dates"):
+            CsvSource(path=path).fetch("510050")

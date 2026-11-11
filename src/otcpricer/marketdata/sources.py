@@ -292,6 +292,17 @@ class CsvSource:
 
     Expected columns: ``code``, ``last``, ``previous_settlement``, ``strike``,
     ``expiry``, ``days_to_expiry``. One row per contract.
+
+    ``as_of`` is an optional seventh column: the date the quotes were taken.
+    It does not change a single fitted number -- every tenor comes from
+    ``days_to_expiry`` -- but it is the date the chain reports itself as, and
+    therefore the date a published mark records. Without it a CSV of last
+    month's quotes fits perfectly and labels itself today, which is the kind
+    of claim that is wrong without anything looking wrong.
+
+    Verified by exporting the committed 510300 snapshot to this format and
+    refitting: identical fingerprint, and with the column present an
+    identical ``as_of`` too.
     """
 
     path: Path
@@ -309,6 +320,7 @@ class CsvSource:
             raise MarketDataError(f"CSV not found: {self.path}")
 
         grouped: dict[tuple[str, int], list[dict[str, object]]] = defaultdict(list)
+        stated_as_of: date | None = None
         with self.path.open(encoding="utf-8", newline="") as handle:
             for row in csv.DictReader(handle):
                 key = (str(row["expiry"]), int(row["days_to_expiry"]))
@@ -320,11 +332,25 @@ class CsvSource:
                         "strike": float(row["strike"]),
                     }
                 )
+                raw_as_of = (row.get("as_of") or "").strip()
+                if raw_as_of:
+                    parsed = _parse_date(raw_as_of)
+                    if stated_as_of is not None and parsed != stated_as_of:
+                        raise MarketDataError(
+                            f"CSV {self.path} states two different as_of dates "
+                            f"({stated_as_of} and {parsed}). One file is one "
+                            f"valuation date; two dates in one chain would be "
+                            f"fitted as though they were simultaneous."
+                        )
+                    stated_as_of = parsed
 
         if not grouped:
             raise MarketDataError(f"CSV {self.path} contained no rows")
 
-        as_of = date.today()
+        # The stated date when the file carries one. Falling back to today is
+        # right for a chain someone just exported and wrong for an archive, so
+        # the fallback stays but is no longer the only option.
+        as_of = stated_as_of or date.today()
         slices = [
             build_slice(
                 underlying,

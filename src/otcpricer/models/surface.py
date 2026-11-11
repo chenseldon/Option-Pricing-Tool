@@ -16,6 +16,8 @@ act on.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
 
 import numpy as np
 
@@ -175,6 +177,8 @@ def fit_surface(
     source: OptionChainSource | None = None,
     source_kind: str | None = None,
     snapshot: str | None = None,
+    csv_path: Path | str | None = None,
+    as_of: date | None = None,
     rate: float = DEFAULT_RATE,
     rate_curve: RateCurve | None = None,
 ) -> FittedSurface:
@@ -184,9 +188,12 @@ def fit_surface(
         underlying_code: Exchange ticker, e.g. ``"510050"``.
         source: An explicit source. Built from configuration when omitted,
             which defaults to offline snapshots.
-        source_kind: ``"akshare"``, ``"snapshot"`` or ``"csv"``, overriding
-            configuration.
-        snapshot: Snapshot name, when replaying.
+        source_kind: ``"akshare"``, ``"snapshot"``, ``"csv"`` or ``"wind"``,
+            overriding configuration.
+        snapshot: Snapshot name, when replaying a ``snapshot`` source.
+        csv_path: The file, when ``source_kind`` is ``"csv"``.
+        as_of: Panel date, when ``source_kind`` is ``"wind"``. The panel holds
+            725 of them and none is a sensible default.
         rate: Continuously compounded rate for the forward and discounting.
             Ignored when ``rate_curve`` is given.
         rate_curve: A term structure to read each slice's rate off, at that
@@ -194,6 +201,19 @@ def fit_surface(
 
     Returns:
         A :class:`FittedSurface`.
+
+    Note:
+        ``csv_path`` and ``as_of`` were missing, and with them two of
+        :func:`build_source`'s four kinds. ``CsvSource`` existed and was
+        tested directly, ``build_source`` dispatched to it, and
+        ``fit_surface`` -- the function every route and every report calls --
+        could not reach it: ``source_kind="csv"`` raised "source 'csv'
+        requires csv_path" with no parameter to supply one through. The same
+        held for ``wind``, which additionally needs a date. A caller could
+        still get there by constructing the source and passing ``source=``,
+        which is what made the gap easy to miss.
     """
-    resolved = source or build_source(source_kind, snapshot=snapshot)
+    resolved = source or build_source(
+        source_kind, snapshot=snapshot, csv_path=csv_path, as_of=as_of
+    )
     return fit_surface_from_chain(resolved.fetch(underlying_code), rate=rate, rate_curve=rate_curve)
