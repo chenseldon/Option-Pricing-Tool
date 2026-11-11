@@ -525,9 +525,9 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 </aside>
 <div class="main">
   <div class="main-tabs">
+    <button class="mtab" onclick="switchMain('models')" data-i18n="tab_models">🌋 Models</button>
     <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
     <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
-    <button class="mtab" onclick="switchMain('models')" data-i18n="tab_models">🌋 Models</button>
     <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
     <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
@@ -1498,8 +1498,12 @@ function loadPreset(i){
 // Order matters: switchMain pairs these keys with the .mtab buttons by
 // index, so this object and the button row have to stay in the same order.
 // Inserting a tab in one and not the other sends every later tab to the wrong
-// panel, silently.
-const PANELS={pricing:'panel-pricing',struct:'panel-struct',models:'panel-models',portfolio:'panel-portfolio',about:'panel-about'};
+// panel, silently -- and not cleanly, since the lookup below is by key, so
+// the right panel still shows while the highlight lands on the wrong button.
+// tests/test_frontend.py asserts the two orders match.
+//
+// The order itself follows a desk's day: calibrate, then price.
+const PANELS={models:'panel-models',pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
