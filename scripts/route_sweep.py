@@ -117,6 +117,9 @@ BODIES: dict[str, dict | None] = {
     "/api/snowball_risk": SNOWBALL,
     "/api/snowball_risk_crosscheck": {**SNOWBALL, "n_paths": 20000},
     "/api/snowball_quote": SNOWBALL,
+    # 120 layers rather than the 400 cap: this answers in 0.27s and the
+    # sweep is checking that it answers, not how finely.
+    "/api/snowball_greeks_surface": {**SNOWBALL, "layers": 120},
     "/api/snowball_report": {**SNOWBALL, "quote": True, "mc": True, "n_paths": 20000},
     "/api/carry": {"as_of": "2024-12-25", "tail": "hold_last"},
     "/api/forward": {

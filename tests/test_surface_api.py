@@ -383,6 +383,9 @@ class TestExistingRoutesUnchanged:
         "/api/marketdata/upload",
         "/api/marketdata/publish",
         "/api/marketdata/mark",
+        # The time layers the backward induction already computed and
+        # used to overwrite.
+        "/api/snowball_greeks_surface",
     }
 
     def test_every_prior_route_still_exists(self) -> None:

@@ -92,6 +92,7 @@ __all__ = [
     "RiskComparison",
     "SnowballRisk",
     "compare_snowball_risk",
+    "grid_derivative_curves",
     "snowball_risk_mc",
     "snowball_risk_pde",
 ]
@@ -182,31 +183,40 @@ class SnowballRisk:
         return payload
 
 
-def _grid_derivatives(S_grid: np.ndarray, V: np.ndarray, spot: float) -> tuple[float, float]:
-    """Return ``(delta, gamma)`` at ``spot`` by differencing a log-spot grid.
+def grid_derivative_curves(S_grid: np.ndarray, V: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Delta and gamma at **every node** of a log-spot grid.
 
     The grid is uniform in ``x = log S``, so the chain rule gives
 
     * ``dV/dS   = (1/S) * dV/dx``
     * ``d2V/dS2 = (1/S^2) * (d2V/dx2 - dV/dx)``
 
-    Derivatives are formed on the whole grid and then interpolated at ``spot``,
-    rather than differencing around the nearest node. Spot generally falls
-    between nodes, and snapping to the nearest one would introduce an error of
-    up to half a grid step that does not shrink as the grid refines.
+    Separated out because these curves were always being computed and then
+    thrown away: :func:`_grid_derivatives` formed them across the whole grid
+    and returned two interpolated scalars. A Greeks surface needs the curves,
+    and deriving them a second time somewhere else would be the start of two
+    deltas that disagree in the last digits -- so the scalar now comes from
+    this, rather than this being a copy of the scalar.
 
     Validated against a closed-form case: the error halves exactly on each
     refinement (8.71e-07, 4.36e-07, 2.18e-07, 1.09e-07 for delta), which is
     the first-order convergence the barrier treatment allows.
     """
-    x = np.log(S_grid)
-    dx = float(x[1] - x[0])
+    dx = float(np.log(S_grid[1]) - np.log(S_grid[0]))
     first = np.gradient(V, dx, edge_order=2)
     second = np.gradient(first, dx, edge_order=2)
+    return first / S_grid, (second - first) / (S_grid * S_grid)
 
-    delta_curve = first / S_grid
-    gamma_curve = (second - first) / (S_grid * S_grid)
 
+def _grid_derivatives(S_grid: np.ndarray, V: np.ndarray, spot: float) -> tuple[float, float]:
+    """Return ``(delta, gamma)`` at ``spot``, off the curves above.
+
+    Interpolated rather than read from the nearest node. Spot generally falls
+    between nodes, and snapping to the nearest one would introduce an error of
+    up to half a grid step that does not shrink as the grid refines.
+    """
+    delta_curve, gamma_curve = grid_derivative_curves(S_grid, V)
+    x = np.log(S_grid)
     log_spot = float(np.log(spot))
     return (
         float(np.interp(log_spot, x, delta_curve)),

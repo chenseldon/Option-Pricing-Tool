@@ -445,6 +445,7 @@ it would be the place that caveat got softened.
 | `/api/snowball_pde` | POST | Snowball — independent Crank-Nicolson valuation |
 | `/api/snowball_crosscheck` | POST | Runs both snowball engines and reports agreement against a measured error budget |
 | `/api/snowball_risk` | POST | Snowball Greeks from the PDE solution surface |
+| `/api/snowball_greeks_surface` | POST | Value, delta and gamma across spot **and time**, with both sides of every observation |
 | `/api/snowball_risk_crosscheck` | POST | PDE vs Monte Carlo risk, with a per-Greek verdict |
 | `/api/snowball_quote` | POST | **Solves for the par coupon**, exactly, by the affinity of price in coupon |
 | `/api/snowball_report` | POST | Everything above in one readable report, carry coverage first |

@@ -44,7 +44,7 @@ import io as io_module
 import os
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path
 
@@ -93,6 +93,7 @@ from otcpricer.engines.pde import LOCAL_VOL_PDE_CONFIG, PDEConfig, price_snowbal
 from otcpricer.engines.risk import (
     SnowballRisk,
     compare_snowball_risk,
+    grid_derivative_curves,
     snowball_risk_mc,
     snowball_risk_pde,
 )
@@ -1515,6 +1516,142 @@ def heston_snowball():
         }
     )
     return jsonify(payload)
+
+
+@app.route("/api/snowball_greeks_surface", methods=["POST"])
+def snowball_greeks_surface():
+    """
+    Value, delta, gamma and theta across spot **and time**, from one solve.
+
+    The backward induction computes the solution at every time step and
+    overwrites each one. Keeping them costs memory and no arithmetic -- 0.115s
+    with none against 0.111s with 120 on a 1600x1008 grid, which is noise --
+    so this returns the whole (spot, time) surface for the price of the single
+    number the other snowball routes return.
+
+    What that buys over a scalar risk report: how gamma sharpens as a
+    knock-out observation approaches, and what delta does the instant one
+    passes.
+
+    **Observation dates appear twice**, at the same ``times`` entry, with
+    ``stages`` reading ``pre_projection`` then ``post_projection``. An
+    observation is a discontinuity in the contract, not in time: one instant
+    before, the holder has a note worth its continuation value; one instant
+    after, anything above the barrier has terminated and pays a fixed coupon.
+    A single sample would have to pick a side and whichever it picked would
+    hide the jump. A repeated time is the event, not a duplicate -- anything
+    resampling this has to keep the pair together.
+
+    Delta and gamma come from the same function the scalar Greeks do
+    (``grid_derivative_curves``), so the surface interpolated at spot equals
+    ``/api/snowball_risk``'s delta bit for bit rather than approximately.
+
+    Theta is **not** returned per layer. It is the calendar-time derivative
+    between adjacent layers, and the layers here are not adjacent -- they are
+    subsampled, and at an observation two of them share a time. Differencing
+    them would mostly measure the gap between samples, and at an event it
+    would divide a contract jump by zero elapsed time. ``/api/snowball_risk``
+    computes it properly from two genuinely consecutive steps.
+
+    Vega and rho are not here either: each needs its own bumped solve with its
+    own layers, so a full set is seven solves rather than one. That is a
+    deliberate omission for now, not an oversight -- the note says so rather
+    than the absence being left to be noticed.
+
+    Request JSON: {S0, T, KO_pct, KI_pct, coupon_pa, r, q, sigma, basis_pa,
+                   obs_freq, lockup_months, knocked_in, layers, space_nodes,
+                   steps_per_year, underlying/source for a fitted surface}
+    Response JSON: {spots, times, stages, events, value, delta, gamma,
+                    knocked_in, grid, grid_accuracy, volatility}
+    """
+    try:
+        d = request.get_json(force=True, silent=True) or {}
+        terms, market = _parse_snowball_request(d)
+        knocked_in = bool(d.get("knocked_in", False))
+        layers = max(8, min(int(d.get("layers", 120)), 400))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid parameters: {e}"}), 400
+
+    try:
+        fitted, local_vol = _snowball_local_vol(d, market)
+        base = _snowball_grid(d, local_vol)
+        config = replace(base, snapshot_layers=layers)
+        result = price_snowball_pde(
+            terms, market, config, knocked_in=knocked_in, local_vol=local_vol
+        )
+    except (OtcPricerError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    if result.snapshots is None:
+        return jsonify({"error": "the solve returned no layers"}), 500
+
+    lay = result.snapshots
+    surface = lay.surface(knocked_in=knocked_in)
+
+    # Trimmed to where a reader is looking. The solver's grid reaches four
+    # standard deviations past the barriers because a Dirichlet condition has
+    # to be harmless that far out; drawing all of it would spend most of the
+    # picture on spot levels nobody is risking against.
+    lo = float(terms.ki_barrier) * float(d.get("window_low", 0.65))
+    hi = float(terms.ko_barrier) * float(d.get("window_high", 1.20))
+    keep = np.nonzero((result.S_grid >= lo) & (result.S_grid <= hi))[0]
+    if keep.size < 4:
+        keep = np.arange(result.S_grid.size)
+    spots = result.S_grid[keep]
+
+    value, delta, gamma = [], [], []
+    for n in range(lay.n_layers):
+        row = surface[n]
+        delta_curve, gamma_curve = grid_derivative_curves(result.S_grid, row)
+        value.append([round(float(v), 10) for v in row[keep]])
+        delta.append([round(float(v), 10) for v in delta_curve[keep]])
+        gamma.append([round(float(v), 8) for v in gamma_curve[keep]])
+
+    return jsonify(
+        {
+            "spots": [round(float(x), 6) for x in spots],
+            "times": [round(float(t), 8) for t in lay.times],
+            "stages": list(lay.stages),
+            "events": list(lay.events),
+            "value": value,
+            "delta": delta,
+            "gamma": gamma,
+            "knocked_in": knocked_in,
+            "ki_barrier": round(float(terms.ki_barrier), 6),
+            "ko_barrier": round(float(terms.ko_barrier), 6),
+            "spot": round(float(market.S), 6),
+            "n_layers": lay.n_layers,
+            "n_event_pairs": sum(1 for st in lay.stages if st == "pre_projection"),
+            "grid": {
+                "space_nodes": result.space_nodes,
+                "time_steps": result.time_steps,
+                "nodes_drawn": int(keep.size),
+                "layers_requested": layers,
+            },
+            "grid_accuracy": {
+                "estimated": False,
+                "note": (
+                    "Same discretisation error as any price off this grid. "
+                    "Measured on the default 1600x1008: 0.34% on the reference "
+                    "trade, 0.32% at a 40% volatility, and 0.96% on the same "
+                    "note at the CSI 1000's measured carry -- contract-"
+                    "dependent, and largest where a desk actually works. "
+                    "Gamma near a barrier is the most grid-sensitive thing "
+                    "here: the peak height is partly the grid's, so read its "
+                    "shape rather than its exact value, and use "
+                    "/api/snowball_crosscheck for a measured bound."
+                ),
+            },
+            "volatility": _vol_model_note(local_vol, fitted),
+            "note": (
+                "value[i][j], delta[i][j] and gamma[i][j] are at times[i], "
+                "spots[j]. An observation date occupies two consecutive "
+                "entries with the same time and stages pre_projection then "
+                "post_projection -- that repeated time is the event. Theta, "
+                "vega and rho are not here; see the route docstring."
+            ),
+        }
+    )
 
 
 # ─────────────────────────────────────────────────────────
