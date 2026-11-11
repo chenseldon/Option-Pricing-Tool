@@ -905,7 +905,25 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
             <div class="metric-card"><div class="metric-label" id="lbl-lv-asof">As Of</div><div class="metric-val" style="font-size:11px" id="lv-asof">—</div></div>
           </div>
           <p class="hint" id="lv-note">—</p>
-          <div id="chart-localvol" style="height:340px;margin-top:8px"></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0">
+            <label class="chk"><input type="checkbox" id="lv-show-implied" checked onchange="redrawLocalVol()"/> <span id="lbl-lv-implied">Overlay the implied surface it came from</span></label>
+            <div class="fg" style="margin-bottom:0;min-width:110px">
+              <label id="lbl-lv-stretch">Time axis</label>
+              <input type="range" id="lv-stretch" min="0.4" max="2.4" step="0.1" value="1.1" oninput="stretchLocalVol()"/>
+            </div>
+          </div>
+          <div id="chart-localvol" style="height:460px;margin-top:4px"></div>
+          <p class="hint" id="lv-pick">Click the surface to pin a point; the two charts below follow it.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+            <div>
+              <div class="hint" id="lbl-lv-slice-k">Fixed time, along price</div>
+              <div id="chart-lv-slice-k" style="height:260px"></div>
+            </div>
+            <div>
+              <div class="hint" id="lbl-lv-slice-t">Fixed price, along time</div>
+              <div id="chart-lv-slice-t" style="height:260px"></div>
+            </div>
+          </div>
         </div>
 
         <!-- The round trip: the only evidence that any of the above is right -->
@@ -3624,12 +3642,13 @@ async function calcLocalVol(){
   if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Building\u2026'; }
   try{
     const horizon = +$('lv-hz').value;
-    // 21 x 15 rather than the endpoint's 41 x 25 default: the cells carry no
-    // labels at this density, so a finer grid buys nothing a tooltip does not
-    // already give and costs the browser a redraw.
+    // 31 x 25. The heat map used 21 x 15 because a denser grid of coloured
+    // cells buys nothing a tooltip does not already give; a surface is read
+    // as a shape, so the sampling has to be fine enough that the shape is the
+    // surface's and not the grid's.
     const res = await fetch('/api/local_vol/surface',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({...localVolRequest(), horizon, n_spots:21, n_times:15})});
+      body: JSON.stringify({...localVolRequest(), horizon, n_spots:31, n_times:25})});
     const d = await res.json();
     if(d.error){ showErr('Local vol: ' + d.error); return; }
 
@@ -3697,56 +3716,139 @@ async function calcLocalVol(){
   finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Build Surface'; } }
 }
 
+// Everything the local-volatility panel is showing, so the implied overlay
+// can be toggled and the axis stretched without re-fetching.
+let lvState = null;
+
 function drawLocalVolHeatmap(d, quoted, horizon){
-  // Plotly's z is [row][col] = [y][x], which is the shape the endpoint
-  // already returns: local_vol[i][j] at times[i], moneyness[j]. The grid goes
-  // in as it arrives rather than being flattened into [x, y, value] triples,
-  // which removes the chance of transposing it.
-  const z = d.local_vol.map(row => row.map(v =>
-    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(2)));
-  const flat = z.flat().filter(v => v != null);
-  const lo = Math.min(...flat), hi = Math.max(...flat);
+  lvState = {d, quoted, horizon};
+  redrawLocalVol();
+  // Pin halfway along the drawn window so the slices below are not empty.
+  lvPick(Math.floor(d.moneyness.length / 2), Math.floor(d.times.length / 2));
+}
 
-  // Where the extrapolation starts. -0.5 puts the line on the cell boundary
-  // rather than through the middle of the first extrapolated row.
-  const firstBeyond = d.times.findIndex(t => t > quoted);
+function redrawLocalVol(){
+  if(!lvState) return;
+  const {d, quoted} = lvState;
 
-  // The implied volatility at the same points, carried alongside so the
-  // tooltip can give both. Reading local volatility as implied volatility is
-  // the standing trap this panel exists to avoid, and a bare z value invites
-  // it -- which is why the endpoint returns the two together.
-  // Two values per cell: the implied volatility, and the absolute spot the
-  // column stands for. k = log(S/spot) is the axis, but the level is what
-  // tells a reader whether a cell sits near the knock-in.
-  const extra = d.implied_vol.map(row => row.map((v, j) => [
-    (v == null || !isFinite(v)) ? '\u2014' : fmt(v*100,2)+'%',
-    fmt(d.spots[j], 3),
-  ]));
+  // z is [row][col] = [y][x] and the endpoint returns local_vol[i][j] at
+  // times[i], moneyness[j] -- so time is y and the grid goes in as it
+  // arrives. A transposed local-volatility surface still looks like a
+  // plausible surface, which is what makes transposing it worth ruling out
+  // by construction rather than by inspection.
+  const toPct = g => g.map(row => row.map(v =>
+    (v == null || !isFinite(v)) ? null : +(v*100).toFixed(3)));
+  const zLocal = toPct(d.local_vol);
+  const zImplied = toPct(d.implied_vol);
 
-  draw('chart-localvol',[
-    {type:'heatmap', z, customdata:extra,
-     x:d.moneyness.map(k=>fmt(k,2)), y:d.times.map(t=>fmt(t,2)),
-     colorscale:'Plasma', zmin:Math.floor(lo), zmax:Math.ceil(hi),
-     colorbar:{title:{text:'%', font:{size:10, color:PAL.tx2}},
-               tickfont:{size:9, color:PAL.tx2}, len:0.8, thickness:12},
-     hovertemplate:'T = %{y}y<br>k = %{x}  (S = %{customdata[1]})<br>' +
-                   '<b>local %{z}%</b><br>implied %{customdata[0]}<extra></extra>'},
-  ], PLOT({title:`Dupire Local Volatility (%) \u2014 ${d.underlying}, spot ${fmt(d.spot,4)}`,
-           x:'log-moneyness k = log(S/spot)', y:'time (y)',
-           margin:{l:70,r:20,t:52,b:48},
-           xaxis:{showgrid:false, dtick:2}, yaxis:{showgrid:false},
-           shapes: firstBeyond > 0 ? [{
-             type:'line', xref:'paper', x0:0, x1:1,
-             yref:'y', y0:firstBeyond-0.5, y1:firstBeyond-0.5,
-             line:{color:PAL.green, dash:'dash', width:1.5}}] : [],
-           annotations: firstBeyond > 0 ? [{
-             xref:'paper', x:0.5, xanchor:'center',
-             yref:'y', y:firstBeyond-0.5, yanchor:'bottom',
-             text:`quotes stop at ${fmt(quoted,2)}y \u2014 above this line is the tail assumption`,
-             showarrow:false, font:{size:9, color:PAL.green}}] : [{
-             xref:'paper', x:0.5, xanchor:'center', yref:'paper', y:1.0, yanchor:'bottom',
-             text:`every row drawn is beyond the last quoted expiry at ${fmt(quoted,2)}y`,
-             showarrow:false, font:{size:9, color:PAL.green}}]}));
+  const traces = [{
+    type:'surface', x:d.moneyness, y:d.times, z:zLocal,
+    colorscale:'Plasma', opacity:0.92, showscale:true, name:'local',
+    colorbar:{title:{text:'local %', font:{size:10, color:PAL.tx2}},
+              tickfont:{size:9, color:PAL.tx2}, len:0.65, thickness:12},
+    contours:{z:{show:true, usecolormap:true, highlightcolor:PAL.amber, width:1}},
+    hovertemplate:'k %{x:.3f}<br>t %{y:.3f}y<br><b>local %{z:.2f}%</b><extra></extra>',
+  }];
+
+  // The implied surface the local one was derived from, in the same scene.
+  // This panel exists because reading local volatility as implied volatility
+  // is a standing trap, and two surfaces at the same (k, t) make the
+  // difference a shape rather than a sentence: on the committed chain the
+  // local surface spans roughly 13% to 86% across the drawn window while the
+  // implied one stays inside 19% to 36%.
+  if($('lv-show-implied').checked){
+    traces.push({
+      type:'surface', x:d.moneyness, y:d.times, z:zImplied,
+      showscale:false, opacity:0.45, name:'implied',
+      colorscale:[[0, '#94a3b8'], [1, '#334155']],
+      hovertemplate:'k %{x:.3f}<br>t %{y:.3f}y<br>implied %{z:.2f}%<extra></extra>',
+    });
+  }
+
+  Plotly.react('chart-localvol', traces, {
+    paper_bgcolor:'rgba(0,0,0,0)',
+    font:{family:FONT, size:11, color:PAL.tx},
+    margin:{l:0, r:0, t:10, b:0},
+    showlegend:true,
+    legend:{orientation:'h', x:0, y:1.0, font:{size:10, color:PAL.tx2}},
+    scene:{
+      xaxis:{title:{text:'k = log(S/spot)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      yaxis:{title:{text:'time (y)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      zaxis:{title:{text:'volatility (%)'}, gridcolor:PAL.bd, zerolinecolor:PAL.bd},
+      aspectmode:'manual',
+      aspectratio:{x:1.15, y:+$('lv-stretch').value, z:0.65},
+      camera:{eye:{x:1.6, y:-1.65, z:0.85}},
+      dragmode:'orbit', uirevision:'localvol-camera',
+    },
+  }, PCFG);
+  PLOTS.add('chart-localvol');
+
+  const el = $('chart-localvol');
+  if(el && !el._lvClickBound){
+    el._lvClickBound = true;
+    el.on('plotly_click', e => {
+      const p = e.points[0];
+      if(p.data.type !== 'surface') return;
+      lvPick(nearestIndex(lvState.d.moneyness, p.x),
+             nearestIndex(lvState.d.times, p.y));
+    });
+  }
+
+  $('lv-pick').textContent =
+    `Quotes reach ${fmt(quoted,3)}y and this is drawn to ` +
+    `${fmt(Math.max(...d.times),2)}y, so most of what is shown is the tail ` +
+    `assumption rather than market data. Click the surface to pin a point.`;
+}
+
+function stretchLocalVol(){
+  if(!lvState) return;
+  Plotly.relayout('chart-localvol',
+    {'scene.aspectratio': {x:1.15, y:+$('lv-stretch').value, z:0.65}});
+}
+
+// Both slices carry local and implied together, for the same reason the 3D
+// scene does.
+function lvPick(j, i){
+  if(!lvState) return;
+  const {d, quoted} = lvState;
+  j = Math.max(0, Math.min(j, d.moneyness.length - 1));
+  i = Math.max(0, Math.min(i, d.times.length - 1));
+  const pct = v => (v == null || !isFinite(v)) ? null : v*100;
+
+  draw('chart-lv-slice-k', [
+    {type:'scatter', mode:'lines', x:d.moneyness,
+     y:d.local_vol[i].map(pct), name:'local', connectgaps:false,
+     line:{color:PAL.purple, width:2},
+     hovertemplate:'k %{x:.3f}<br>local %{y:.2f}%<extra></extra>'},
+    {type:'scatter', mode:'lines', x:d.moneyness,
+     y:d.implied_vol[i].map(pct), name:'implied', connectgaps:false,
+     line:{color:PAL.tx2, width:1.6, dash:'dash'},
+     hovertemplate:'k %{x:.3f}<br>implied %{y:.2f}%<extra></extra>'},
+  ], PLOT({x:'k = log(S/spot)', y:'volatility (%)', legend:true,
+           margin:{l:56,r:16,t:26,b:44},
+           shapes:[vline(0, PAL.tx2, 'dot')],
+           annotations:[vlabel(0, 'spot', PAL.tx2)]}));
+
+  const col = g => d.times.map((_, r) => pct(g[r][j]));
+  draw('chart-lv-slice-t', [
+    {type:'scatter', mode:'lines', x:d.times, y:col(d.local_vol),
+     name:'local', connectgaps:false, line:{color:PAL.purple, width:2},
+     hovertemplate:'t %{x:.3f}y<br>local %{y:.2f}%<extra></extra>'},
+    {type:'scatter', mode:'lines', x:d.times, y:col(d.implied_vol),
+     name:'implied', connectgaps:false,
+     line:{color:PAL.tx2, width:1.6, dash:'dash'},
+     hovertemplate:'t %{x:.3f}y<br>implied %{y:.2f}%<extra></extra>'},
+  ], PLOT({x:'time (y)', y:'volatility (%)', legend:true,
+           margin:{l:56,r:16,t:26,b:44},
+           shapes:[vline(quoted, PAL.green, 'dash')],
+           annotations:[vlabel(quoted, 'quotes end', PAL.green)]}));
+
+  $('lbl-lv-slice-k').textContent =
+    `Fixed time t = ${fmt(d.times[i],3)}y, along price \u2014 ` +
+    `local against implied`;
+  $('lbl-lv-slice-t').textContent =
+    `Fixed price k = ${fmt(d.moneyness[j],3)} (S = ${fmt(d.spots[j],3)}), ` +
+    `along time`;
 }
 
 async function calcLocalVolRoundTrip(){

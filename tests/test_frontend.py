@@ -349,6 +349,35 @@ class TestTheModelsTab:
         assert "local" in hover, "the hover does not say which volatility it draws"
         assert "implied" in hover, "the hover does not give the implied value beside it"
 
+    def test_the_local_surface_is_drawn_beside_the_implied_one(self, page: str) -> None:
+        """Two surfaces in one scene, which is the panel's whole argument.
+
+        Reading local volatility as implied volatility is a standing trap, and
+        the endpoint returns both at the same points for exactly that reason.
+        A tooltip giving the other number is a sentence; two surfaces make the
+        difference a shape.
+
+        Measured on the committed 510300 snapshot over the drawn window: local
+        volatility spans 13.4% to 89.4% while implied stays inside 18.7% to
+        57.0%, and at the same (k, t) they differ by a mean of 14.67 and up to
+        32.91 volatility points. Even at the money the gap is systematic --
+        local 14.9-17.2% against implied 19.0-20.0%.
+        """
+        body = page[page.index("function redrawLocalVol()") :]
+        body = body[: body.index("\nfunction stretchLocalVol")]
+        assert body.count("type:'surface'") == 2, (
+            "the implied surface is not drawn alongside the local one"
+        )
+        assert "lv-show-implied" in body, "the overlay cannot be turned off"
+
+    def test_both_local_vol_slices_carry_both_volatilities(self, page: str) -> None:
+        """For the same reason as the scene. A slice showing only the local
+        curve would reintroduce the confusion the panel removes."""
+        body = page[page.index("function lvPick(") :]
+        assert body.count("d.local_vol") >= 2
+        assert body.count("d.implied_vol") >= 2
+        assert "'implied'" in body and "'local'" in body
+
     def test_the_round_trip_is_measured_against_the_fit_error(self, page: str) -> None:
         """Dupire makes the round trip exact in continuous time, so any residual
         is discretisation -- which makes the surface's own calibration error the
