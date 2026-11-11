@@ -525,15 +525,16 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
 </aside>
 <div class="main">
   <div class="main-tabs">
+    <button class="mtab on" onclick="switchMain('market')" data-i18n="tab_market">📡 Market Data</button>
     <button class="mtab" onclick="switchMain('models')" data-i18n="tab_models">🌋 Models</button>
-    <button class="mtab on" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
+    <button class="mtab" onclick="switchMain('pricing')" data-i18n="tab_pricing">📈 Option Pricing</button>
     <button class="mtab" onclick="switchMain('struct')" data-i18n="tab_struct">💰 Structured</button>
     <button class="mtab" onclick="switchMain('portfolio')" data-i18n="tab_portfolio">📊 Portfolio</button>
     <button class="mtab" onclick="switchMain('about')" data-i18n="tab_about">📋 About</button>
   </div>
 
   <!-- PRICING TAB -->
-  <div class="tab-panel on" id="panel-pricing">
+  <div class="tab-panel" id="panel-pricing">
     <div class="cards-row">
       <div class="card">
         <div class="card-label">BSM Price</div>
@@ -658,6 +659,134 @@ body.font-s .dtable,body.font-s .gtable{font-size:11px}
   </div>
 
   <!-- PORTFOLIO TAB -->
+  <!-- MARKET DATA TAB -->
+  <div class="tab-panel on" id="panel-market">
+    <div class="tab-hdr"><h2 id="market-h2">📡 Market Data</h2></div>
+    <p class="struct-hint" id="market-hint">
+      A desk's day starts here, and in this order: rates, then the forward for each expiry, then the volatility surface, then the arbitrage checks, then publish. Pricing comes after, and reads the one published mark &mdash; no consumer fits its own surface.
+    </p>
+
+    <!-- 1. where the quotes come from -->
+    <div class="analysis-block">
+      <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+        <span id="lbl-md-src-hdr">1 &middot; Source &mdash; which chain is being marked</span><span>▼</span>
+      </div>
+      <div class="analysis-body open">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div class="fg" style="margin-bottom:0;min-width:150px">
+            <label id="lbl-md-und">Underlying</label>
+            <select id="md-und">
+              <option value="510300">510300 (CSI 300 ETF)</option>
+              <option value="510050">510050 (SSE 50 ETF)</option>
+              <option value="IO">IO (CSI 300 index options)</option>
+              <option value="HO">HO (SSE 50 index options)</option>
+              <option value="MO">MO (CSI 1000 index options)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:160px">
+            <label id="lbl-md-source">Source</label>
+            <select id="md-source" onchange="onMarketSourceChange()">
+              <option value="snapshot">Committed snapshot</option>
+              <option value="csv">CSV upload</option>
+              <option value="wind">Wind panel</option>
+              <option value="akshare">akshare (live)</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:110px">
+            <label id="lbl-md-rate">Rate (%)</label>
+            <input type="number" id="md-rate" value="2" step="0.1"/>
+          </div>
+          <div class="fg" style="margin-bottom:0;min-width:150px" id="md-asof-wrap">
+            <label id="lbl-md-asof">Panel date (YYYY-MM-DD)</label>
+            <input type="text" id="md-asof" placeholder="2024-12-25"/>
+          </div>
+        </div>
+
+        <div id="md-csv-wrap" style="display:none;border-left:3px solid var(--blue);background:var(--tint-info);border-radius:4px;padding:10px 12px;margin-bottom:10px">
+          <p class="hint" id="lbl-md-csv-hint">Columns: <code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>, and optionally <code>as_of</code> &mdash; the date the quotes were taken. Without it the chain dates itself today, which fits identically and labels the published mark with the wrong day. The file is stored under a hash of its contents; the name you send is never used as a path.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+            <input type="file" id="md-csv-file" accept=".csv,text/csv"/>
+            <button class="btn btn-s" style="width:auto;padding:5px 14px" onclick="uploadMarketCsv()" id="btn-md-upload" data-i18n="btn_md_upload">▲ Upload</button>
+          </div>
+          <div class="hint" id="md-csv-status" style="margin-top:8px"></div>
+        </div>
+
+        <button class="btn btn-p" style="width:auto;padding:6px 16px" onclick="fitMarketSurface()" id="btn-md-fit" data-i18n="btn_md_fit">▶ Fit Surface</button>
+        <div class="hint" id="md-fit-status" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div id="md-results" style="display:none">
+      <!-- 2. what was thrown away -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-screen-hdr">2 &middot; Screening &mdash; what was discarded, and why</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-screen-hint">Most of a board never reaches the fit. Reported because a surface fitted to 42 of 126 quotes is a different claim from one fitted to all of them, and the reasons are the ones that decide whether the remainder is representative.</p>
+          <div class="metric-grid" style="margin-bottom:10px">
+            <div class="metric-card"><div class="metric-label" id="lbl-md-recv">Quotes Received</div><div class="metric-val" id="md-recv">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-used">Used in the Fit</div><div class="metric-val" id="md-used">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-kept">Kept</div><div class="metric-val" id="md-kept">—</div></div>
+            <div class="metric-card"><div class="metric-label" id="lbl-md-slices">Usable Expiries</div><div class="metric-val" id="md-slices">—</div></div>
+          </div>
+          <div id="md-reject-table"></div>
+          <div id="md-slice-table"></div>
+        </div>
+      </div>
+
+      <!-- 3. the forward, which the moneyness is measured against -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-fwd-hdr">3 &middot; Forwards &mdash; what moneyness is measured against</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-fwd-hint">One forward per expiry, implied from put-call parity rather than taken from spot and a dividend guess. It has to come first because the surface is parameterised in log-moneyness <code>k = log(K/F(T))</code>: a wrong forward slides the whole smile sideways, and every strike is then quoted against the wrong centre.</p>
+          <div id="chart-md-forward" style="height:300px"></div>
+          <div id="md-fwd-table"></div>
+        </div>
+      </div>
+
+      <!-- 4. rates, and an honest note about what is actually used -->
+      <div class="analysis-block">
+        <div class="analysis-hdr" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-rates-hdr">4 &middot; Rates &mdash; and what is actually being used</span><span>▼</span>
+        </div>
+        <div class="analysis-body">
+          <p class="hint" id="md-rates-note">—</p>
+        </div>
+      </div>
+
+      <!-- 5. the gates, and the publish -->
+      <div class="analysis-block">
+        <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+          <span id="lbl-md-gate-hdr">5 &middot; Gates and publish &mdash; nothing prices until this passes</span><span>▼</span>
+        </div>
+        <div class="analysis-body open">
+          <p class="hint" id="lbl-md-gate-hint">Five checks, all reported whether they pass or not: a reader deciding whether to override needs to know if one thing is marginal or everything is wrong. The fit tolerance is set from this project's own data &mdash; the committed chains fit to 0.654 and 0.587 volatility points, so a 5bp gate borrowed from a listed-vanilla desk would reject every surface here, and a gate nothing passes gets switched off rather than checked.</p>
+          <div id="md-gate-table"></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0">
+            <button class="btn btn-ok" style="width:auto;padding:6px 16px" onclick="publishMark()" id="btn-md-publish" data-i18n="btn_md_publish">✓ Publish as today's mark</button>
+            <label class="chk"><input type="checkbox" id="md-force"/> <span id="lbl-md-force">Force past a failed gate</span></label>
+          </div>
+          <div id="md-publish-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the mark that is currently published, independent of any fit above -->
+    <div class="analysis-block">
+      <div class="analysis-hdr open" onclick="toggleAnalysis(this)">
+        <span id="lbl-md-mark-hdr">Current mark &mdash; what everything is pricing off</span><span>▼</span>
+      </div>
+      <div class="analysis-body open">
+        <p class="hint" id="lbl-md-mark-hint">Reading this re-fits the mark's own inputs and checks the fingerprint. A surface that no longer reproduces is reported rather than served: the point of a mark is that the whole book values off one surface, and one that no longer matches its own fingerprint is a different surface wearing yesterday's blessing.</p>
+        <button class="btn btn-s" style="width:auto;padding:5px 14px;margin-bottom:10px" onclick="readMark()" id="btn-md-mark" data-i18n="btn_md_mark">↻ Read the published mark</button>
+        <div id="md-mark-out"></div>
+      </div>
+    </div>
+  </div><!-- /panel-market -->
+
   <!-- MODELS TAB -->
   <div class="tab-panel" id="panel-models">
     <div class="tab-hdr"><h2 id="models-h2">🌋 Volatility Models</h2></div>
@@ -1503,7 +1632,7 @@ function loadPreset(i){
 // tests/test_frontend.py asserts the two orders match.
 //
 // The order itself follows a desk's day: calibrate, then price.
-const PANELS={models:'panel-models',pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
+const PANELS={market:'panel-market',models:'panel-models',pricing:'panel-pricing',struct:'panel-struct',portfolio:'panel-portfolio',about:'panel-about'};
 function switchMain(key){
   document.querySelectorAll('.mtab').forEach((b,i)=>b.classList.toggle('on',Object.keys(PANELS)[i]===key));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('on'));
@@ -2023,6 +2152,29 @@ const I18N = {
     lbl_sb_cnfdm_hint:'Re-price the Snowball using Crank-Nicolson FDM (BS-PDE with Rannacher smoothing). Provides independent validation and full Greeks.',
     lbl_sb_cnfdm_price:'CN-FDM Price', lbl_sb_cnfdm_method:'Method',
     lbl_3greeks:'📐 Three-Method Greeks Comparison',
+    tab_market:'\ud83d\udce1 Market Data',
+    market_h2:'\ud83d\udce1 Market Data',
+    market_hint:"A desk's day starts here, and in this order: rates, then the forward for each expiry, then the volatility surface, then the arbitrage checks, then publish. Pricing comes after, and reads the one published mark \u2014 no consumer fits its own surface.",
+    lbl_md_src_hdr:'1 \u00b7 Source \u2014 which chain is being marked',
+    lbl_md_und:'Underlying', lbl_md_source:'Source', lbl_md_rate:'Rate (%)',
+    lbl_md_asof:'Panel date (YYYY-MM-DD)',
+    lbl_md_csv_hint:'Columns: <code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>, and optionally <code>as_of</code> \u2014 the date the quotes were taken. Without it the chain dates itself today, which fits identically and labels the published mark with the wrong day. The file is stored under a hash of its contents; the name you send is never used as a path.',
+    btn_md_upload:'\u25b2 Upload',
+    btn_md_fit:'\u25b6 Fit Surface',
+    lbl_md_screen_hdr:'2 \u00b7 Screening \u2014 what was discarded, and why',
+    lbl_md_screen_hint:'Most of a board never reaches the fit. Reported because a surface fitted to 42 of 126 quotes is a different claim from one fitted to all of them, and the reasons are the ones that decide whether the remainder is representative.',
+    lbl_md_recv:'Quotes Received', lbl_md_used:'Used in the Fit',
+    lbl_md_kept:'Kept', lbl_md_slices:'Usable Expiries',
+    lbl_md_fwd_hdr:'3 \u00b7 Forwards \u2014 what moneyness is measured against',
+    lbl_md_fwd_hint:'One forward per expiry, implied from put-call parity rather than taken from spot and a dividend guess. It has to come first because the surface is parameterised in log-moneyness <code>k = log(K/F(T))</code>: a wrong forward slides the whole smile sideways, and every strike is then quoted against the wrong centre.',
+    lbl_md_rates_hdr:'4 \u00b7 Rates \u2014 and what is actually being used',
+    lbl_md_gate_hdr:'5 \u00b7 Gates and publish \u2014 nothing prices until this passes',
+    lbl_md_gate_hint:"Five checks, all reported whether they pass or not: a reader deciding whether to override needs to know if one thing is marginal or everything is wrong. The fit tolerance is set from this project's own data \u2014 the committed chains fit to 0.654 and 0.587 volatility points, so a 5bp gate borrowed from a listed-vanilla desk would reject every surface here, and a gate nothing passes gets switched off rather than checked.",
+    btn_md_publish:"\u2713 Publish as today's mark",
+    lbl_md_force:'Force past a failed gate',
+    lbl_md_mark_hdr:'Current mark \u2014 what everything is pricing off',
+    lbl_md_mark_hint:"Reading this re-fits the mark's own inputs and checks the fingerprint. A surface that no longer reproduces is reported rather than served: the point of a mark is that the whole book values off one surface, and one that no longer matches its own fingerprint is a different surface wearing yesterday's blessing.",
+    btn_md_mark:'\u21bb Read the published mark',
     tab_models:'🌋 Models',
     models_h2:'🌋 Volatility Models',
     models_hint:'Everything the snowball and shark fin can be priced <i>against</i>, and the evidence for each. These were reachable only through the API until now, which meant the flat-volatility number was the only one anyone saw.',
@@ -2181,6 +2333,29 @@ const I18N = {
     lbl_sb_cnfdm_hint:'使用Crank-Nicolson有限差分法（BS偏微分方程+Rannacher平滑）重新定价雪球，提供独立验证及完整希腊字母。',
     lbl_sb_cnfdm_price:'CN-FDM理论价格', lbl_sb_cnfdm_method:'计算方法',
     lbl_3greeks:'📐 三种方法希腊字母对比',
+    tab_market:'\ud83d\udce1 市场数据',
+    market_h2:'\ud83d\udce1 市场数据',
+    market_hint:'交易台的一天从这里开始，而且是这个顺序：利率，然后每个到期的远期，然后波动率曲面，然后无套利校验，然后发布。定价排在后面，并且读那一份已发布的 mark \u2014\u2014 没有任何下游自己拟合曲面。',
+    lbl_md_src_hdr:'1 \u00b7 数据源 \u2014\u2014 正在给哪条链做标记',
+    lbl_md_und:'标的', lbl_md_source:'来源', lbl_md_rate:'利率 (%)',
+    lbl_md_asof:'面板日期 (YYYY-MM-DD)',
+    lbl_md_csv_hint:'列：<code>code, last, previous_settlement, strike, expiry, days_to_expiry</code>，以及可选的 <code>as_of</code> \u2014\u2014 行情取自哪一天。没有它，这条链会把自己标成今天：拟合结果一模一样，但发布出去的 mark 记的是错的日子。文件按内容哈希存放；你传的文件名绝不会被当成路径用。',
+    btn_md_upload:'\u25b2 上传',
+    btn_md_fit:'\u25b6 拟合曲面',
+    lbl_md_screen_hdr:'2 \u00b7 报价筛选 \u2014\u2014 剔掉了什么，为什么',
+    lbl_md_screen_hint:'一个盘面上的报价大部分进不了拟合。要报出来，是因为「用 126 条里的 42 条拟出的曲面」和「用全部拟出的曲面」是两种不同的主张，而剔除原因恰好决定了剩下那些有没有代表性。',
+    lbl_md_recv:'收到报价', lbl_md_used:'进入拟合',
+    lbl_md_kept:'留用比例', lbl_md_slices:'可用到期',
+    lbl_md_fwd_hdr:'3 \u00b7 远期 \u2014\u2014 虚实值是相对谁度量的',
+    lbl_md_fwd_hint:'每个到期一个远期，由认购认沽平价反解，而不是拿现价加一个分红猜测。它必须排在前面，因为曲面是以对数虚实值 <code>k = log(K/F(T))</code> 参数化的：远期错了，整条微笑就整体平移，之后每一个行权价都是相对错的中心在报。',
+    lbl_md_rates_hdr:'4 \u00b7 利率 \u2014\u2014 以及实际在用的是什么',
+    lbl_md_gate_hdr:'5 \u00b7 门禁与发布 \u2014\u2014 过不了就什么都别定价',
+    lbl_md_gate_hint:'五道检查，通过与否全部报出：要判断该不该强制放行，得知道是一项勉强还是全盘不对。拟合容差是按这个项目自己的数据定的 \u2014\u2014 入库的两条链分别拟到 0.654 和 0.587 个波动率点，所以照搬场内香草台子的 5bp 会把这里每一张曲面都拒掉，而没人过得去的门禁只会被关掉，不会被遵守。',
+    btn_md_publish:'\u2713 发布为今日 mark',
+    lbl_md_force:'强制越过失败的门禁',
+    lbl_md_mark_hdr:'当前 mark \u2014\u2014 现在所有定价依据的那一张',
+    lbl_md_mark_hint:'读它会用 mark 自己记录的输入重新拟合一遍，并校验指纹。拟不出同一张曲面时报错而不是照样给出：mark 的意义就在于整本账用同一张曲面估值，而一张对不上自己指纹的曲面，是披着昨天那份祝福的另一张曲面。',
+    btn_md_mark:'\u21bb 读取已发布的 mark',
     tab_models:'🌋 波动率模型',
     models_h2:'🌋 波动率模型',
     models_hint:'雪球与鲨鱼鳍可以<i>基于</i>什么来定价，以及每一样的证据。在此之前这些只能通过 API 触及，也就是说界面上能看到的只有平坦波动率那一个数。',
@@ -2336,6 +2511,19 @@ function switchLang(lang) {
     'lbl-sb-ci':'lbl_sb_ci','lbl-sb-ko-lv':'lbl_sb_ko_lv','lbl-sb-ki-lv':'lbl_sb_ki_lv',
     'lbl-sb-cnfdm-hdr':'lbl_sb_cnfdm_hdr','lbl-sb-cnfdm-hint':'lbl_sb_cnfdm_hint',
     'lbl-sb-cnfdm-price':'lbl_sb_cnfdm_price','lbl-sb-cnfdm-method':'lbl_sb_cnfdm_method',
+    'market-h2':'market_h2','market-hint':'market_hint',
+    'lbl-md-src-hdr':'lbl_md_src_hdr',
+    'lbl-md-und':'lbl_md_und','lbl-md-source':'lbl_md_source',
+    'lbl-md-rate':'lbl_md_rate','lbl-md-asof':'lbl_md_asof',
+    'lbl-md-csv-hint':'lbl_md_csv_hint',
+    'lbl-md-screen-hdr':'lbl_md_screen_hdr','lbl-md-screen-hint':'lbl_md_screen_hint',
+    'lbl-md-recv':'lbl_md_recv','lbl-md-used':'lbl_md_used',
+    'lbl-md-kept':'lbl_md_kept','lbl-md-slices':'lbl_md_slices',
+    'lbl-md-fwd-hdr':'lbl_md_fwd_hdr','lbl-md-fwd-hint':'lbl_md_fwd_hint',
+    'lbl-md-rates-hdr':'lbl_md_rates_hdr',
+    'lbl-md-gate-hdr':'lbl_md_gate_hdr','lbl-md-gate-hint':'lbl_md_gate_hint',
+    'lbl-md-force':'lbl_md_force',
+    'lbl-md-mark-hdr':'lbl_md_mark_hdr','lbl-md-mark-hint':'lbl_md_mark_hint',
     'models-h2':'models_h2','models-hint':'models_hint',
     'lbl-vs-hdr':'lbl_vs_hdr','lbl-vs-hint':'lbl_vs_hint',
     'lbl-vs-und':'lbl_vs_und','lbl-vs-rate':'lbl_vs_rate',
@@ -2612,6 +2800,335 @@ async function calcSnowballRecon(){
     $('sb-recon-results').style.display = '';
   }catch(e){ showErr('Reconciliation error: ' + e.message); }
   finally{ if(btn){ btn.disabled = false; btn.textContent = '▶ Run Both Engines'; } }
+}
+
+// ========== MARKET DATA ==========
+// The page a desk opens first. Everything below answers one question in the
+// order it has to be answered: which chain, what got thrown away, what the
+// forward is, what rate is actually in use, and may this be published.
+
+// Set by a successful upload, consumed by every later call. Null means no
+// uploaded chain is in play.
+let mdCsvToken = null;
+// The fit the gates were run against, kept so publishing cannot act on a
+// different surface from the one on screen.
+let mdLastFit = null;
+
+function onMarketSourceChange(){
+  const kind = $('md-source').value;
+  $('md-csv-wrap').style.display = kind === 'csv' ? '' : 'none';
+  // The panel date is a Wind-only argument: the panel holds 725 of them and
+  // none is a sensible default, which is why build_source refuses without it.
+  $('md-asof-wrap').style.display = kind === 'wind' ? '' : 'none';
+}
+
+function marketRequest(){
+  const kind = $('md-source').value;
+  const body = {underlying: $('md-und').value, r: +$('md-rate').value / 100};
+  if(kind === 'csv'){
+    if(!mdCsvToken) throw new Error('upload a CSV first, or pick another source');
+    body.csv_token = mdCsvToken;
+  } else {
+    body.source = kind;
+  }
+  if(kind === 'wind'){
+    const asOf = $('md-asof').value.trim();
+    if(!asOf) throw new Error('the Wind panel needs a date: it holds 725 of them');
+    body.as_of = asOf;
+  }
+  return body;
+}
+
+async function uploadMarketCsv(){
+  const input = $('md-csv-file');
+  const file = input.files && input.files[0];
+  const status = $('md-csv-status');
+  if(!file){ status.innerHTML = '<span class="neg">Choose a file first.</span>'; return; }
+
+  const btn = $('btn-md-upload');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Uploading\u2026'; }
+  try{
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/marketdata/upload', {method:'POST', body:form});
+    const d = await res.json();
+    if(d.error){
+      mdCsvToken = null;
+      status.innerHTML = '<span class="neg">' + d.error + '</span>' +
+        (d.columns_found ? '<br/>Columns found: ' + d.columns_found.join(', ') : '');
+      return;
+    }
+    mdCsvToken = d.token;
+    status.innerHTML =
+      `<span class="pos">Stored.</span> token <code>${d.token}</code> &middot; ` +
+      `${d.rows} rows &middot; ${d.bytes} bytes &middot; ` +
+      `as_of ${d.as_of || '<span class="neg">absent &mdash; will date itself today</span>'}` +
+      `<br/>${d.note}`;
+  }catch(e){ status.innerHTML = '<span class="neg">Upload error: ' + e.message + '</span>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b2 Upload'; } }
+}
+
+async function fitMarketSurface(){
+  const btn = $('btn-md-fit');
+  const status = $('md-fit-status');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Fitting\u2026'; }
+  status.textContent = '';
+  try{
+    const body = marketRequest();
+    const res = await fetch('/api/vol_surface/fit', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    if(d.error){ status.innerHTML = '<span class="neg">' + d.error + '</span>'; return; }
+
+    mdLastFit = {request: body, response: d};
+    status.innerHTML = `<span class="pos">Fitted.</span> ${d.underlying} as of ${d.as_of} ` +
+      `&middot; source <code>${d.source}</code>`;
+
+    renderScreening(d);
+    renderForwards(d);
+    renderRatesNote(d, body);
+    await renderGates(body);
+    $('md-results').style.display = '';
+    setTimeout(resizePlots, 80);
+  }catch(e){ status.innerHTML = '<span class="neg">' + e.message + '</span>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u25b6 Fit Surface'; } }
+}
+
+function renderScreening(d){
+  const input = d.input, cal = d.calibration;
+  const received = input.n_points + input.n_rejected;
+  $('md-recv').textContent = String(received);
+  $('md-used').textContent = String(cal.n_points);
+
+  // The share kept, not the share discarded: a reader wants to know how much
+  // of the board the surface actually rests on.
+  const kept = received ? cal.n_points / received : 0;
+  const keptEl = $('md-kept');
+  keptEl.textContent = fmt(kept * 100, 1) + '%';
+  keptEl.className = 'metric-val ' + (kept < 0.25 ? 'neg' : kept < 0.5 ? '' : 'pos');
+  $('md-slices').textContent = `${input.n_usable_slices} of ${input.slices.length}`;
+
+  const reasons = Object.entries(input.rejections || {})
+    .sort((a, b) => b[1] - a[1]);
+  $('md-reject-table').innerHTML = reasons.length
+    ? '<div class="tscroll"><table class="dtable"><thead><tr>' +
+      '<th>Why a quote was dropped</th><th>Count</th><th>Share of received</th>' +
+      '</tr></thead><tbody>' +
+      reasons.map(([why, n]) =>
+        `<tr><td>${why}</td><td>${n}</td><td>${fmt(received ? n/received*100 : 0, 1)}%</td></tr>`
+      ).join('') + '</tbody></table></div>'
+    : '<p class="hint">Nothing was dropped, which is unusual enough to check.</p>';
+
+  $('md-slice-table').innerHTML =
+    '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Expiry</th><th>Usable</th><th>T (y)</th><th>Used</th><th>Forward</th>' +
+    '<th>ATM Vol</th><th>Why not, or what was dropped</th>' +
+    '</tr></thead><tbody>' +
+    d.input.slices.map(sl => {
+      const dropped = Object.entries(sl.rejections || {})
+        .map(([k, v]) => `${k} ${v}`).join(', ');
+      const atm = (sl.atm_vol == null || !isFinite(sl.atm_vol))
+        ? '\u2014' : fmt(sl.atm_vol * 100, 2) + '%';
+      return `<tr><td>${sl.expiry_tag}</td>` +
+        `<td class="${sl.usable ? 'pos' : 'neg'}">${sl.usable ? 'yes' : 'no'}</td>` +
+        `<td>${fmt(sl.year_fraction, 4)}</td><td>${sl.n_points}</td>` +
+        `<td>${fmt(sl.forward, 4)}</td><td>${atm}</td>` +
+        `<td style="white-space:normal;max-width:460px">${sl.reason || dropped || '\u2014'}</td></tr>`;
+    }).join('') + '</tbody></table></div>';
+}
+
+function renderForwards(d){
+  // Expiry tag -> forward, paired with that slice's own year fraction so the
+  // curve is drawn against time rather than against a tag ordering.
+  const byTag = {};
+  d.input.slices.forEach(sl => { byTag[sl.expiry_tag] = sl; });
+  const points = Object.entries(d.forwards)
+    .map(([tag, f]) => ({tag, f, T: byTag[tag] ? byTag[tag].year_fraction : null,
+                         usable: byTag[tag] ? byTag[tag].usable : false}))
+    .filter(p => p.T != null)
+    .sort((a, b) => a.T - b.T);
+
+  const used = points.filter(p => p.usable);
+  const dropped = points.filter(p => !p.usable);
+
+  draw('chart-md-forward', [
+    {type:'scatter', mode:'lines+markers', x:used.map(p=>p.T), y:used.map(p=>p.f),
+     name:'in the fit', line:{color:PAL.blue, width:2},
+     marker:{color:PAL.blue, size:9},
+     hovertemplate:'T %{x:.4f}y<br>F %{y:.4f}<extra></extra>'},
+    {type:'scatter', mode:'markers', x:dropped.map(p=>p.T), y:dropped.map(p=>p.f),
+     name:'screened out', marker:{color:PAL.red, size:9, symbol:'x'},
+     hovertemplate:'T %{x:.4f}y<br>F %{y:.4f}<br>screened out<extra></extra>'},
+  ], PLOT({title:'Implied forward by expiry', x:'maturity (y)', y:'forward',
+           legend:true, margin:{l:62,r:22,t:38,b:48}}));
+
+  // Segment drift between consecutive forwards: log(F2/F1)/(T2-T1). Shown
+  // rather than a carry, because a carry needs a spot and this response
+  // carries none -- the surface is parameterised in forward terms on purpose.
+  let html = '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Segment</th><th>From</th><th>To</th><th>Forward from</th><th>Forward to</th>' +
+    '<th>Implied drift (ann.)</th></tr></thead><tbody>';
+  for(let i = 1; i < points.length; i++){
+    const a = points[i-1], b = points[i];
+    const dt = b.T - a.T;
+    const drift = dt > 0 ? Math.log(b.f / a.f) / dt : null;
+    html += `<tr><td>${a.tag} \u2192 ${b.tag}</td><td>${fmt(a.T,4)}</td><td>${fmt(b.T,4)}</td>` +
+            `<td>${fmt(a.f,4)}</td><td>${fmt(b.f,4)}</td>` +
+            `<td class="${drift != null && drift < 0 ? 'neg' : ''}">` +
+            `${drift == null ? '\u2014' : fmt(drift * 100, 3) + '%'}</td></tr>`;
+  }
+  html += '</tbody></table></div>';
+  $('md-fwd-table').innerHTML = points.length > 1 ? html : '';
+}
+
+function renderRatesNote(d, body){
+  // Deliberately plain about what is in use. The project has a rate curve --
+  // rate_curve_from_panel reads 1y and 10y government yields off the Wind
+  // panel -- and that panel is institutional data this checkout may not have.
+  // A page that drew a flat line and called it a curve would be the kind of
+  // claim the rest of this interface exists to avoid.
+  const flat = fmt(d.input.rate * 100, 4);
+  $('md-rates-note').innerHTML =
+    `This fit discounted and implied its forwards at a <b>flat ${flat}%</b> ` +
+    `continuously compounded, applied at every tenor.` +
+    `<br/><br/>A term structure is available but needs the Wind panel: ` +
+    `<code>rate_curve_from_panel</code> reads 1-year and 10-year government ` +
+    `yields, converts to continuous compounding, and interpolates between them ` +
+    `&mdash; inside a year it holds the 1-year flat. That panel is institutional ` +
+    `data and is not committed here, so with <code>OTCPRICER_WIND_DIR</code> unset ` +
+    `the honest description of this section is the single number above, not a curve.` +
+    `<br/><br/>What it costs: the rate enters each slice's implied forward through ` +
+    `the discount factor in put-call parity, so a wrong rate moves the forward and ` +
+    `slides the whole smile. At these tenors (under half a year) the effect is small; ` +
+    `at the one-to-three years a snowball runs it is not.`;
+}
+
+async function renderGates(body){
+  // The gates are computed by the publish route, which refuses rather than
+  // publishing when one fails -- so they are read here from a dry run that
+  // deliberately does not force. A 409 carries the same gate list as a 200.
+  const table = $('md-gate-table');
+  table.innerHTML = '<p class="hint">Checking\u2026</p>';
+  try{
+    const res = await fetch('/api/marketdata/publish', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...body, dry_run: true})});
+    const d = await res.json();
+    renderGateTable(d.gates || []);
+  }catch(e){ table.innerHTML = '<p class="hint neg">Gate check failed: ' + e.message + '</p>'; }
+}
+
+function renderGateTable(gates){
+  if(!gates.length){ $('md-gate-table').innerHTML = '<p class="hint">No gate results.</p>'; return; }
+  $('md-gate-table').innerHTML =
+    '<div class="tscroll"><table class="dtable"><thead><tr>' +
+    '<th>Gate</th><th>Verdict</th><th>Value</th><th>Threshold</th><th>What it is</th>' +
+    '</tr></thead><tbody>' +
+    gates.map(g =>
+      `<tr><td>${g.name}</td>` +
+      `<td class="${g.passed ? 'pos' : 'neg'}">${g.passed ? 'pass' : 'FAIL'}</td>` +
+      `<td>${g.value == null ? '\u2014' : fmt(g.value, 6)}</td>` +
+      `<td>${g.threshold == null ? '\u2014' : g.threshold}</td>` +
+      `<td style="white-space:normal;max-width:520px">${g.note}</td></tr>`
+    ).join('') + '</tbody></table></div>';
+}
+
+async function publishMark(){
+  const btn = $('btn-md-publish');
+  const status = $('md-publish-status');
+  if(!mdLastFit){ status.innerHTML = '<p class="hint neg">Fit a surface first.</p>'; return; }
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Publishing\u2026'; }
+  try{
+    // The same request the gates were run against, so publishing cannot act
+    // on a different surface from the one on screen.
+    const body = {...mdLastFit.request, force: $('md-force').checked};
+    const res = await fetch('/api/marketdata/publish', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    renderGateTable(d.gates || []);
+
+    if(!d.published){
+      // The route's own refusal, verbatim: it already names the gate, the
+      // distance and how to override. Rewording it here would be the place
+      // that softened it.
+      status.innerHTML =
+        `<div style="border-left:3px solid var(--red);background:var(--tint-err);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>Refused.</b> ${d.error || 'no reason given'}</div>`;
+      return;
+    }
+    const m = d.mark;
+    status.innerHTML =
+      `<div style="border-left:3px solid var(--green);background:var(--tint-ok);` +
+      `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+      `<b>Published${d.forced ? ' with an override' : ''}.</b> ` +
+      `${m.underlying} as of ${m.as_of}, fingerprint <code>${m.fingerprint}</code>, ` +
+      `fit ${fmt(m.rms_vol_points, 4)} vol points, at ${m.published_at}.` +
+      (d.forced
+        ? '<br/>A gate failed and was overridden. The mark records that, so the ' +
+          'next reader can see a decision was made.'
+        : '') +
+      `</div>`;
+    await readMark();
+  }catch(e){ status.innerHTML = '<p class="hint neg">Publish error: ' + e.message + '</p>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = "\u2713 Publish as today's mark"; } }
+}
+
+async function readMark(){
+  const btn = $('btn-md-mark');
+  const out = $('md-mark-out');
+  if(btn){ btn.disabled = true; btn.textContent = '\u23f3 Reading\u2026'; }
+  try{
+    const res = await fetch('/api/marketdata/mark', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({underlying: $('md-und').value})});
+    const d = await res.json();
+
+    if(d.error && !d.marked){ out.innerHTML = '<p class="hint neg">' + d.error + '</p>'; return; }
+    if(!d.marked){
+      out.innerHTML =
+        `<div style="border-left:3px solid var(--yellow);background:var(--bgi);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>Nothing published for ${d.underlying}.</b> ${d.note}</div>`;
+      return;
+    }
+    if(!d.reproduces){
+      // The failure this mechanism exists to catch.
+      out.innerHTML =
+        `<div style="border-left:3px solid var(--red);background:var(--tint-err);` +
+        `border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.6">` +
+        `<b>The mark no longer reproduces.</b> ${d.error}<br/>` +
+        `Published ${d.mark.published_at} with fingerprint ` +
+        `<code>${d.mark.fingerprint}</code>. Until it is re-published, nothing ` +
+        `should be priced off it.</div>`;
+      renderGateTable(d.mark.gates || []);
+      return;
+    }
+
+    const m = d.mark;
+    const failed = (m.gates || []).filter(g => !g.passed);
+    out.innerHTML =
+      `<div class="metric-grid" style="margin-bottom:10px">` +
+      `<div class="metric-card"><div class="metric-label">Fingerprint</div>` +
+      `<div class="metric-val" style="font-size:11px">${m.fingerprint}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">As Of</div>` +
+      `<div class="metric-val" style="font-size:12px">${m.as_of}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">Fit</div>` +
+      `<div class="metric-val">${fmt(m.rms_vol_points, 4)}</div></div>` +
+      `<div class="metric-card"><div class="metric-label">Reproduces</div>` +
+      `<div class="metric-val pos">yes</div></div></div>` +
+      `<p class="hint">Published ${m.published_at} from <code>${m.source}</code> ` +
+      `at r = ${fmt(m.rate * 100, 4)}%` +
+      (m.csv_token ? ` &middot; uploaded chain <code>${m.csv_token}</code>` : '') +
+      `. Re-fitted from those inputs just now and the fingerprint matched.` +
+      (failed.length
+        ? ` <span class="neg">${failed.length} gate(s) were overridden when this ` +
+          `was published: ${failed.map(g => g.name).join(', ')}.</span>`
+        : '') +
+      `</p>`;
+    renderGateTable(m.gates || []);
+  }catch(e){ out.innerHTML = '<p class="hint neg">Read error: ' + e.message + '</p>'; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = '\u21bb Read the published mark'; } }
 }
 
 // ========== VOLATILITY SURFACE ==========

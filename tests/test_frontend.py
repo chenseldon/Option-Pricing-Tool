@@ -893,3 +893,115 @@ class TestTheSharedPlotTemplate:
         if not forwards:
             dropped = sorted(passed - set(self._NAMED))
             assert dropped == [], f"PLOT() would drop {dropped}"
+
+
+class TestTheMarketDataTab:
+    """The page a desk opens first, and the first one that can write anything.
+
+    Every other panel in this interface reads. This one uploads a file and
+    publishes a mark, so most of what is worth testing here is about *not*
+    writing when nobody asked.
+    """
+
+    def test_it_is_the_first_tab_and_the_default(self, page: str) -> None:
+        """Both, and they have to agree.
+
+        Step 1 of this phase deliberately left the default on Option Pricing
+        while reordering, because the first tab then was Models, which shows
+        nothing until a surface is fitted or Heston calibrated -- nineteen
+        seconds the first time. This page fits in 0.3s, so landing on "mark
+        the curves" is no longer landing on a blank panel to make a point
+        about ordering.
+        """
+        buttons = re.findall(r'class="mtab[^"]*"[^>]*onclick="switchMain\(.([a-z]+).\)', page)
+        assert buttons[0] == "market", f"the first tab is {buttons[0]!r}"
+        highlighted = re.search(r'class="mtab on"[^>]*onclick="switchMain\(.([a-z]+).\)', page)
+        opened = re.findall(r'class="tab-panel on" id="panel-([a-z]+)"', page)
+        assert highlighted is not None
+        assert highlighted.group(1) == "market"
+        assert opened == ["market"], f"the open panel is {opened}"
+
+    def test_it_calls_the_four_routes_it_needs(self, page: str) -> None:
+        for route in (
+            "/api/marketdata/upload",
+            "/api/marketdata/publish",
+            "/api/marketdata/mark",
+            "/api/vol_surface/fit",
+        ):
+            assert route in page, route
+
+    def test_the_gate_preview_cannot_publish(self, page: str) -> None:
+        """The defect this nearly shipped with.
+
+        The panel shows the gate results as soon as a surface is fitted, well
+        before anyone decides to publish, and the only route that computes
+        them is the publish route. Without ``dry_run`` that preview would have
+        published a mark on **every fit** -- silently, since the response of a
+        successful publish looks much like a gate report.
+        """
+        body = page[page.index("async function renderGates(") :]
+        body = body[: body.index("\nfunction renderGateTable")]
+        assert "dry_run: true" in body, (
+            "the gate preview calls the publish route without dry_run, so it "
+            "publishes a mark every time a surface is fitted"
+        )
+
+    def test_publishing_uses_the_request_the_gates_were_run_against(self, page: str) -> None:
+        """Otherwise the gates on screen could describe a different surface
+        from the one being blessed -- the controls may have been changed
+        between the fit and the click."""
+        assert "mdLastFit" in page
+        body = page[page.index("async function publishMark()") :]
+        body = body[: body.index("\nasync function readMark")]
+        assert "mdLastFit.request" in body
+        assert "Fit a surface first" in body, "publishing with no fit is not refused"
+
+    def test_the_refusal_is_reproduced_rather_than_reworded(self, page: str) -> None:
+        """The route's own message already names the gate, the distance and
+        how to override. A panel that summarised it in its own words would be
+        the place that softened it."""
+        body = page[page.index("async function publishMark()") :]
+        body = body[: body.index("\nasync function readMark")]
+        assert "d.error" in body
+
+    def test_a_mark_that_no_longer_reproduces_is_shown_as_such(self, page: str) -> None:
+        """The whole mechanism rests on this case being visible. A surface
+        that fails its own fingerprint check must not be presented as the
+        published mark."""
+        body = page[page.index("async function readMark()") :]
+        assert "d.reproduces" in body
+        assert "no longer reproduces" in body
+
+    def test_the_screening_section_reads_both_counts(self, page: str) -> None:
+        """A surface fitted to 42 of 126 quotes is a different claim from one
+        fitted to all of them, so the denominator has to be read, not just the
+        numerator."""
+        body = page[page.index("function renderScreening(") :]
+        body = body[: body.index("\nfunction renderForwards")]
+        assert "n_rejected" in body, "the discarded count is not read"
+        assert "n_points" in body
+        assert "rejections" in body, "the per-reason breakdown is not read"
+
+    def test_the_rates_section_says_a_flat_rate_is_a_flat_rate(self, page: str) -> None:
+        """A term structure exists but needs the Wind panel, which this
+        checkout may not have. Drawing a flat line and calling it a curve is
+        exactly the kind of claim the rest of this interface removes.
+        """
+        body = page[page.index("function renderRatesNote(") :]
+        body = body[: body.index("\nasync function renderGates")]
+        assert "flat" in body.lower()
+        assert "OTCPRICER_WIND_DIR" in body, "the reason there is no curve is not given"
+
+    def test_the_wind_source_demands_its_date(self, page: str) -> None:
+        """The panel holds 725 dates and build_source refuses without one, so
+        the form has to ask rather than letting the request fail."""
+        body = page[page.index("function marketRequest()") :]
+        body = body[: body.index("\nasync function uploadMarketCsv")]
+        assert "as_of" in body
+        assert "725" in body, "the refusal does not say why a date is needed"
+
+    def test_an_upload_token_is_required_before_a_csv_fit(self, page: str) -> None:
+        body = page[page.index("function marketRequest()") :]
+        body = body[: body.index("\nasync function uploadMarketCsv")]
+        assert "mdCsvToken" in body
+        assert "upload a CSV first" in body

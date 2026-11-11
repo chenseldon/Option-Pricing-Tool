@@ -929,13 +929,21 @@ def marketdata_publish():
     alternative to an override is editing the thresholds, which would remove
     the check for every later day.
 
-    Request JSON: {underlying, source, snapshot, csv_token, as_of, r, force}
+    ``dry_run`` runs the gates and writes nothing. The interface shows the gate
+    results as soon as a surface is fitted, well before anyone decides to
+    publish; without this that preview would publish a mark on every fit -- a
+    side effect nobody asked for, arriving silently, which is the shape of
+    defect the rest of this project exists to remove.
+
+    Request JSON: {underlying, source, snapshot, csv_token, as_of, r, force,
+                   dry_run}
     Response JSON: {published, mark, gates, ...} or 409 with the gate results.
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
         spec = _surface_request(data)
         force = bool(data.get("force", False))
+        dry_run = bool(data.get("dry_run", False))
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid parameters: {e}"}), 400
 
@@ -945,6 +953,27 @@ def marketdata_publish():
         return jsonify({"error": str(e)}), 400
 
     gates = evaluate_gates(fitted, load_mark(spec.underlying, directory=MARK_DIR, verify=False))
+    if dry_run:
+        failed = [g for g in gates if not g.passed]
+        return jsonify(
+            {
+                "published": False,
+                "dry_run": True,
+                "would_publish": not failed,
+                "gates": [g.as_dict() for g in gates],
+                "spec": spec.describe(),
+                "note": (
+                    "Nothing was written. "
+                    + (
+                        f"{len(failed)} of {len(gates)} gates would refuse this: "
+                        + ", ".join(g.name for g in failed)
+                        + ". Publishing needs force=True."
+                        if failed
+                        else "All gates pass, so a publish would be accepted."
+                    )
+                ),
+            }
+        )
     try:
         mark = publish_mark(
             fitted,

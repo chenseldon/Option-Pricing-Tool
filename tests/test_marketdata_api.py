@@ -152,6 +152,43 @@ class TestPublishing:
         assert payload["forced"] is True
         assert json.loads(path.read_text(encoding="utf-8"))["forced"] is True
 
+    def test_dry_run_reports_the_gates_and_writes_nothing(self, client, tmp_path: Path) -> None:  # noqa: ANN001
+        """The interface shows the gates as soon as a surface is fitted.
+
+        The only route that computes them is this one, so without dry_run the
+        preview would publish a mark on every fit -- silently, since a
+        successful publish response looks much like a gate report.
+        """
+        payload = client.post(
+            "/api/marketdata/publish",
+            json={"underlying": "510300", "source": "snapshot", "r": 0.02, "dry_run": True},
+        ).get_json()
+        assert payload["dry_run"] is True
+        assert payload["published"] is False
+        assert payload["would_publish"] is True
+        assert len(payload["gates"]) == 5
+        assert not (tmp_path / "marks").exists(), "a dry run wrote a mark"
+
+    def test_dry_run_says_which_gate_would_refuse(self, client, tmp_path: Path) -> None:  # noqa: ANN001
+        client.post(
+            "/api/marketdata/publish",
+            json={"underlying": "510300", "source": "snapshot", "r": 0.02},
+        )
+        path = tmp_path / "marks" / "510300.json"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw["atm_vols"] = [v + 0.5 for v in raw["atm_vols"]]
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        before = path.read_text(encoding="utf-8")
+
+        payload = client.post(
+            "/api/marketdata/publish",
+            json={"underlying": "510300", "source": "snapshot", "r": 0.02, "dry_run": True},
+        ).get_json()
+        assert payload["would_publish"] is False
+        assert "drift" in payload["note"]
+        assert "force=True" in payload["note"]
+        assert path.read_text(encoding="utf-8") == before, "a dry run overwrote the mark"
+
 
 class TestUploading:
     def test_a_chain_uploads_and_returns_a_token(self, client, chain_csv: bytes) -> None:  # noqa: ANN001

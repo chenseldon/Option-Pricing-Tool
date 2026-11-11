@@ -137,11 +137,14 @@ BODIES: dict[str, dict | None] = {
     "/api/cn_fdm": {**SNOWBALL, "calc_greeks": False},
     "/api/export": {"rows": [{"a": 1, "b": 2}], "filename": "sweep"},
     "/api/marketdata/mark": {"underlying": "510300"},
+    # dry_run, so the sweep reports the gates without blessing a surface.
+    # MARK_DIR is redirected below as well, but a diagnostic that needs a
+    # temporary directory to be harmless is one override away from not being.
     "/api/marketdata/publish": {
         "underlying": "510300",
         "source": "snapshot",
         "r": 0.02,
-        "force": True,
+        "dry_run": True,
     },
     "/api/marketdata/upload": None,  # raw CSV, see RAW_BODIES
 }
